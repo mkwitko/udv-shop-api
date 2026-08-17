@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Atualiza o knowledge graph (graphify) com os arquivos do commit, em background.
+# Não bloqueia o commit; falha silenciosa é aceitável aqui.
+CHANGED=$(git diff-tree --no-commit-id --name-only -r HEAD | tr '\n' ' ')
+[ -z "$CHANGED" ] && exit 0
+nohup claude -p "/graphify $CHANGED" >/dev/null 2>&1 &
+exit 0

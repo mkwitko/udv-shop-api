@@ -2,8 +2,8 @@ import type { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { buildApp } from "../../src/app.js";
-import { signAccessToken } from "../../src/lib/jwt.js";
 import { requireUser } from "../../src/http/hooks/auth.js";
+import { signAccessToken } from "../../src/lib/jwt.js";
 
 describe("auth hooks", () => {
   let app: FastifyInstance;
@@ -20,13 +20,19 @@ describe("auth hooks", () => {
         "/protegida",
         {
           config: { permissions: { any: ["customer"] } },
-          schema: { operationId: "testProtegida", response: { 200: z.object({ sub: z.string() }) } },
+          schema: {
+            operationId: "testProtegida",
+            response: { 200: z.object({ sub: z.string() }) },
+          },
         },
         async (req) => ({ sub: requireUser(req).sub }),
       );
       scope.get(
         "/so-admin",
-        { config: { permissions: { any: ["platform_admin"] } }, schema: { operationId: "testAdmin" } },
+        {
+          config: { permissions: { any: ["platform_admin"] } },
+          schema: { operationId: "testAdmin" },
+        },
         async () => ({ ok: true }),
       );
       scope.get("/sem-config", { schema: { operationId: "testSemConfig" } }, async () => ({}));

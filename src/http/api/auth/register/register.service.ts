@@ -4,7 +4,7 @@ import { logger } from "../../../../infra/observability/logger.js";
 import { hashPassword } from "../../../../lib/password.js";
 import { ConflictError } from "../../../../shared/errors.js";
 import type { AuthRepository } from "../auth.repository.js";
-import { toPublicUser, type AuthResult } from "../auth.types.js";
+import { type AuthResult, toPublicUser } from "../auth.types.js";
 import { verifyEmailHtml } from "../emails.js";
 import { hashToken, type TokensService } from "../tokens.service.js";
 import type { RegisterBody } from "./register.schema.js";

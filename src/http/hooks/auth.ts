@@ -1,7 +1,7 @@
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { verifyAccessToken } from "../../lib/jwt.js";
 import { AppError, ForbiddenError, UnauthorizedError } from "../../shared/errors.js";
-import { personasOf, type Persona } from "../../shared/permissions.js";
+import { type Persona, personasOf } from "../../shared/permissions.js";
 
 export async function authHook(req: FastifyRequest, _reply: FastifyReply): Promise<void> {
   if (req.routeOptions.config.public === true) return;

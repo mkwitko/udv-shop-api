@@ -68,7 +68,11 @@ describe("forgot/reset password", () => {
   it("token de reset não pode ser reusado", async () => {
     await app.inject({ method: "POST", url: "/auth/register", payload: user });
     fakes.sentEmails.length = 0;
-    await app.inject({ method: "POST", url: "/auth/forgot-password", payload: { email: user.email } });
+    await app.inject({
+      method: "POST",
+      url: "/auth/forgot-password",
+      payload: { email: user.email },
+    });
     const token = /token=([A-Za-z0-9_-]+)/.exec(fakes.sentEmails[0]?.html ?? "")?.[1];
     await app.inject({
       method: "POST",

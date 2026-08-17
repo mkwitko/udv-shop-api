@@ -2,7 +2,10 @@ import { z } from "zod";
 
 export const RegisterBody = z.object({
   name: z.string().min(2).max(120),
-  email: z.string().email().transform((v) => v.toLowerCase()),
+  email: z
+    .string()
+    .email()
+    .transform((v) => v.toLowerCase()),
   password: z.string().min(10).max(200),
 });
 export type RegisterBody = z.infer<typeof RegisterBody>;

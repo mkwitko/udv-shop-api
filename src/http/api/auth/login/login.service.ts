@@ -1,7 +1,7 @@
 import { verifyPassword } from "../../../../lib/password.js";
 import { UnauthorizedError } from "../../../../shared/errors.js";
 import type { AuthRepository } from "../auth.repository.js";
-import { toPublicUser, type AuthResult } from "../auth.types.js";
+import { type AuthResult, toPublicUser } from "../auth.types.js";
 import type { TokensService } from "../tokens.service.js";
 import type { LoginBody } from "./login.schema.js";
 

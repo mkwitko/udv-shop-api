@@ -71,8 +71,7 @@ export function createAuthRepository(db: PrismaClient): AuthRepository {
     userRoles: async () => ({}),
 
     insertRefreshToken: (data) => db.refreshToken.create({ data }),
-    findRefreshTokenByHash: (tokenHash) =>
-      db.refreshToken.findUnique({ where: { tokenHash } }),
+    findRefreshTokenByHash: (tokenHash) => db.refreshToken.findUnique({ where: { tokenHash } }),
     markReplaced: async (id, replacedById) => {
       await db.refreshToken.update({ where: { id }, data: { replacedById } });
     },
