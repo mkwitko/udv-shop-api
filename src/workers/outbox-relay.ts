@@ -65,6 +65,24 @@ export async function relayOutbox(deps: {
             html: `<p>Olá, ${order.user.name}!</p><p>Recebemos o pagamento do seu pedido na loja ${order.store.name}. A equipe do núcleo vai entrar em contato pelo telefone informado para combinar a entrega.</p><ul>${lines}</ul><p>Total: R$ ${(order.totalCents / 100).toFixed(2)}</p><p>Obrigado por apoiar o núcleo!</p>`,
           });
         }
+      } else if (event.type === "interest.notified") {
+        const { interestId } = event.payload as { interestId: string };
+        const interest = await deps.db.productInterest.findUnique({
+          where: { id: interestId },
+          include: {
+            user: true,
+            product: { select: { name: true, store: { select: { name: true } } } },
+          },
+        });
+        if (interest) {
+          await deps.email.send({
+            to: interest.user.email,
+            subject: `Chegou: ${interest.product.name} — ${interest.product.store.name}`,
+            html: `<p>Olá, ${interest.user.name}!</p><p>O produto <strong>${interest.product.name}</strong> que você encomendou no núcleo ${interest.product.store.name} chegou.</p><p>Sua encomenda era de ${interest.qty} unidade(s). É só acessar a loja para finalizar o pedido — quem chega antes garante.</p><p>Com carinho, equipe do núcleo.</p>`,
+          });
+        }
+        // Nota: se o interesse sumiu (produto apagado), o evento é marcado processed do
+        // mesmo jeito — não há o que notificar.
       } else if (event.type === "payment.orphaned") {
         // Money captured for an order that is no longer pending. No email — this is an
         // operator alert, not a customer-facing message. Durable + queryable via this row;

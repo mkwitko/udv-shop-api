@@ -54,6 +54,7 @@ export interface InterestsRepository {
       totalQty: number;
     }>
   >;
+  notifyArrival(productId: string): Promise<number>;
 }
 
 export function createInterestsRepository(db: PrismaClient): InterestsRepository {
@@ -157,6 +158,31 @@ export function createInterestsRepository(db: PrismaClient): InterestsRepository
         })
         .sort((a, b) => b.totalQty - a.totalQty || a.product.slug.localeCompare(b.product.slug));
     },
+
+    notifyArrival: (productId) =>
+      db.$transaction(async (tx) => {
+        // Teto por chamada: a loja pode chamar de novo para drenar o resto, e cada
+        // interesse já notificado sai do conjunto "open".
+        const rows = await tx.productInterest.findMany({
+          where: { productId, status: "open" },
+          select: { id: true },
+          take: 500,
+        });
+        if (rows.length === 0) return 0;
+        const ids = rows.map((r) => r.id);
+        const updated = await tx.productInterest.updateMany({
+          where: { id: { in: ids }, status: "open" },
+          data: { status: "notified", notifiedAt: new Date() },
+        });
+        // Email nunca sai inline no request da loja: o outbox garante entrega e retry.
+        await tx.outboxEvent.createMany({
+          data: ids.map((interestId) => ({
+            type: "interest.notified",
+            payload: { interestId },
+          })),
+        });
+        return updated.count;
+      }),
   };
 }
 

@@ -124,4 +124,44 @@ describe("workers", () => {
     expect(fresh.status).toBe("processing");
     expect(fresh.claimedBy).toBe("other-instance-token");
   });
+
+  it("interest.notified vira email para quem encomendou", async () => {
+    const store = await db.store.create({
+      data: { slug: "nucleo-a", name: "Núcleo A", status: "active" },
+    });
+    const product = await db.product.create({
+      data: {
+        storeId: store.id,
+        slug: "cha-especial",
+        name: "Chá especial",
+        priceCents: 5000,
+        availability: "on_demand",
+      },
+    });
+    const user = await db.user.create({
+      data: { email: "encomenda@example.org", name: "Cliente", passwordHash: "x" },
+    });
+    const interest = await db.productInterest.create({
+      data: {
+        productId: product.id,
+        userId: user.id,
+        qty: 2,
+        status: "notified",
+        notifiedAt: new Date(),
+      },
+    });
+    await db.outboxEvent.create({
+      data: { type: "interest.notified", payload: { interestId: interest.id } },
+    });
+
+    const gateways = buildFakeGateways();
+    const processed = await relayOutbox({ db, email: gateways.email, log: logger });
+
+    expect(processed).toBe(1);
+    expect(gateways.sentEmails).toHaveLength(1);
+    expect(gateways.sentEmails[0]?.to).toBe("encomenda@example.org");
+    expect(gateways.sentEmails[0]?.subject).toContain("Chá especial");
+    const row = await db.outboxEvent.findFirstOrThrow({ where: { type: "interest.notified" } });
+    expect(row.status).toBe("processed");
+  });
 });

@@ -4,6 +4,7 @@ import { createInterestRoute } from "./create-interest/create-interest.controlle
 import { interestDemandRoute } from "./interest-demand/interest-demand.controller.js";
 import { listMyInterestsRoute } from "./list-my-interests/list-my-interests.controller.js";
 import { listStoreInterestsRoute } from "./list-store-interests/list-store-interests.controller.js";
+import { notifyInterestsRoute } from "./notify-interests/notify-interests.controller.js";
 
 export const interestsRoutes: FastifyPluginAsync = async (app) => {
   await app.register(createInterestRoute);
@@ -11,4 +12,5 @@ export const interestsRoutes: FastifyPluginAsync = async (app) => {
   await app.register(cancelInterestRoute);
   await app.register(listStoreInterestsRoute);
   await app.register(interestDemandRoute);
+  await app.register(notifyInterestsRoute);
 };
