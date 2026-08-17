@@ -67,8 +67,13 @@ export function createAuthRepository(db: PrismaClient): AuthRepository {
     markEmailVerified: async (userId) => {
       await db.user.update({ where: { id: userId }, data: { emailVerified: true } });
     },
-    // roles por loja entram no Plano 2 (user_store_roles); por ora sem lojas.
-    userRoles: async () => ({}),
+    userRoles: async (userId) => {
+      const rows = await db.userStoreRole.findMany({
+        where: { userId },
+        select: { storeId: true, role: true },
+      });
+      return Object.fromEntries(rows.map((r) => [r.storeId, r.role]));
+    },
 
     insertRefreshToken: (data) => db.refreshToken.create({ data }),
     findRefreshTokenByHash: (tokenHash) => db.refreshToken.findUnique({ where: { tokenHash } }),

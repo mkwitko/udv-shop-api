@@ -21,6 +21,7 @@ model User {
 
   refreshTokens RefreshToken[]
   emailTokens   EmailToken[]
+  storeRoles    UserStoreRole[]
 
   @@map("users")
 }
@@ -60,4 +61,76 @@ model EmailToken {
 
   @@index([userId, type])
   @@map("email_tokens")
+}
+
+enum StoreStatus {
+  pending
+  active
+  suspended
+}
+
+enum StoreRole {
+  owner
+  admin
+  staff
+}
+
+enum ProductAvailability {
+  in_stock
+  on_demand
+}
+
+model Store {
+  id                String      @id @default(uuid()) @db.Uuid
+  slug              String      @unique
+  name              String
+  description       String?
+  branding          Json?
+  status            StoreStatus @default(pending)
+  isPlatformOwner   Boolean     @default(false) @map("is_platform_owner")
+  applicationFeeBps Int         @default(500) @map("application_fee_bps")
+  createdAt         DateTime    @default(now()) @map("created_at")
+  updatedAt         DateTime    @updatedAt @map("updated_at")
+
+  roles    UserStoreRole[]
+  products Product[]
+
+  @@index([status, createdAt(sort: Desc), id(sort: Desc)])
+  @@map("stores")
+}
+
+model UserStoreRole {
+  userId    String    @map("user_id") @db.Uuid
+  storeId   String    @map("store_id") @db.Uuid
+  role      StoreRole
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@id([userId, storeId])
+  @@index([storeId])
+  @@map("user_store_roles")
+}
+
+model Product {
+  id           String              @id @default(uuid()) @db.Uuid
+  storeId      String              @map("store_id") @db.Uuid
+  slug         String
+  name         String
+  description  String?
+  priceCents   Int                 @map("price_cents")
+  currency     String              @default("BRL")
+  images       String[]            @default([])
+  stock        Int                 @default(0)
+  availability ProductAvailability @default(in_stock)
+  active       Boolean             @default(true)
+  createdAt    DateTime            @default(now()) @map("created_at")
+  updatedAt    DateTime            @updatedAt @map("updated_at")
+
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, slug])
+  @@index([storeId, active, createdAt(sort: Desc), id(sort: Desc)])
+  @@map("products")
 }
