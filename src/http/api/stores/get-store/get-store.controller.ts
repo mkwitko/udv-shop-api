@@ -1,22 +1,12 @@
-import type { FastifyPluginAsync, FastifyRequest } from "fastify";
+import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { db } from "../../../../infra/db/client.js";
-import { verifyAccessToken } from "../../../../lib/jwt.js";
 import { NotFoundError } from "../../../../shared/errors.js";
+import { optionalUser } from "../../../hooks/optional-user.js";
 import { createStoresRepository, toStoreResponse } from "../stores.repository.js";
 import { StoreResponse } from "../stores.schema.js";
 
 const Params = z.object({ slug: z.string() });
-
-async function optionalUser(req: FastifyRequest) {
-  const header = req.headers.authorization;
-  if (!header?.startsWith("Bearer ")) return null;
-  try {
-    return await verifyAccessToken(header.slice("Bearer ".length));
-  } catch {
-    return null;
-  }
-}
 
 export const getStoreRoute: FastifyPluginAsync = async (app) => {
   app.get(
