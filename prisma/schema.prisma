@@ -24,6 +24,8 @@ model User {
   storeRoles    UserStoreRole[]
   orders        Order[]
   interests     ProductInterest[]
+  donations     Donation[]
+  raffleEntries RaffleEntry[]
 
   @@map("users")
 }
@@ -103,9 +105,11 @@ model Store {
   createdAt         DateTime    @default(now()) @map("created_at")
   updatedAt         DateTime    @updatedAt @map("updated_at")
 
-  roles    UserStoreRole[]
-  products Product[]
-  orders   Order[]
+  roles     UserStoreRole[]
+  products  Product[]
+  orders    Order[]
+  campaigns Campaign[]
+  donations Donation[]
 
   @@index([status, createdAt(sort: Desc), id(sort: Desc)])
   @@map("stores")
@@ -249,6 +253,7 @@ model OrderItem {
 model Payment {
   id                  String          @id @default(uuid()) @db.Uuid
   orderId             String?         @unique @map("order_id") @db.Uuid
+  donationId          String?         @unique @map("donation_id") @db.Uuid
   provider            PaymentProvider
   providerId          String?         @map("provider_id")
   amountCents         Int             @map("amount_cents")
@@ -257,7 +262,8 @@ model Payment {
   createdAt           DateTime        @default(now()) @map("created_at")
   updatedAt           DateTime        @updatedAt @map("updated_at")
 
-  order Order? @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  order    Order?    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  donation Donation? @relation(fields: [donationId], references: [id], onDelete: Cascade)
 
   @@index([providerId])
   @@map("payments")
@@ -292,4 +298,146 @@ model OutboxEvent {
 
   @@index([status, createdAt])
   @@map("outbox_events")
+}
+
+enum CampaignStatus {
+  draft
+  active
+  paused
+  finished
+}
+
+enum CampaignAcceptedTypes {
+  one_time
+  monthly
+  both
+}
+
+enum DonationType {
+  one_time
+  monthly
+}
+
+enum DonationStatus {
+  pending_payment
+  paid
+  failed
+  cancelled
+  refunded
+}
+
+enum RaffleStatus {
+  open
+  drawn
+  cancelled
+}
+
+model Campaign {
+  id            String                @id @default(uuid()) @db.Uuid
+  storeId       String                @map("store_id") @db.Uuid
+  slug          String
+  title         String
+  story         String?
+  coverImage    String?               @map("cover_image")
+  goalCents     Int?                  @map("goal_cents")
+  acceptedTypes CampaignAcceptedTypes @default(both) @map("accepted_types")
+  status        CampaignStatus        @default(draft)
+  endsAt        DateTime?             @map("ends_at")
+  createdAt     DateTime              @default(now()) @map("created_at")
+  updatedAt     DateTime              @updatedAt @map("updated_at")
+
+  store     Store      @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  donations Donation[]
+  raffle    Raffle?
+
+  @@unique([storeId, slug])
+  @@index([storeId, status, createdAt(sort: Desc), id(sort: Desc)])
+  @@index([status, createdAt(sort: Desc), id(sort: Desc)])
+  @@map("campaigns")
+}
+
+model Donation {
+  id                     String         @id @default(uuid()) @db.Uuid
+  storeId                String         @map("store_id") @db.Uuid
+  campaignId             String?        @map("campaign_id") @db.Uuid
+  userId                 String         @map("user_id") @db.Uuid
+  type                   DonationType   @default(one_time)
+  amountCents            Int            @map("amount_cents")
+  currency               String         @default("BRL")
+  status                 DonationStatus @default(pending_payment)
+  anonymous              Boolean        @default(false)
+  message                String?
+  subscriptionRef        String?        @map("subscription_ref")
+  providerInvoiceId      String?        @unique @map("provider_invoice_id")
+  subscriptionCancelledAt DateTime?     @map("subscription_cancelled_at")
+  raffleGranted          Boolean        @default(false) @map("raffle_granted")
+  expiresAt              DateTime?      @map("expires_at")
+  createdAt              DateTime       @default(now()) @map("created_at")
+  updatedAt              DateTime       @updatedAt @map("updated_at")
+
+  store    Store         @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  campaign Campaign?     @relation(fields: [campaignId], references: [id], onDelete: Restrict)
+  user     User          @relation(fields: [userId], references: [id])
+  payment  Payment?
+  entries  RaffleEntry[]
+
+  @@index([campaignId, status, createdAt(sort: Desc), id(sort: Desc)])
+  @@index([storeId, status, createdAt(sort: Desc), id(sort: Desc)])
+  @@index([userId, createdAt(sort: Desc), id(sort: Desc)])
+  @@index([status, expiresAt])
+  @@index([subscriptionRef])
+  @@map("donations")
+}
+
+model Raffle {
+  id             String       @id @default(uuid()) @db.Uuid
+  campaignId     String       @unique @map("campaign_id") @db.Uuid
+  centsPerNumber Int          @map("cents_per_number")
+  drawAt         DateTime?    @map("draw_at")
+  status         RaffleStatus @default(open)
+  seed           String?
+  algorithm      String       @default("sha256-counter-v1")
+  drawnAt        DateTime?    @map("drawn_at")
+  nextNumber     Int          @default(1) @map("next_number")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  campaign Campaign      @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  prizes   RafflePrize[]
+  entries  RaffleEntry[]
+
+  @@map("raffles")
+}
+
+model RafflePrize {
+  id            String  @id @default(uuid()) @db.Uuid
+  raffleId      String  @map("raffle_id") @db.Uuid
+  position      Int
+  title         String
+  winnerEntryId String? @unique @map("winner_entry_id") @db.Uuid
+
+  raffle      Raffle       @relation(fields: [raffleId], references: [id], onDelete: Cascade)
+  winnerEntry RaffleEntry? @relation(fields: [winnerEntryId], references: [id])
+
+  @@unique([raffleId, position])
+  @@map("raffle_prizes")
+}
+
+model RaffleEntry {
+  id         String   @id @default(uuid()) @db.Uuid
+  raffleId   String   @map("raffle_id") @db.Uuid
+  donationId String   @map("donation_id") @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  number     Int
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  raffle   Raffle       @relation(fields: [raffleId], references: [id], onDelete: Cascade)
+  donation Donation     @relation(fields: [donationId], references: [id], onDelete: Cascade)
+  user     User         @relation(fields: [userId], references: [id])
+  wonPrize RafflePrize?
+
+  @@unique([raffleId, number])
+  @@index([raffleId, donationId])
+  @@index([userId])
+  @@map("raffle_entries")
 }
