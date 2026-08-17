@@ -54,9 +54,20 @@ export async function relayOutbox(deps: {
         const { orderId } = event.payload as { orderId: string };
         const order = await deps.db.order.findUnique({
           where: { id: orderId },
-          include: { items: true, user: true, store: { select: { name: true } } },
+          include: {
+            items: true,
+            user: { select: { email: true, name: true } },
+            store: { select: { name: true } },
+          },
         });
         if (order) {
+          // Roda antes do email: é um updateMany guardado (idempotente), então uma
+          // falha no envio nunca perde a conversão, e reprocessar o evento nunca
+          // reenvia o email por causa dela.
+          await createInterestsRepository(deps.db).convertForOrder({
+            userId: order.userId,
+            productIds: order.items.map((i) => i.productId),
+          });
           const lines = order.items
             .map((i) => `<li>${i.qty}× ${i.name} — R$ ${(i.priceCents / 100).toFixed(2)}</li>`)
             .join("");
@@ -65,18 +76,16 @@ export async function relayOutbox(deps: {
             subject: `Pagamento confirmado — ${order.store.name}`,
             html: `<p>Olá, ${order.user.name}!</p><p>Recebemos o pagamento do seu pedido na loja ${order.store.name}. A equipe do núcleo vai entrar em contato pelo telefone informado para combinar a entrega.</p><ul>${lines}</ul><p>Total: R$ ${(order.totalCents / 100).toFixed(2)}</p><p>Obrigado por apoiar o núcleo!</p>`,
           });
-          // Encomenda virou compra: tira o interesse da fila do núcleo.
-          await createInterestsRepository(deps.db).convertForOrder({
-            userId: order.userId,
-            productIds: order.items.map((i) => i.productId),
-          });
         }
       } else if (event.type === "interest.notified") {
         const { interestId } = event.payload as { interestId: string };
-        const interest = await deps.db.productInterest.findUnique({
-          where: { id: interestId },
+        // Guardado por status: um cancelamento (ou reabertura, ou conversão por um
+        // order.paid que chegou primeiro) entre o enfileiramento e este tick não deve
+        // gerar o email de "chegou".
+        const interest = await deps.db.productInterest.findFirst({
+          where: { id: interestId, status: "notified" },
           include: {
-            user: true,
+            user: { select: { email: true, name: true } },
             product: { select: { name: true, store: { select: { name: true } } } },
           },
         });
