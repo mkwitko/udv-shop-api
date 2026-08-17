@@ -153,12 +153,119 @@ para um `Set<Persona>` (`customer`, `store_owner`, `store_admin`,
 `store_staff`, `platform_admin`). `config.permissions` das rotas referencia
 essas personas por nome (ver ADR-004).
 
+## Checkout e reserva de estoque
+
+O fluxo de checkout (Plano 3) é uma transação atômica que bloqueia estoque
+antes do pagamento ser confirmado. Sequência:
+
+1. `POST /orders` valida itens (produtos `in_stock`), calcula total com fee.
+2. Dentro de uma transação Prisma:
+   - Decrementa estoque: `updateMany({ where: { id, stock: { gte: qty } } })` —
+     é atômico e impede overselling mesmo com requisições simultâneas.
+   - Cria order com status `pending_payment`, expiração em 30 minutos.
+   - Cria payment com status `pending`.
+3. **Fora da transação** (nunca dentro): chama gateway (Stripe/Woovi) pra gerar
+   payment intent/charge. Se falhar → `compensateFailedCheckout()` desfaz
+   estoque, marca order `cancelled` e payment `failed`, devolve 502.
+4. Gateway devolve `clientSecret` (Stripe) ou `brCode` (Woovi), retorna 201.
+5. Cliente completa pagamento no frontend.
+6. Webhook (`/webhooks/stripe` ou `/webhooks/woovi`) chega com confirmação:
+   - Handler persiste evento com dedup `(provider, eventId)`.
+   - Processa inline: `markPaid()` transiciona payment para `succeeded` e order
+     para `paid`, grava outbox event `order.paid`.
+   - Worker periodicamente reprocessa eventos presos em status `received` (crash
+     recovery).
+7. Outbox worker (`relayOutbox`) processa `order.paid` e dispara email de
+   confirmação, marca evento como `processed`.
+8. Se pedido expirou (30 min sem confirmação), worker `expireReservations`
+   cancela e devolve estoque; payment fica `expired`.
+
+**Caso especial — pagamento tardio de pedido cancelado:** payment chega como
+`succeeded` via webhook, order já está `cancelled` (expirou ou foi cancelado
+manualmente). `markPaid()` honra o `succeeded` (idempotência), mas order não
+muda de `cancelled`. Loga erro; reembolso é manual.
+
+## Webhooks
+
+Integração com Stripe e Woovi por webhooks idempotentes. Ambas as rotas são
+públicas (`config.public: true`) e recebem raw body (parser `parseAs: "buffer"`
+no escopo do plugin `webhooksRoutes`).
+
+### Stripe
+
+- **Rota:** `POST /webhooks/stripe`, header `stripe-signature`.
+- **Assinatura:** verificada via SDK Stripe (`stripe.webhooks.constructEvent`).
+- **Tipos processados:**
+  - `payment_intent.succeeded` → `markPaid()` (order `pending_payment` → `paid`).
+  - `payment_intent.payment_failed`, `payment_intent.canceled` → cancela pedido
+    pendente e devolve estoque.
+  - `charge.refunded` → marca payment como `refunded` e order passa para esse
+    estado (se em estado válido).
+
+### Woovi
+
+- **Rota:** `POST /webhooks/woovi`, header `x-openpix-signature`.
+- **Assinatura:** HMAC-SHA1 base64 do raw body contra `WOOVI_WEBHOOK_HMAC_SECRET`.
+- **Dedup:** eventId é `${event}:${charge.correlationID}` (Woovi não tem ID
+  global; `correlationID` é nosso `payment.id`).
+- **Tipos processados:**
+  - `OPENPIX:CHARGE_COMPLETED` → `markPaid()`.
+  - `OPENPIX:CHARGE_EXPIRED` → cancela pedido se ainda pendente.
+  - `OPENPIX:CHARGE_REFUND` → marca payment como `refunded`.
+
+### Handler de webhook
+
+1. Verifica assinatura, rejeita se inválida (401).
+2. Chama `storeWebhookEvent()`: tenta inserir `(provider, eventId, type, payload)`.
+   Se já existe (dedup), retorna `false` silenciosamente.
+3. Se novo: processa inline com `processWebhookEvents()` (aguarda, responde só
+   após conclusão).
+4. Devolve 200 `{ received: true }` sempre que assinatura é válida.
+
+Worker reprocessa eventos com status `received` a cada 15 segundos (crash
+recovery em caso de erro após persistir mas antes de processar).
+
+## Workers in-process
+
+Três workers em loop leve, inicializados em `src/server.ts` ao startup e parados
+no graceful shutdown:
+
+- **`expireReservations()`** — a cada 60s, encontra pedidos `pending_payment` com
+  `expiresAt < now`, cancela e devolve estoque.
+- **`relayOutbox()`** — a cada 10s, processa eventos de outbox com status
+  `pending`, envia emails (atualmente só `order.paid`), marca `processed`.
+  Falhas incrementam `attempts`; após 5 tentativas, marca `failed` (terminal).
+- **`processWebhookEvents()`** — a cada 15s, reprocessa eventos webhook com
+  status `received` (recovery de crashes entre persistir e processar).
+
+Funções de tick são puras (testáveis sem `vi.useFakeTimers`); `setInterval`
+fica só em `src/workers/index.ts` no `startWorkers()`. Testes chamam as funções
+direto.
+
+## Transições de status de Order
+
+Order nascido como `pending_payment` pode seguir apenas um dos caminhos a seguir,
+em ordem estrita (nenhuma volta atrás):
+
+```
+pending_payment → paid | cancelled
+↓
+(se paid)
+paid → delivery_arranged | delivered | refunded
+↓
+delivery_arranged → delivered | refunded
+↓
+delivered → refunded
+```
+
+Qualquer outra transição é rejeitada com erro 409 `invalid_status_transition`.
+`updateOrderStatus()` do repository exige explicitamente os status **de** válidos.
+
 ## Pendências para planos futuros (documentado aqui para não ficar implícito)
 
-- **Outbox**: eventos de domínio (ex.: "pedido criado" disparando emails,
-  webhooks) ainda não existem. Quando chegarem, usar tabela outbox +
-  processamento assíncrono, não side-effect síncrono dentro do service de
-  escrita.
+- **Outbox** (já implementado neste plano como exemplo): eventos de domínio
+  (ex.: "pedido pago" disparando emails) usam tabela outbox + processamento
+  assíncrono via worker, não side-effect síncrono dentro do service de escrita.
 
 ## Testes
 

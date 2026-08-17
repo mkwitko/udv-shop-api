@@ -122,3 +122,83 @@ permitidos. Upload é rápido (não passa pela API). Filename é gerado pelo
 frontend para garantir unicidade + tipo correto (ex.: UUID + `.jpg`).
 Em caso de roubo de presigned URL, limite de tempo (`expirationSeconds`) e
 whitelist de content-type mitigam dano.
+
+## ADR-009: reserva de estoque = decremento no checkout
+
+**Contexto:** ao criar pedido, estoque precisa ser reservado antes do pagamento
+ser confirmado. Duas abordagens: (1) decrementar no checkout, com worker
+devolvendo após expiração; (2) decrementar só ao receber webhook `paid`.
+
+**Decisão:** decrementar atomicamente **no checkout** (opção 1). Abordagem 2
+permitiria overselling durante a janela de pagamento (ex.: 10 unidades, 15
+checkouts simultâneos todos com sucesso inicial, só 1 webhook chega).
+
+**Consequências:** estoque "preso" fica reservado por até 30 minutos (TTL de
+pedido `pending_payment`). Custo: consultas de produto podem ver estoque
+indisponível mesmo com pagamento não confirmado. Ganho: impossível oversell, e
+checkout rápido (rejeita logo se sem estoque) — melhor UX que deixar escolher
+e depois falhar no webhook. Worker `expireReservations` devolve estoque se
+pedido expirou sem pagamento.
+
+## ADR-010: webhook processa inline + worker reprocessa
+
+**Contexto:** webhook pode falhar entre persistência e processamento (crash,
+timeout). Duas abordagens: (1) persist + process inline, worker reprocessa
+presos; (2) persist só, worker processa tudo depois.
+
+**Decisão:** persist + process inline, com worker de recovery (opção 1).
+
+**Consequências:** latência de confirmação (order → `paid`, email enviado)
+fica baixa e determinística em testes (sem `setInterval`). Idempotência
+(`markPaid`, `cancelPendingOrder`) garante segurança se mesmo evento é
+processado 2×. Worker cobre crash entre persistir e processar (evento fica
+`received`, worker lê e processa depois). Evento com erro durante processamento
+marca-se `failed` + campo `error` (terminal — análise manual, sem retry
+automático).
+
+## ADR-011: produto `on_demand` não é comprável no checkout
+
+**Contexto:** produtos podem ter `availability: in_stock | on_demand`. Alguns
+modelos de negócio permitem compra de itens sob encomenda.
+
+**Decisão:** neste plano (Plano 3), checkout só aceita produtos `in_stock`.
+`on_demand` vira `product_interests` no Plano 4 (modelo diferente de reserva).
+
+**Consequências:** checkout sempre rejeita `product_not_orderable` se slug
+encontrado mas `availability != in_stock`. Simplifica lógica de reserva: não
+precisa modelar "interesse" vs "reserva de verdade". Plano 4 adiciona interesse
+e alerta de restock.
+
+## ADR-012: reembolso não devolve estoque nem reativa pedido; pagamento tardio é idempotente
+
+**Contexto:** após pedido `paid`, se cliente pedir reembolso, múltiplas
+consequências possíveis: (a) devolver estoque, (b) reativar pedido, (c)
+nenhuma das duas. Também: webhook de pagamento chega **após** pedido ser
+cancelado (expirou).
+
+**Decisão:** (1) reembolso **não** devolve estoque nem reativa pedido —
+contabilidade assume estoque já foi "baixado" (produto em trânsito/entregue,
+ajuste de inventário é manual). (2) Pagamento tardio para pedido `cancelled`:
+aceita payment como `succeeded` (idempotência), order fica `cancelled` mesmo
+assim, loga erro, reembolso é manual.
+
+**Consequências:** fluxo de reembolso fica simples (só call para gateway +
+transição de status). Reembolso manual é responsabilidade da loja se quiser
+reativ ar pedido ou devolver estoque. Evita race condition entre webhook
+(marcar paid) e expirador (marcar cancelled).
+
+## ADR-013: colunas `stripeAccountId`/`wooviPixKey` nascem no Plano 3 (nullable)
+
+**Contexto:** lojas precisam configurar como receber pagamentos (Stripe ou
+Woovi). Integração real de onboarding (Know Your Customer, vinculação de
+contas) é trabalho do Plano 6.
+
+**Decisão:** adicionar ao Store: `stripeAccountId: String | null` e
+`wooviPixKey: String | null`. Checkout exige pelo menos um configurado
+(`payments_not_configured` se ausente). Nenhum fluxo de preenchimento automático
+neste plano.
+
+**Consequências:** checkout pode validar permissão de pagamento sem chamar
+webhook de onboarding. Plano 6 adiciona forms de autenticação e automação.
+Lojas sem nenhum método configurado não conseguem vender (erro 400), o que é
+intencional — força setup mínimo antes de aceitar pedidos.
