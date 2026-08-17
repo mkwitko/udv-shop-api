@@ -46,9 +46,14 @@ export function createGoogleGateway(cfg: {
         audience: cfg.clientId,
       });
       if (payload.nonce !== nonce) throw new UnauthorizedError("oauth_nonce_mismatch");
+      // an empty/missing email must never silently coerce to "": that would let two Google
+      // accounts with no email collapse onto the same local account.
+      if (typeof payload.email !== "string" || payload.email.length === 0) {
+        throw new UnauthorizedError("google_email_missing");
+      }
       return {
         sub: String(payload.sub),
-        email: String(payload.email ?? ""),
+        email: payload.email,
         emailVerified: payload.email_verified === true,
         name: String(payload.name ?? payload.email ?? "Sem nome"),
       };
