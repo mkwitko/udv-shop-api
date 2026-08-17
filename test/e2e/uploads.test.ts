@@ -89,4 +89,25 @@ describe("POST /uploads/presign", () => {
     });
     expect(res.statusCode).toBe(400);
   });
+
+  it("loja suspensa → presign 403", async () => {
+    const { user, cookie } = await registerAndToken(app, "susp@example.org");
+    const store = await db.store.create({
+      data: { slug: "nucleo-x", name: "X", status: "suspended" },
+    });
+    await db.userStoreRole.create({ data: { userId: user.id, storeId: store.id, role: "staff" } });
+    const refreshed = await app.inject({
+      method: "POST",
+      url: "/auth/refresh",
+      cookies: { udv_rt: cookie },
+    });
+    const res = await app.inject({
+      method: "POST",
+      url: "/uploads/presign",
+      headers: { authorization: `Bearer ${refreshed.json().accessToken}` },
+      payload: { storeSlug: "nucleo-x", contentType: "image/webp" },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(res.json().message).toBe("store_suspended");
+  });
 });

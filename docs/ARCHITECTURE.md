@@ -70,9 +70,9 @@ Regras:
   concorrentes).
 - Request inclui `limit + 1` na query Prisma; devolve `limit` registros +
   flag `hasMore` (verdadeiro se houve mais de `limit` resultados).
-- Cursor vem em `querystring.after` (ou não, na primeira página).
+- Cursor vem em `querystring.cursor` (ou não, na primeira página).
 - Helpers em `src/lib/cursor.ts`: `encodeCursor()`, `decodeCursor()`.
-- Exemplo canônico: `stores.repository.listActiveByCursor(limit, after)`.
+- Exemplo canônico: `stores.repository.listActiveByCursor(limit, cursor)`.
 
 ## Autorização por loja
 

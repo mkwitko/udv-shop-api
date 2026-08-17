@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { FastifyPluginAsync } from "fastify";
 import { db } from "../../../../infra/db/client.js";
 import { NotFoundError } from "../../../../shared/errors.js";
-import { requireStoreRole } from "../../../hooks/store-role.js";
+import { requireStoreRole, requireWritableStore } from "../../../hooks/store-role.js";
 import { createStoresRepository } from "../../stores/stores.repository.js";
 import {
   IMAGE_CONTENT_TYPES,
@@ -27,6 +27,7 @@ export const presignUploadRoute: FastifyPluginAsync = async (app) => {
       const store = await createStoresRepository(db).findBySlug(storeSlug);
       if (!store) throw new NotFoundError(`store ${storeSlug} not found`);
       requireStoreRole(req, store.id, "staff");
+      requireWritableStore(req, store);
       const ext = IMAGE_CONTENT_TYPES[contentType as keyof typeof IMAGE_CONTENT_TYPES];
       const key = `stores/${store.id}/products/${randomUUID()}.${ext}`;
       const uploadUrl = await app.gateways.r2.presignPut({ key, contentType });

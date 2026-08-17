@@ -106,4 +106,29 @@ describe("gestão de produtos", () => {
     expect(res.statusCode).toBe(403);
     expect(await db.product.count()).toBe(0);
   });
+
+  it("loja suspensa → criar produto 403", async () => {
+    const store = await db.store.create({ data: { slug: "nx", name: "NX", status: "suspended" } });
+    const token = await staffToken(app, "susp@example.org", store.id);
+    const res = await app.inject({
+      method: "POST",
+      url: "/stores/nx/products",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { name: "Xy", slug: "x-produto", priceCents: 100 },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(res.json().message).toBe("store_suspended");
+  });
+
+  it("loja pending → criar produto continua permitido (201)", async () => {
+    const store = await db.store.create({ data: { slug: "nx", name: "NX", status: "pending" } });
+    const token = await staffToken(app, "pend@example.org", store.id);
+    const res = await app.inject({
+      method: "POST",
+      url: "/stores/nx/products",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { name: "Xy", slug: "x-produto", priceCents: 100 },
+    });
+    expect(res.statusCode).toBe(201);
+  });
 });

@@ -86,4 +86,42 @@ describe("gestão de loja", () => {
     expect(ok.statusCode).toBe(200);
     expect(ok.json().status).toBe("active");
   });
+
+  it("loja suspensa → PATCH /stores/:slug 403 para admin", async () => {
+    const store = await db.store.create({ data: { slug: "nx", name: "NX", status: "suspended" } });
+    const admin = await member(app, "adm2@example.org", store.id, "admin");
+
+    const res = await app.inject({
+      method: "PATCH",
+      url: "/stores/nx",
+      headers: { authorization: `Bearer ${admin}` },
+      payload: { name: "Novo Nome" },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(res.json().message).toBe("store_suspended");
+  });
+
+  it("loja suspensa → platform_admin ainda pode reverter status", async () => {
+    await db.store.create({ data: { slug: "nx", name: "NX", status: "suspended" } });
+    await app.inject({
+      method: "POST",
+      url: "/auth/register",
+      payload: { name: "Plat", email: "plat@example.org", password: "senha-forte-123" },
+    });
+    await db.user.update({ where: { email: "plat@example.org" }, data: { platformAdmin: true } });
+    const reg = await app.inject({
+      method: "POST",
+      url: "/auth/login",
+      payload: { email: "plat@example.org", password: "senha-forte-123" },
+    });
+
+    const ok = await app.inject({
+      method: "PATCH",
+      url: "/stores/nx/status",
+      headers: { authorization: `Bearer ${reg.json().accessToken}` },
+      payload: { status: "active" },
+    });
+    expect(ok.statusCode).toBe(200);
+    expect(ok.json().status).toBe("active");
+  });
 });

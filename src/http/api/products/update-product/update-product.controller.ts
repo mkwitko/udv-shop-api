@@ -2,7 +2,7 @@ import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { db } from "../../../../infra/db/client.js";
 import { NotFoundError } from "../../../../shared/errors.js";
-import { requireStoreRole } from "../../../hooks/store-role.js";
+import { requireStoreRole, requireWritableStore } from "../../../hooks/store-role.js";
 import { createStoresRepository } from "../../stores/stores.repository.js";
 import { createProductsRepository, toProductResponse } from "../products.repository.js";
 import { ProductResponse, UpdateProductBody } from "../products.schema.js";
@@ -27,6 +27,7 @@ export const updateProductRoute: FastifyPluginAsync = async (app) => {
       const store = await createStoresRepository(db).findBySlug(slug);
       if (!store) throw new NotFoundError("store not found");
       requireStoreRole(req, store.id, "staff");
+      requireWritableStore(req, store);
       const repo = createProductsRepository(db);
       const product = await repo.findBySlug(store.id, productSlug);
       if (!product) throw new NotFoundError("product not found");
