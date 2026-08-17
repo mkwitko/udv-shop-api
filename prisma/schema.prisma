@@ -161,6 +161,7 @@ enum PaymentStatus {
   expired
   cancelled
   refunded
+  refund_pending
 }
 
 enum WebhookEventStatus {
@@ -171,6 +172,7 @@ enum WebhookEventStatus {
 
 enum OutboxStatus {
   pending
+  processing
   processed
   failed
 }
