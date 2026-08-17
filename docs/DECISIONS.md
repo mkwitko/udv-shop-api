@@ -256,3 +256,104 @@ durável mesmo se loja receber timeout (outbox retry a cada 10s por até 5
 tentativas); o custo é que histórico de encomendas anteriores do mesmo par se
 perde na reabertura — tradeoff aceito, pois clientes com necessidade de auditoria
 completa têm os `Order`.
+
+## ADR-015: pagamento é polimórfico e o roteamento decide o agregado antes de reivindicar
+
+**Contexto:** doações de campanhas, assim como pedidos, criam pagamentos que
+podem ser confirmados por webhook (Stripe ou Woovi). Diferentemente de pedidos,
+uma doação pode estar vinculada a uma subscrição mensal, que afeta como a
+cobrança é feita e como o webhook é processado.
+
+**Decisão:** ao processar webhook de pagamento confirmado, **não** usar
+`payment.orderId` ou similar para descobrir qual agregado (Order, Donation)
+reivindicou o pagamento. Em vez disso, roteador (`markPaid()`, `cancelPaid()`)
+examina campos do payload do webhook ou consulta a tabela `Payment` para
+descobrir o tipo de raiz (Order ou Donation) e chama o service apropriado
+(`markOrderPaid()` vs. `markDonationPaid()`). O service de cada agregado
+nunca compartilha repositório de pagamento — `webhook-processor` (que não
+conhece domínio de Order ou Donation) valida e persiste evento, e o roteador
+entrega a cada agregado pela chave correta.
+
+**Consequências:** webhook-processor é agnóstico (evita acoplamento). Cada
+agregado controla como seus pagamentos transitam (Order: `pending_payment → paid`;
+Donation: `pending_payment | pending_invoice → paid`). Bug evitado: versão
+anterior poderia marcar um payment de doação como pertencendo a um Order se
+IDs coincidissem ou lógica de discovery fosse ambígua — agora o roteamento é
+explícito e cada agregado valida o domínio.
+
+## ADR-016: doação mensal usa direct charge na conta conectada; doação única segue destination charge
+
+**Contexto:** Stripe Billing (para subscrições) exige que a conta conectada
+receba a cobrança diretamente (`direct charge`), com fee como percentual
+(`application_fee_percent`) da invoice. Doação única (checkout de uma vez) é
+cobrável via `destination charge` (fee lump-sum em `application_fee_amount`).
+
+**Decisão:** (1) `Donation` sem `subscriptionId` (única): usar `stripe.paymentIntents.create`
+com `transfer_data.destination = store.stripeAccountId` +
+`application_fee_amount`. (2) `Donation` com `subscriptionId` (mensal): usar
+Stripe Billing Subscription, invoice é criada na conta conectada, fee é
+`application_fee_percent` configurado globalmente. Webhook chega como
+`invoice.payment_succeeded` em conexão Connect.
+
+**Consequências:** (a) Doação mensal requer nova verificação de evento
+(`subscription_create`, `subscription_cycle`, `invoice.*` em domínio Connect).
+(b) Webhook é processado no endpoint `/webhooks/stripe` mas a validação de
+`stripe-account` header deve confirmar conta original (plataforma), não
+subconta. (c) Fee de doação mensal é percentual da invoice (ex.: 2%) vs.
+lump-sum de doação única (ex.: 100 centavos) — contabilidade deve separar
+as duas linhas. (d) Stripe Billing cria a invoice e agenda re-tentativas
+automaticamente; nós não controlamos isso (Stripe decide quantas vezes tenta,
+por quantos dias).
+
+## ADR-017: sorteio determinístico com seed publicada no draw
+
+**Contexto:** sorteio de prêmios de campanha exige auditabilidade — doador,
+loja e terceiros precisam conseguir verificar que o vencedor foi escolhido
+sem fraude. Uma opção é pré-gerar a seed; outra é gerá-la no momento do draw
+e publicá-la.
+
+**Decisão:** seed é gerada **no momento do draw**, nunca antes. Admin chama
+`POST /campaigns/:id/raffles/:raffleId/draw`, API sorteia UUID como seed,
+persiste em `RaffleResult` junto com `algorithm: "sha256-counter-v1"`,
+`drawnAt` e `winnerNumberGranted`. Auditor externo (incluindo doador) consegue
+validar recalculando `sha256(seed + ":" + [cada número da campanha])` e
+confirmando que o vencedor é o que a API reportou.
+
+**Consequências:** (a) Seed não é pré-persistido — impossível admin sortear,
+não gostar, sortear novamente sem deixar rastro. (b) Segurança criptográfica:
+usuário não consegue adivinhar seed antes da transação ser confirmada (256
+bits, infeasível em força bruta — pelo menos ~2^128 tentativas). (c)
+Transparência pública: loja fornece seed + lista de números para auditoria
+comunitária (similar a loterias blockchain, mas com garantia de plataforma).
+(d) **Risco jurídico** (§ 11 da spec): validação de conformidade regulatória
+(CVM, prêmios sujeitos a tributação/auditoria) precisa acontecer **antes** de
+ativar sorteio em produção — ADR apenas documenta como é implementado,
+não resolve conformidade.
+
+## ADR-018: identidade do doador é da gestão; vitrine pública só vê nome mascarado
+
+**Contexto:** leaderboard / vitrine de doadores (nomes e valores) é apelo de
+marketing de campanha (social proof). Porém, publicar nome completo + valor
+doado expõe identidade de pessoas que talvez prefira anonimato. Mesma questão
+para vencedor de sorteio.
+
+**Decisão:** toda rota pública que retorna identidade de doador (GET
+`/campaigns/:id/donations`, `POST .../draw/winner`) passa por
+`maskName(donorName)`: transforma `"João da Silva"` → `"J. Silva"` (inicial +
+sobrenome, sem números/CPF/dados financeiros). Donor anônimo (`anonymousName`)
+continua anônimo (`"Anônimo"`). **Vencedor é sempre mascarado**, mesmo que
+tenha doado como pessoa nomeada — evita que sortear "Vitória Silva" revele
+que ela tem interesse público em campanha de saúde/política/religião.
+
+Dados completos (`fullName`) ficam em `Admin` (owner/staff de loja, plataforma_admin):
+`GET /admin/campaigns/:id/donations?limit=100` devolve nomes completos em `admin`
+scope. Cliente (owner da doação) vê seu próprio nome completo em
+`GET /donations/mine`.
+
+**Consequências:** (a) Balanceamento de confiança: doador vê seu próprio nome
+inteiro (conforto de verificação); público vê máscara (privacidade). (b) Admin
+da loja consegue contato completo para agradecimento privado. (c) Tabelas de
+liderança / trending são honestas (nomes mascarados), evitando viés de nome
+real que prejudicaria anonimato. (d) Testes de vazamento (`no applicationFee*
+in response` etc) precisam cobrir também resposta de sorteio e vitrine de
+doadores.

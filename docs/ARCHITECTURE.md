@@ -240,6 +240,121 @@ Repository (`InterestsRepository`) expõe: `upsertOpen`, `listMineCursor`,
 - `product_interests(user_id, created_at DESC, id DESC)` — cursor lista pessoal.
 - `product_interests(product_id, user_id) UNIQUE` — garante uma linha por par.
 
+## Campanhas e doações
+
+Uma **campanha** (`Campaign`) é uma arrecadação de fundos para um objetivo
+específico de uma loja, com meta de valor total. Pagamentos de doações nascem
+com status `pending_payment` (checkout) ou `pending_invoice` (subscrição mensal),
+transitam para `paid` quando confirmados via webhook, ou para `cancelled` se
+expiram por TTL (30 minutos para pagamentos únicos, per-cycle para subscrições).
+
+Progresso da meta é calculado dinamicamente por `groupBy(paymentStatus)` no
+repository (nunca denormalizado na coluna) — suma de `amount` para status `paid`,
+sem contar tentativas falhadas. Visibilidade de campanha (quem consegue ler e
+fazer doação) é determinada pela regra em D10: cliente vê listagem pública se
+`campaign.visibleAt <= now` e `campaign.archivedAt` é nulo; owner e staff vêem
+suas próprias mesmo antes de `visibleAt`.
+
+Transições de `CampaignStatus`:
+```
+draft → active | archived
+active → paused | finished | archived
+paused → active | archived
+finished (terminal)
+archived (terminal)
+```
+
+A coluna `finishedAt` é definida quando a transição acontece (`active | paused → finished`);
+`finished` marca permanente na exibição pública (campanha já encerrada, sem novos
+donativos aceitos).
+
+## Doação mensal
+
+Uma **subscrição mensal** (`DonationSubscription`) é um agendamento de cobrança
+recorrente (mensal, ancorada no dia de criação) vinculado a uma campanha. Cada
+ciclo gera uma **doação filha** (`Donation`) com status `pending_invoice` e uma
+invoice criada no Stripe Billing ou manualmente rastreada.
+
+Diferença fundamental de agregado:
+- **Doação única** (`Donation` sem `subscriptionId`): usa `destination charge`
+  (fee é `application_fee_amount` lump-sum na transação).
+- **Doação mensal** (nascida de `DonationSubscription`): usa `direct charge` na
+  conta conectada (fee é `application_fee_percent` da invoice, pois Stripe Billing
+  exige; restrição de design em D3).
+
+Ciclo:
+1. `POST /campaigns/:id/subscriptions` cria `DonationSubscription` com `status:
+   subscription_created`, grava `anchorDate` (hoje) e `providerSubscriptionId`.
+2. No hook de `subscription_create` do Stripe Billing (webhook Connect), valida
+   idempotência por `providerInvoiceId` e marca `subscription_created → active`.
+3. A cada `subscription_cycle` (webhook Connect), cria `Donation` filha (`status:
+   pending_invoice`, `subscriptionId`, `providerInvoiceId`) e tenta `markPaid()`
+   se a invoice estiver `paid` já.
+4. Cancelamento via `DELETE /subscriptions/:id` marca `subscription_cancelled`;
+   nenhum `subscription_cycle` futuro nasce; doações já criadas continuam como estão.
+
+Eventos webhook chegam via POST `/webhooks/stripe` **Connect** — são eventos do
+tipo `billing.subscription.*` e `invoice.*`, que o processador roteia internamente
+(mesmo endpoint, verificação de `stripe-account` header).
+
+Woovi mensal (Pix recorrente) **fica fora do escopo até o Plano 6** (D4) —
+hoje só Stripe Billing é suportado. Risco de decisão de produto está registrado
+em ADR-017 (veja também § 11 da spec).
+
+## Sorteio
+
+Um **sorteio** (`Raffle`) é uma chance de ganhar um prêmio (ou múltiplos, até
+200) anexado a uma campanha. Participantes são doadores da campanha que pagaram
+(status `paid`), que automaticamente recebem **números de sorteio** concedidos no
+relay (worker `relayOutbox`) quando a doação é `paid`.
+
+Dois campos garantem idempotência e atomicidade:
+- `raffleGranted` (`Boolean`, default `false`) — marca que os números da doação
+  já foram gerados e inseridos em `RaffleEntry`.
+- `nextNumber` (global, tipo `Int`, default `1`, **nunca descresce**) — contador
+  de números já alocados; sempre incrementa, mesmo se uma geração falha e precisa
+  retry (garante sem gaps).
+
+Quando doação é marcada `paid` no relay:
+1. Carrega a doação; se `raffleGranted = true`, retorna (idempotência).
+2. Lê o campo global `nextNumber` da campanha via `SELECT ... FOR UPDATE`.
+3. Calcula `count = sum(qty)` de todos os prêmios da campanha.
+4. Para cada número `[nextNumber, nextNumber + count - 1]`, cria um `RaffleEntry`
+   vinculando `(donationId, raffleId, numberGranted)`.
+5. Atualiza `nextNumber += count` e seta `raffleGranted = true` na mesma transação.
+
+**Algoritmo de sorteio:** `sha256-counter-v1` é um gerador de números
+determinístico e auditável. Seeded uma única vez na execução do `draw` (não
+antes):
+1. Admin da campanha chama `POST /campaigns/:id/raffles/:raffleId/draw`.
+2. Sorteia um `seed` (UUID gerado in-loco, nunca pré-persistido) — este é o
+   ponto de confiança.
+3. Calcula `sha256(seed + ":" + counter)` para cada número do sorteio,
+   ordena ascendente de hash, escolhe o primeiro (número vencedor).
+4. Persiste o resultado em `RaffleResult` com `seed` gravado, `algorithm:
+   "sha256-counter-v1"` e `drawnAt`.
+
+Auditor externo consegue:
+- Ler `RaffleResult.seed`.
+- Coletar participantes válidos (doações `paid`, com `raffleGranted = true`).
+- Recalcular `sha256(seed + ":" + [cada número])`, reordenar, confirmar vencedor.
+
+Semelhante a loterias públicas em blockchain — o operador publica a seed *depois*
+de a transação estar selada (neste caso, API persiste).
+
+A seed não pode existir antes do draw (D7) porque:
+1. Permitir pré-geração deixaria brechas (admin sorteia, não gosta, sorteia
+   novamente com seed diferente — fraude).
+2. Usuário não consegue "adivinhar" seed antes da transação ser confirmada
+   (criptograficamente infeasível em 256 bits).
+
+**Mascaramento de identidade (D11):** rotas públicas de visualização
+(`GET /raffles/:id/participants`) devolvem `toRaffleResponse()`, que mascara
+nome do doador: `"João da Silva"` vira `"J. Silva"` (inicial do primeiro + sobrenome
+completo, sem números de CPF ou dados financeiros). Vencedor também é mascarado
+mesmo em doação nomeada (mostro `"J. Silva"` ganhou, não `"João Felipe da Silva"`)
+— risco jurídico de doador ter identidade exposição. Anônimo continua anônimo.
+
 ## Webhooks
 
 Integração com Stripe e Woovi por webhooks idempotentes. Ambas as rotas são
@@ -348,14 +463,19 @@ dependem da claim atômica do outbox abaixo.
   parcial (`createdAt` empatado pode fazer as janelas de 50 linhas de duas
   instâncias divergirem) uma releitura sem o token pegaria linhas que a *outra*
   instância acabou de reivindicar e reenviaria o email dela — o próprio bug que
-  a claim existe para evitar. Processa (`order.paid` dispara email;
-  `payment.orphaned` só loga erro, sem email — é alerta operacional), marca
-  `processed` e limpa `claimedBy`/`claimedAt`. Falhas voltam o evento para
-  `pending` e incrementam `attempts` (claim preservada até o próximo ciclo de
-  reivindicação, que a sobrescreve); após 5 tentativas, marca `failed`
-  (terminal) e também limpa `claimedBy`/`claimedAt`.
+  a claim existe para evitar. Processa (`order.paid` dispara email; `donation.paid`
+  gera números de sorteio; `payment.orphaned` e `subscription.cycle` só logam erro,
+  sem email — são alertas operacionais), marca `processed` e limpa `claimedBy`/`claimedAt`.
+  Falhas voltam o evento para `pending` e incrementam `attempts` (claim preservada
+  até o próximo ciclo de reivindicação, que a sobrescreve); após 5 tentativas,
+  marca `failed` (terminal) e também limpa `claimedBy`/`claimedAt`.
 - **`processWebhookEvents()`** — a cada 15s, reprocessa eventos webhook com
   status `received` (recovery de crashes entre persistir e processar).
+- **`doacoes`** — ciclo de processamento de doações mensais (webhooks
+  `subscription_cycle` do Stripe Billing): a cada intervalo configurável (ex.:
+  60s), lê eventos pendentes de `subscription_cycle`, cria doações filhas e
+  tenta marcá-las `paid` se invoice já estiver confirmada (idempotência por
+  `providerInvoiceId`).
 
 Funções de tick são puras (testáveis sem `vi.useFakeTimers`); `setInterval`
 fica só em `src/workers/index.ts` no `startWorkers()`. Testes chamam as funções
@@ -385,6 +505,14 @@ Qualquer outra transição é rejeitada com erro 409 `invalid_status_transition`
 - **Outbox** (já implementado neste plano como exemplo): eventos de domínio
   (ex.: "pedido pago" disparando emails) usam tabela outbox + processamento
   assíncrono via worker, não side-effect síncrono dentro do service de escrita.
+- **Reembolso de doação** — análogo a reembolso de pedido: cliente pode pedir
+  reembolso de doação única; subscrição mensal pode ser cancelada (futuras
+  cobranças não acontecem, mas já pagas não são reembolsadas automaticamente).
+  Rota `/donations/:id/refund` fica para Plano 6, junto com fluxo de conformidade
+  (auditoria de doador, prevenção de fraude).
+- **Woovi mensal (Pix recorrente)** — integração com `subscription`-like da Woovi
+  ainda não existe naquele SaaS (status em fevereiro de 2026). Agendado para
+  Plano 6 junto com revisão de risco jurídico em § 11 da spec.
 
 ## Testes
 
