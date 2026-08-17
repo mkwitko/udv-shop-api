@@ -6,6 +6,7 @@ import { serializerCompiler, validatorCompiler } from "fastify-type-provider-zod
 import { env } from "./config/env.js";
 import { httpRoutes } from "./http/index.js";
 import { errorHandlerPlugin } from "./http/plugins/error-handler.js";
+import { gatewaysPlugin } from "./http/plugins/gateways-plugin.js";
 import { rateLimitPlugin } from "./http/plugins/rate-limit.js";
 import { swaggerPlugin } from "./http/plugins/swagger.js";
 import { logger } from "./infra/observability/logger.js";
@@ -32,6 +33,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
   });
   await app.register(errorHandlerPlugin);
   if (opts.rateLimit ?? env.NODE_ENV !== "test") await app.register(rateLimitPlugin);
+  await app.register(gatewaysPlugin, { gateways: opts.gateways });
   await app.register(swaggerPlugin);
   await app.register(httpRoutes);
 
