@@ -37,6 +37,7 @@
     "jose": "^6.2.9",
     "pino": "^10.3.1",
     "resend": "^6.20.0",
+    "stripe": "^22.5.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {

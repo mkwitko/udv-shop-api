@@ -9,6 +9,8 @@ describe("gateways plugin", () => {
     await app.ready();
     await app.gateways.email.send({ to: "a@b.c", subject: "oi", html: "<p>oi</p>" });
     expect(fakes.sentEmails).toHaveLength(1);
+    expect(app.gateways.stripe).toBeDefined();
+    expect(app.gateways.woovi).toBeDefined();
     await app.close();
   });
 });

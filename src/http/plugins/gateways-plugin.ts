@@ -4,6 +4,8 @@ import { env } from "../../config/env.js";
 import { createEmailGateway } from "../../gateways/email/email.gateway.js";
 import { createGoogleGateway } from "../../gateways/google/google.gateway.js";
 import { createR2Gateway } from "../../gateways/r2/r2.gateway.js";
+import { createStripeGateway } from "../../gateways/stripe/stripe.gateway.js";
+import { createWooviGateway } from "../../gateways/woovi/woovi.gateway.js";
 import type { Gateways } from "../../types/fastify.js";
 
 export function buildDefaultGateways(): Gateways {
@@ -20,6 +22,14 @@ export function buildDefaultGateways(): Gateways {
       secretAccessKey: env.R2_SECRET_ACCESS_KEY,
       bucket: env.R2_BUCKET,
       publicBaseUrl: env.R2_PUBLIC_BASE_URL,
+    }),
+    stripe: createStripeGateway({
+      secretKey: env.STRIPE_SECRET_KEY,
+      webhookSecret: env.STRIPE_WEBHOOK_SECRET,
+    }),
+    woovi: createWooviGateway({
+      apiKey: env.WOOVI_API_KEY,
+      webhookHmacSecret: env.WOOVI_WEBHOOK_HMAC_SECRET,
     }),
   };
 }

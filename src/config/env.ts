@@ -25,6 +25,10 @@ const BaseEnvSchema = z.object({
   R2_SECRET_ACCESS_KEY: z.string().default(""),
   R2_BUCKET: z.string().default(""),
   R2_PUBLIC_BASE_URL: z.string().default(""),
+  STRIPE_SECRET_KEY: z.string().default(""),
+  STRIPE_WEBHOOK_SECRET: z.string().default(""),
+  WOOVI_API_KEY: z.string().default(""),
+  WOOVI_WEBHOOK_HMAC_SECRET: z.string().default(""),
 });
 
 export const EnvSchema = BaseEnvSchema.superRefine((val, ctx) => {
@@ -40,6 +44,10 @@ export const EnvSchema = BaseEnvSchema.superRefine((val, ctx) => {
     "R2_SECRET_ACCESS_KEY",
     "R2_BUCKET",
     "R2_PUBLIC_BASE_URL",
+    "STRIPE_SECRET_KEY",
+    "STRIPE_WEBHOOK_SECRET",
+    "WOOVI_API_KEY",
+    "WOOVI_WEBHOOK_HMAC_SECRET",
   ] as const;
   for (const key of requiredNonEmpty) {
     if (val[key].length === 0) {

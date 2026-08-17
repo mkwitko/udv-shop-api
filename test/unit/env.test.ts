@@ -17,6 +17,10 @@ const base = {
   R2_SECRET_ACCESS_KEY: "secret",
   R2_BUCKET: "bucket",
   R2_PUBLIC_BASE_URL: "https://cdn.example.org",
+  STRIPE_SECRET_KEY: "sk_live_key",
+  STRIPE_WEBHOOK_SECRET: "whsec_key",
+  WOOVI_API_KEY: "woovi_key",
+  WOOVI_WEBHOOK_HMAC_SECRET: "woovi_hmac_secret",
 };
 
 describe("env schema — production strictness", () => {
