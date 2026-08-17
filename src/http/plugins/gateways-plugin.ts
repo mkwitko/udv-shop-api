@@ -26,6 +26,7 @@ export function buildDefaultGateways(): Gateways {
     stripe: createStripeGateway({
       secretKey: env.STRIPE_SECRET_KEY,
       webhookSecret: env.STRIPE_WEBHOOK_SECRET,
+      connectCountry: env.STRIPE_CONNECT_COUNTRY,
     }),
     woovi: createWooviGateway({
       apiKey: env.WOOVI_API_KEY,

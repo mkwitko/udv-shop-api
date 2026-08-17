@@ -4,6 +4,10 @@ import { badGateway } from "../../shared/errors.js";
 export type StripeWebhookEvent = {
   id: string;
   type: string;
+  // Presente só quando o evento nasce numa conta conectada. É o que separa a cobrança
+  // do núcleo (Connect) da assinatura SaaS da plataforma, que compartilham tipos de
+  // evento como customer.subscription.deleted — ver ADR-021.
+  account?: string;
   data: { object: Record<string, unknown> };
 };
 
@@ -25,6 +29,21 @@ export type CreateDonationSubscriptionInput = {
   metadata: Record<string, string>;
 };
 
+export type ConnectedAccountStatus = {
+  chargesEnabled: boolean;
+  payoutsEnabled: boolean;
+  detailsSubmitted: boolean;
+};
+
+export type CreateSaasCheckoutInput = {
+  priceId: string;
+  customerId: string | null;
+  customerEmail: string;
+  storeId: string;
+  successUrl: string;
+  cancelUrl: string;
+};
+
 export interface StripeGateway {
   createPaymentIntent(
     input: CreatePaymentIntentInput,
@@ -34,12 +53,27 @@ export interface StripeGateway {
     input: CreateDonationSubscriptionInput,
   ): Promise<{ subscriptionId: string; clientSecret: string }>;
   cancelSubscription(subscriptionId: string, connectedAccountId: string): Promise<void>;
+  createConnectedAccount(input: { email: string; storeName: string }): Promise<{ accountId: string }>;
+  createAccountLink(input: {
+    accountId: string;
+    refreshUrl: string;
+    returnUrl: string;
+  }): Promise<{ url: string }>;
+  retrieveAccountStatus(accountId: string): Promise<ConnectedAccountStatus>;
+  createSaasCheckoutSession(
+    input: CreateSaasCheckoutInput,
+  ): Promise<{ url: string; sessionId: string }>;
+  createBillingPortalSession(input: {
+    customerId: string;
+    returnUrl: string;
+  }): Promise<{ url: string }>;
   verifyWebhook(rawBody: Buffer, signature: string): StripeWebhookEvent;
 }
 
 export function createStripeGateway(cfg: {
   secretKey: string;
   webhookSecret: string;
+  connectCountry?: string;
 }): StripeGateway {
   let client: Stripe | null = null;
   const stripe = () => {
@@ -123,6 +157,84 @@ export function createStripeGateway(cfg: {
           {},
           { stripeAccount: connectedAccountId },
         );
+      } catch (err) {
+        throw badGateway("payment_provider_error", err);
+      }
+    },
+    async createConnectedAccount(input) {
+      try {
+        // Standard: o núcleo tem dashboard próprio e é dono da relação com o Stripe
+        // (obrigações fiscais, disputas). A plataforma só cobra application_fee — ver ADR-020.
+        const account = await stripe().accounts.create({
+          type: "standard",
+          country: cfg.connectCountry ?? "BR",
+          email: input.email,
+          business_profile: { name: input.storeName },
+        });
+        return { accountId: account.id };
+      } catch (err) {
+        throw badGateway("payment_provider_error", err);
+      }
+    },
+    async createAccountLink(input) {
+      try {
+        // O link expira em minutos e é de uso único: por isso a rota o gera a cada
+        // chamada em vez de guardar a URL.
+        const link = await stripe().accountLinks.create({
+          account: input.accountId,
+          refresh_url: input.refreshUrl,
+          return_url: input.returnUrl,
+          type: "account_onboarding",
+        });
+        return { url: link.url };
+      } catch (err) {
+        throw badGateway("payment_provider_error", err);
+      }
+    },
+    async retrieveAccountStatus(accountId) {
+      try {
+        const account = await stripe().accounts.retrieve(accountId);
+        return {
+          chargesEnabled: account.charges_enabled === true,
+          payoutsEnabled: account.payouts_enabled === true,
+          detailsSubmitted: account.details_submitted === true,
+        };
+      } catch (err) {
+        throw badGateway("payment_provider_error", err);
+      }
+    },
+    async createSaasCheckoutSession(input) {
+      try {
+        // Sem `stripeAccount`: a assinatura SaaS é receita da plataforma, cobrada na
+        // conta da plataforma. Nada aqui passa por Connect.
+        const session = await stripe().checkout.sessions.create({
+          mode: "subscription",
+          line_items: [{ price: input.priceId, quantity: 1 }],
+          ...(input.customerId
+            ? { customer: input.customerId }
+            : { customer_email: input.customerEmail }),
+          success_url: input.successUrl,
+          cancel_url: input.cancelUrl,
+          client_reference_id: input.storeId,
+          // A partir de Basil o Checkout só cria a Subscription depois do pagamento, então
+          // os eventos de subscription chegam sem passar pela sessão: a metadata precisa
+          // viajar nos dois objetos para o webhook saber de que loja se trata.
+          metadata: { storeId: input.storeId },
+          subscription_data: { metadata: { storeId: input.storeId } },
+        });
+        if (!session.url) throw new Error("stripe_missing_checkout_url");
+        return { url: session.url, sessionId: session.id };
+      } catch (err) {
+        throw badGateway("payment_provider_error", err);
+      }
+    },
+    async createBillingPortalSession(input) {
+      try {
+        const session = await stripe().billingPortal.sessions.create({
+          customer: input.customerId,
+          return_url: input.returnUrl,
+        });
+        return { url: session.url };
       } catch (err) {
         throw badGateway("payment_provider_error", err);
       }

@@ -10,7 +10,10 @@ export type CreateChargeInput = {
   comment: string;
 };
 
+export type CreateSubAccountInput = { name: string; pixKey: string };
+
 export interface WooviGateway {
+  createSubAccount(input: CreateSubAccountInput): Promise<{ subAccountId: string }>;
   createCharge(input: CreateChargeInput): Promise<{
     providerId: string;
     brCode: string;
@@ -44,6 +47,17 @@ export function createWooviGateway(cfg: {
   }
 
   return {
+    async createSubAccount(input) {
+      // A subconta é identificada pela própria chave Pix — é ela que volta em
+      // `splits[].pixKey` na cobrança com SPLIT_SUB_ACCOUNT. O id devolvido pela Woovi
+      // é lido de forma defensiva porque o formato da resposta ainda não foi verificado
+      // contra a conta real (risco registrado na spec §11); o fallback é a chave.
+      const data = (await post("/api/v1/subaccount", {
+        name: input.name,
+        pixKey: input.pixKey,
+      })) as { subAccount?: { id?: string; pixKey?: string } };
+      return { subAccountId: data.subAccount?.id ?? data.subAccount?.pixKey ?? input.pixKey };
+    },
     async createCharge(input) {
       const data = (await post("/api/v1/charge", {
         value: input.amountCents,

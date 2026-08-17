@@ -73,6 +73,16 @@ enum StoreStatus {
   suspended
 }
 
+/// Espelha os status de Subscription do Stripe que nos interessam. `incomplete` é o
+/// estado entre o checkout iniciado e o primeiro pagamento confirmado.
+enum StoreSubscriptionStatus {
+  incomplete
+  trialing
+  active
+  past_due
+  canceled
+}
+
 enum StoreRole {
   owner
   admin
@@ -100,19 +110,47 @@ model Store {
   status            StoreStatus @default(pending)
   isPlatformOwner   Boolean     @default(false) @map("is_platform_owner")
   applicationFeeBps Int         @default(500) @map("application_fee_bps")
-  stripeAccountId   String?     @map("stripe_account_id")
+  stripeAccountId   String?     @unique @map("stripe_account_id")
   wooviPixKey       String?     @map("woovi_pix_key")
   createdAt         DateTime    @default(now()) @map("created_at")
   updatedAt         DateTime    @updatedAt @map("updated_at")
 
-  roles     UserStoreRole[]
-  products  Product[]
-  orders    Order[]
-  campaigns Campaign[]
-  donations Donation[]
+  // Capacidades da conta conectada, espelhadas do webhook account.updated. Onboarding
+  // iniciado não é onboarding concluído: só com chargesEnabled a loja pode cobrar.
+  stripeChargesEnabled   Boolean @default(false) @map("stripe_charges_enabled")
+  stripePayoutsEnabled   Boolean @default(false) @map("stripe_payouts_enabled")
+  stripeDetailsSubmitted Boolean @default(false) @map("stripe_details_submitted")
+  wooviSubaccountId      String? @map("woovi_subaccount_id")
+
+  roles        UserStoreRole[]
+  products     Product[]
+  orders       Order[]
+  campaigns    Campaign[]
+  donations    Donation[]
+  subscription StoreSubscription?
 
   @@index([status, createdAt(sort: Desc), id(sort: Desc)])
   @@map("stores")
+}
+
+/// Assinatura SaaS do núcleo, cobrada na conta da PLATAFORMA (não é Connect: ver ADR-019).
+/// Uma por loja — o `@unique` em storeId é o que impede dois checkouts concorrentes
+/// virarem duas assinaturas cobradas.
+model StoreSubscription {
+  id                   String                  @id @default(uuid()) @db.Uuid
+  storeId              String                  @unique @map("store_id") @db.Uuid
+  stripeCustomerId     String                  @map("stripe_customer_id")
+  stripeSubscriptionId String?                 @unique @map("stripe_subscription_id")
+  priceId              String?                 @map("price_id")
+  status               StoreSubscriptionStatus @default(incomplete)
+  currentPeriodEnd     DateTime?               @map("current_period_end")
+  cancelAtPeriodEnd    Boolean                 @default(false) @map("cancel_at_period_end")
+  createdAt            DateTime                @default(now()) @map("created_at")
+  updatedAt            DateTime                @updatedAt @map("updated_at")
+
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@map("store_subscriptions")
 }
 
 model UserStoreRole {

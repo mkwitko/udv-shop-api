@@ -1,9 +1,14 @@
 import type { GoogleProfile } from "../../src/gateways/google/google.gateway.js";
 import type {
+  ConnectedAccountStatus,
   CreateDonationSubscriptionInput,
   CreatePaymentIntentInput,
+  CreateSaasCheckoutInput,
 } from "../../src/gateways/stripe/stripe.gateway.js";
-import type { CreateChargeInput } from "../../src/gateways/woovi/woovi.gateway.js";
+import type {
+  CreateChargeInput,
+  CreateSubAccountInput,
+} from "../../src/gateways/woovi/woovi.gateway.js";
 import type { Gateways } from "../../src/types/fastify.js";
 
 export type FakeGateways = Gateways & {
@@ -13,6 +18,12 @@ export type FakeGateways = Gateways & {
   stripeRefunds: string[];
   stripeSubscriptions: CreateDonationSubscriptionInput[];
   stripeCancelledSubscriptions: string[];
+  stripeConnectedAccounts: Array<{ email: string; storeName: string }>;
+  stripeAccountLinks: Array<{ accountId: string; refreshUrl: string; returnUrl: string }>;
+  stripeAccountStatus: ConnectedAccountStatus;
+  stripeSaasCheckouts: CreateSaasCheckoutInput[];
+  stripePortalSessions: Array<{ customerId: string; returnUrl: string }>;
+  wooviSubAccounts: CreateSubAccountInput[];
   wooviCharges: CreateChargeInput[];
   wooviRefunds: Array<{ chargeCorrelationID: string; refundCorrelationID: string }>;
 };
@@ -29,6 +40,16 @@ export function buildFakeGateways(overrides: Partial<Gateways> = {}): FakeGatewa
   const stripeRefunds: string[] = [];
   const stripeSubscriptions: FakeGateways["stripeSubscriptions"] = [];
   const stripeCancelledSubscriptions: string[] = [];
+  const stripeConnectedAccounts: FakeGateways["stripeConnectedAccounts"] = [];
+  const stripeAccountLinks: FakeGateways["stripeAccountLinks"] = [];
+  const stripeAccountStatus: ConnectedAccountStatus = {
+    chargesEnabled: false,
+    payoutsEnabled: false,
+    detailsSubmitted: false,
+  };
+  const stripeSaasCheckouts: FakeGateways["stripeSaasCheckouts"] = [];
+  const stripePortalSessions: FakeGateways["stripePortalSessions"] = [];
+  const wooviSubAccounts: FakeGateways["wooviSubAccounts"] = [];
   const wooviCharges: FakeGateways["wooviCharges"] = [];
   const wooviRefunds: FakeGateways["wooviRefunds"] = [];
   return {
@@ -38,6 +59,12 @@ export function buildFakeGateways(overrides: Partial<Gateways> = {}): FakeGatewa
     stripeRefunds,
     stripeSubscriptions,
     stripeCancelledSubscriptions,
+    stripeConnectedAccounts,
+    stripeAccountLinks,
+    stripeAccountStatus,
+    stripeSaasCheckouts,
+    stripePortalSessions,
+    wooviSubAccounts,
     wooviCharges,
     wooviRefunds,
     email: overrides.email ?? {
@@ -74,12 +101,38 @@ export function buildFakeGateways(overrides: Partial<Gateways> = {}): FakeGatewa
       async cancelSubscription(subscriptionId, _connectedAccountId) {
         stripeCancelledSubscriptions.push(subscriptionId);
       },
+      async createConnectedAccount(input) {
+        stripeConnectedAccounts.push(input);
+        return { accountId: `acct_fake_${stripeConnectedAccounts.length}` };
+      },
+      async createAccountLink(input) {
+        stripeAccountLinks.push(input);
+        return { url: `https://connect.fake/onboard/${input.accountId}` };
+      },
+      async retrieveAccountStatus(_accountId) {
+        return stripeAccountStatus;
+      },
+      async createSaasCheckoutSession(input) {
+        stripeSaasCheckouts.push(input);
+        return {
+          url: `https://checkout.fake/${stripeSaasCheckouts.length}`,
+          sessionId: `cs_fake_${stripeSaasCheckouts.length}`,
+        };
+      },
+      async createBillingPortalSession(input) {
+        stripePortalSessions.push(input);
+        return { url: `https://portal.fake/${input.customerId}` };
+      },
       verifyWebhook(rawBody, signature) {
         if (signature === "invalid") throw new Error("invalid_signature");
         return JSON.parse(rawBody.toString("utf8"));
       },
     },
     woovi: overrides.woovi ?? {
+      async createSubAccount(input) {
+        wooviSubAccounts.push(input);
+        return { subAccountId: `woovi_sub_${wooviSubAccounts.length}` };
+      },
       async createCharge(input) {
         wooviCharges.push(input);
         return {

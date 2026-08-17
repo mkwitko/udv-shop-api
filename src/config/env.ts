@@ -27,6 +27,10 @@ const BaseEnvSchema = z.object({
   R2_PUBLIC_BASE_URL: z.string().default(""),
   STRIPE_SECRET_KEY: z.string().default(""),
   STRIPE_WEBHOOK_SECRET: z.string().default(""),
+  // Price recorrente da assinatura SaaS, na conta da PLATAFORMA (não é Connect).
+  STRIPE_SAAS_PRICE_ID: z.string().default(""),
+  // País da conta conectada criada no onboarding — Connect exige no create.
+  STRIPE_CONNECT_COUNTRY: z.string().length(2).default("BR"),
   WOOVI_API_KEY: z.string().default(""),
   WOOVI_WEBHOOK_HMAC_SECRET: z.string().default(""),
 });
@@ -46,6 +50,7 @@ export const EnvSchema = BaseEnvSchema.superRefine((val, ctx) => {
     "R2_PUBLIC_BASE_URL",
     "STRIPE_SECRET_KEY",
     "STRIPE_WEBHOOK_SECRET",
+    "STRIPE_SAAS_PRICE_ID",
     "WOOVI_API_KEY",
     "WOOVI_WEBHOOK_HMAC_SECRET",
   ] as const;
