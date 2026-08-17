@@ -169,6 +169,25 @@ describe("gestão de pedidos", () => {
     expect(fresh.status).toBe("paid");
   });
 
+  it("dois reembolsos consecutivos → segundo 409 e gateway chamado uma vez só", async () => {
+    const { store, order } = await seed("paid");
+    const admin = await staffToken(app, "s6b@example.org", store.id, "admin");
+    const callsBefore = gateways.stripeRefunds.length;
+    const refund = () =>
+      app.inject({
+        method: "POST",
+        url: `/stores/nucleo-a/orders/${order.id}/refund`,
+        headers: { authorization: `Bearer ${admin}` },
+      });
+    const first = await refund();
+    expect(first.statusCode).toBe(202);
+    const second = await refund();
+    expect(second.statusCode).toBe(409);
+    expect(gateways.stripeRefunds.length - callsBefore).toBe(1);
+    const payment = await db.payment.findFirstOrThrow({ where: { orderId: order.id } });
+    expect(payment.status).toBe("refund_pending");
+  });
+
   it("reembolso de pedido pending_payment → 409", async () => {
     const { store, order } = await seed("pending_payment");
     const admin = await staffToken(app, "s7@example.org", store.id, "admin");
