@@ -60,3 +60,17 @@ export const OrdersListQuery = z.object({
   limit: z.coerce.number().int().min(1).max(50).default(20),
   cursor: z.string().optional(),
 });
+
+export const StoreOrdersQuery = z.object({
+  limit: z.coerce.number().int().min(1).max(50).default(20),
+  cursor: z.string().optional(),
+  status: z
+    .enum(["pending_payment", "paid", "delivery_arranged", "delivered", "cancelled", "refunded"])
+    .optional(),
+});
+
+export const UpdateOrderStatusBody = z.object({
+  status: z.enum(["delivery_arranged", "delivered"]),
+});
+
+export const RefundAcceptedResponse = z.object({ status: z.literal("refund_requested") });
