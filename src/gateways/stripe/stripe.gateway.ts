@@ -1,4 +1,5 @@
 import Stripe from "stripe";
+import { badGateway } from "../../shared/errors.js";
 
 export type StripeWebhookEvent = {
   id: string;
@@ -28,7 +29,10 @@ export function createStripeGateway(cfg: {
 }): StripeGateway {
   let client: Stripe | null = null;
   const stripe = () => {
-    client ??= new Stripe(cfg.secretKey);
+    // Pinned explicitly: an unpinned client tracks the SDK's default version across
+    // dependency upgrades, and the webhook payload shapes this file destructures
+    // (data.object.metadata, data.object.payment_intent) are version-dependent.
+    client ??= new Stripe(cfg.secretKey, { apiVersion: "2026-07-29.dahlia" });
     return client;
   };
   return {
@@ -45,7 +49,11 @@ export function createStripeGateway(cfg: {
       return { providerId: intent.id, clientSecret: intent.client_secret };
     },
     async refundPaymentIntent(providerId) {
-      await stripe().refunds.create({ payment_intent: providerId });
+      try {
+        await stripe().refunds.create({ payment_intent: providerId });
+      } catch (err) {
+        throw badGateway("payment_provider_error", err);
+      }
     },
     verifyWebhook(rawBody, signature) {
       const event = stripe().webhooks.constructEvent(rawBody, signature, cfg.webhookSecret);

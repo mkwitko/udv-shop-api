@@ -9,10 +9,24 @@ export async function relayOutbox(deps: {
   email: EmailGateway;
   log: FastifyBaseLogger;
 }): Promise<number> {
-  const events = await deps.db.outboxEvent.findMany({
+  const candidates = await deps.db.outboxEvent.findMany({
     where: { status: "pending" },
     orderBy: { createdAt: "asc" },
     take: 50,
+    select: { id: true },
+  });
+  if (candidates.length === 0) return 0;
+  const ids = candidates.map((c) => c.id);
+  // Claim atomically before doing work: an overlapping tick (slow tick past its interval,
+  // or a second app instance) re-reading "pending" would otherwise re-send the same email.
+  const claimed = await deps.db.outboxEvent.updateMany({
+    where: { id: { in: ids }, status: "pending" },
+    data: { status: "processing" },
+  });
+  if (claimed.count === 0) return 0;
+  const events = await deps.db.outboxEvent.findMany({
+    where: { id: { in: ids }, status: "processing" },
+    orderBy: { createdAt: "asc" },
   });
   let processed = 0;
   for (const event of events) {
@@ -33,6 +47,15 @@ export async function relayOutbox(deps: {
             html: `<p>Olá, ${order.user.name}!</p><p>Recebemos o pagamento do seu pedido na loja ${order.store.name}. A equipe do núcleo vai entrar em contato pelo telefone informado para combinar a entrega.</p><ul>${lines}</ul><p>Total: R$ ${(order.totalCents / 100).toFixed(2)}</p><p>Obrigado por apoiar o núcleo!</p>`,
           });
         }
+      } else if (event.type === "payment.orphaned") {
+        // Money captured for an order that is no longer pending. No email — this is an
+        // operator alert, not a customer-facing message. Durable + queryable via this row;
+        // logging here just surfaces it in real time too.
+        const { orderId, paymentId } = event.payload as { orderId: string; paymentId: string };
+        deps.log.error(
+          { orderId, paymentId },
+          "pagamento órfão: pagamento capturado para pedido não pendente, reembolso manual necessário",
+        );
       }
       await deps.db.outboxEvent.update({
         where: { id: event.id },
@@ -44,7 +67,7 @@ export async function relayOutbox(deps: {
       const attempts = event.attempts + 1;
       await deps.db.outboxEvent.update({
         where: { id: event.id },
-        data: { attempts, ...(attempts >= MAX_ATTEMPTS && { status: "failed" }) },
+        data: { attempts, status: attempts >= MAX_ATTEMPTS ? "failed" : "pending" },
       });
     }
   }

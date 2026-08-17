@@ -29,13 +29,13 @@ export const wooviWebhookRoute: FastifyPluginAsync = async (app) => {
       };
       const type = payload.event ?? "unknown";
       const correlationID = payload.charge?.correlationID ?? "none";
-      const isNew = await storeWebhookEvent(db, {
+      const stored = await storeWebhookEvent(db, {
         provider: "woovi",
         eventId: `${type}:${correlationID}`,
         type,
         payload: JSON.parse(raw.toString("utf8")),
       });
-      if (isNew) await processWebhookEvents({ db, log: req.log });
+      if (stored) await processWebhookEvents({ db, log: req.log, eventId: stored.id });
       return reply.send({ received: true });
     },
   );

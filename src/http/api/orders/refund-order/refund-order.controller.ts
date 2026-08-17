@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { db } from "../../../../infra/db/client.js";
@@ -31,14 +30,28 @@ export const refundOrderRoute: FastifyPluginAsync = async (app) => {
       if (!payment || payment.status !== "succeeded") {
         throw new ConflictError("payment_not_refundable");
       }
-      if (payment.provider === "stripe") {
-        if (!payment.providerId) throw new ConflictError("payment_not_refundable");
-        await app.gateways.stripe.refundPaymentIntent(payment.providerId);
-      } else {
-        await app.gateways.woovi.refundCharge({
-          chargeCorrelationID: payment.id,
-          refundCorrelationID: randomUUID(),
-        });
+      if (payment.provider === "stripe" && !payment.providerId) {
+        throw new ConflictError("payment_not_refundable");
+      }
+      // Claim atomically before calling the gateway: the payment only flips to "refunded"
+      // once the provider's webhook confirms it (seconds to minutes later), so without this
+      // claim every retry in that window would hit the gateway again (duplicate money out).
+      const claimed = await repo.claimRefund(payment.id);
+      if (!claimed) throw new ConflictError("refund_already_requested");
+      try {
+        if (payment.provider === "stripe") {
+          await app.gateways.stripe.refundPaymentIntent(payment.providerId as string);
+        } else {
+          await app.gateways.woovi.refundCharge({
+            chargeCorrelationID: payment.id,
+            // Deterministic: this is Woovi's idempotency key, a fresh UUID per request
+            // would make every retry a distinct refund.
+            refundCorrelationID: `refund-${payment.id}`,
+          });
+        }
+      } catch (err) {
+        await repo.releaseRefundClaim(payment.id);
+        throw err;
       }
       void reply.code(202).send({ status: "refund_requested" });
     },

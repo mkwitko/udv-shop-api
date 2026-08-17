@@ -8,12 +8,12 @@ export async function storeWebhookEvent(
     type: string;
     payload: Prisma.InputJsonValue;
   },
-): Promise<boolean> {
+): Promise<{ id: string } | null> {
   try {
-    await db.webhookEvent.create({ data: input });
-    return true;
+    const event = await db.webhookEvent.create({ data: input });
+    return { id: event.id };
   } catch (err) {
-    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") return false;
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") return null;
     throw err;
   }
 }

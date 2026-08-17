@@ -26,13 +26,13 @@ export const stripeWebhookRoute: FastifyPluginAsync = async (app) => {
       } catch {
         throw new UnauthorizedError("invalid_signature");
       }
-      const isNew = await storeWebhookEvent(db, {
+      const stored = await storeWebhookEvent(db, {
         provider: "stripe",
         eventId: event.id,
         type: event.type,
         payload: JSON.parse(raw.toString("utf8")),
       });
-      if (isNew) await processWebhookEvents({ db, log: req.log });
+      if (stored) await processWebhookEvents({ db, log: req.log, eventId: stored.id });
       return reply.send({ received: true });
     },
   );

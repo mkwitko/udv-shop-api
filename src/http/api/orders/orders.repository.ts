@@ -42,6 +42,8 @@ export interface OrdersRepository {
   ): Promise<boolean>;
   markRefundedByProviderId(providerId: string): Promise<boolean>;
   markRefundedByPaymentId(paymentId: string): Promise<boolean>;
+  claimRefund(paymentId: string): Promise<boolean>;
+  releaseRefundClaim(paymentId: string): Promise<void>;
   listMineCursor(args: {
     userId: string;
     limit: number;
@@ -79,7 +81,10 @@ export function createOrdersRepository(db: PrismaClient): OrdersRepository {
   return {
     createPendingOrder: (input) =>
       db.$transaction(async (tx) => {
-        for (const item of input.items) {
+        const sortedItems = [...input.items].sort((a, b) =>
+          a.productId < b.productId ? -1 : a.productId > b.productId ? 1 : 0,
+        );
+        for (const item of sortedItems) {
           const updated = await tx.product.updateMany({
             where: { id: item.productId, stock: { gte: item.qty } },
             data: { stock: { decrement: item.qty } },
@@ -128,8 +133,12 @@ export function createOrdersRepository(db: PrismaClient): OrdersRepository {
 
     markPaid: (paymentId, providerId) =>
       db.$transaction(async (tx) => {
+        // Widened on purpose (deviates from the plan's Step-3 block, see ADR-012):
+        // a payment can legitimately still succeed after our TTL/cancel path already
+        // moved it to expired/failed/cancelled (late 3DS, retried intent, Pix race).
+        // Only "already succeeded/refunded" should be a no-op.
         const paid = await tx.payment.updateMany({
-          where: { id: paymentId, status: "pending" },
+          where: { id: paymentId, status: { in: ["pending", "expired", "failed", "cancelled"] } },
           data: { status: "succeeded", ...(providerId !== null && { providerId }) },
         });
         if (paid.count !== 1) return null;
@@ -143,6 +152,16 @@ export function createOrdersRepository(db: PrismaClient): OrdersRepository {
         if (orderWasPending) {
           await tx.outboxEvent.create({
             data: { type: "order.paid", payload: { orderId: payment.orderId } },
+          });
+        } else {
+          // Money captured for an order that is no longer pending (already cancelled/
+          // expired/refunded). Durable signal for manual reconciliation — the processor
+          // also logs an error, but stdout is not queryable.
+          await tx.outboxEvent.create({
+            data: {
+              type: "payment.orphaned",
+              payload: { orderId: payment.orderId, paymentId: payment.id },
+            },
           });
         }
         return { orderId: payment.orderId, orderWasPending };
@@ -169,6 +188,20 @@ export function createOrdersRepository(db: PrismaClient): OrdersRepository {
       return refund(db, payment.id);
     },
     markRefundedByPaymentId: (paymentId) => refund(db, paymentId),
+
+    claimRefund: async (paymentId) => {
+      const claimed = await db.payment.updateMany({
+        where: { id: paymentId, status: "succeeded" },
+        data: { status: "refund_pending" },
+      });
+      return claimed.count === 1;
+    },
+    releaseRefundClaim: async (paymentId) => {
+      await db.payment.updateMany({
+        where: { id: paymentId, status: "refund_pending" },
+        data: { status: "succeeded" },
+      });
+    },
 
     listMineCursor: async ({ userId, limit, cursor }) => {
       const after = cursor ? afterCursorWhere(decodeCursor(cursor)) : {};
@@ -219,6 +252,7 @@ export function createOrdersRepository(db: PrismaClient): OrdersRepository {
       db.order.findMany({
         where: { status: "pending_payment", expiresAt: { lt: now } },
         select: { id: true },
+        take: 200,
       }),
 
     findPaymentByOrderId: async (orderId) => {
@@ -232,8 +266,11 @@ export function createOrdersRepository(db: PrismaClient): OrdersRepository {
 
 async function refund(db: PrismaClient, paymentId: string): Promise<boolean> {
   return db.$transaction(async (tx) => {
+    // "refund_pending" is the state left by the admin-triggered refund claim
+    // (refund-order.controller.ts); "succeeded" covers a provider-initiated refund
+    // that never went through our claim (defensive).
     const updated = await tx.payment.updateMany({
-      where: { id: paymentId, status: "succeeded" },
+      where: { id: paymentId, status: { in: ["succeeded", "refund_pending"] } },
       data: { status: "refunded" },
     });
     if (updated.count !== 1) return false;
