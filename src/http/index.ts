@@ -1,5 +1,6 @@
 import type { FastifyPluginAsync } from "fastify";
 import { authRoutes } from "./api/auth/index.js";
+import { campaignsRoutes } from "./api/campaigns/index.js";
 import { getHealthRoute } from "./api/health/get-health/get-health.controller.js";
 import { interestsRoutes } from "./api/interests/index.js";
 import { ordersRoutes } from "./api/orders/index.js";
@@ -17,6 +18,7 @@ export const httpRoutes: FastifyPluginAsync = async (app) => {
   await app.register(uploadsRoutes);
   await app.register(storesRoutes);
   await app.register(productsRoutes);
+  await app.register(campaignsRoutes);
   await app.register(interestsRoutes);
   await app.register(ordersRoutes);
   await app.register(webhooksRoutes);
