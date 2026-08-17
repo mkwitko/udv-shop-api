@@ -178,14 +178,41 @@ cancelado (expirou).
 
 **Decisão:** (1) reembolso **não** devolve estoque nem reativa pedido —
 contabilidade assume estoque já foi "baixado" (produto em trânsito/entregue,
-ajuste de inventário é manual). (2) Pagamento tardio para pedido `cancelled`:
-aceita payment como `succeeded` (idempotência), order fica `cancelled` mesmo
-assim, loga erro, reembolso é manual.
+ajuste de inventário é manual). (2) Pagamento tardio para pedido não mais
+`pending_payment` (expirado, cancelado, etc.): aceita payment como `succeeded`
+(idempotência), order **não** volta a ficar pagável, loga erro, reembolso é
+manual.
 
 **Consequências:** fluxo de reembolso fica simples (só call para gateway +
 transição de status). Reembolso manual é responsabilidade da loja se quiser
-reativ ar pedido ou devolver estoque. Evita race condition entre webhook
+reativar pedido ou devolver estoque. Evita race condition entre webhook
 (marcar paid) e expirador (marcar cancelled).
+
+**Atualização (correção da revisão final, supera o bloco de código original do
+Plano/Step 3 — ver decisão 4 do plano):**
+
+- `markPaid` originalmente só reivindicava o payment a partir de `pending`.
+  Como o expirador/cancelamento move o payment para `expired`/`failed`/
+  `cancelled` *antes* de um webhook tardio chegar, essa claim nunca via o
+  pagamento real e o retorno `null` era silenciosamente absorvido pelo
+  processor — dinheiro capturado, banco dizendo `expired`, nenhum sinal. A
+  claim agora aceita `pending | expired | failed | cancelled`, então o
+  pagamento tardio é sempre reconhecido como `succeeded`; a guarda de order
+  (`pending_payment → paid`) continua intocada, então um pedido cancelado
+  continua cancelado.
+- Isso por si só não bastava: um log de `error` não é consultável depois do
+  fato. Agora, sempre que o payment é confirmado `succeeded` mas o pedido
+  **não** estava `pending_payment`, `markPaid` grava, na mesma transação, um
+  `OutboxEvent` do tipo `payment.orphaned` com `{ orderId, paymentId }`. O
+  relayOutbox loga isso como erro (sem email — é alerta de operação, não
+  mensagem pro cliente) e marca `processed`; a linha em si já serve como fila
+  de reembolsos manuais pendentes.
+- `payment_intent.payment_failed` do Stripe **não é mais tratado como
+  terminal**: ele dispara em toda tentativa recusada e o mesmo PaymentIntent
+  pode ser retentado e ter sucesso depois. Só `payment_intent.canceled`
+  cancela o pedido e devolve estoque; `payment_failed` apenas loga um `warn` e
+  deixa o pedido `pending_payment` — o worker de expiração de 30 min continua
+  sendo o único responsável por liberar a reserva.
 
 ## ADR-013: colunas `stripeAccountId`/`wooviPixKey` nascem no Plano 3 (nullable)
 

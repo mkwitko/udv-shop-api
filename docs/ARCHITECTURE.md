@@ -181,9 +181,14 @@ antes do pagamento ser confirmado. Sequência:
    cancela e devolve estoque; payment fica `expired`.
 
 **Caso especial — pagamento tardio de pedido cancelado:** payment chega como
-`succeeded` via webhook, order já está `cancelled` (expirou ou foi cancelado
-manualmente). `markPaid()` honra o `succeeded` (idempotência), mas order não
-muda de `cancelled`. Loga erro; reembolso é manual.
+`succeeded` via webhook depois que o pedido já não está mais `pending_payment`
+(expirou, foi cancelado manualmente, ou a intent falhou e foi retentada com
+sucesso). `markPaid()` reivindica o payment a partir de
+`pending | expired | failed | cancelled` — não só `pending` — e sempre honra o
+`succeeded` (idempotência); a order não muda de `cancelled`. Além do log de
+erro, grava um `OutboxEvent` `payment.orphaned` (`{ orderId, paymentId }`) na
+mesma transação, para o reembolso manual ficar consultável em vez de só
+aparecer no stdout. Ver ADR-012.
 
 ## Webhooks
 
@@ -197,10 +202,15 @@ no escopo do plugin `webhooksRoutes`).
 - **Assinatura:** verificada via SDK Stripe (`stripe.webhooks.constructEvent`).
 - **Tipos processados:**
   - `payment_intent.succeeded` → `markPaid()` (order `pending_payment` → `paid`).
-  - `payment_intent.payment_failed`, `payment_intent.canceled` → cancela pedido
-    pendente e devolve estoque.
+  - `payment_intent.canceled` → cancela pedido pendente e devolve estoque
+    (terminal).
+  - `payment_intent.payment_failed` → **não** cancela nem devolve estoque; só
+    loga um `warn`. Dispara em toda tentativa recusada e a mesma intent pode
+    ser retentada e ter sucesso depois — o worker de expiração de 30 min
+    continua sendo o único dono da liberação de reserva.
   - `charge.refunded` → marca payment como `refunded` e order passa para esse
-    estado (se em estado válido).
+    estado (se em estado válido; aceita payment `succeeded` ou
+    `refund_pending`).
 
 ### Woovi
 
@@ -211,30 +221,62 @@ no escopo do plugin `webhooksRoutes`).
 - **Tipos processados:**
   - `OPENPIX:CHARGE_COMPLETED` → `markPaid()`.
   - `OPENPIX:CHARGE_EXPIRED` → cancela pedido se ainda pendente.
-  - `OPENPIX:CHARGE_REFUND` → marca payment como `refunded`.
+  - `OPENPIX:CHARGE_REFUND` → marca payment como `refunded` (aceita `succeeded`
+    ou `refund_pending` como status anterior).
+  - `charge.correlationID` é validado como UUID (`z.string().uuid()`) antes de
+    ser usado como `payment.id`; um valor não-UUID (webhook de teste/ping da
+    Woovi) é ignorado — o evento é marcado `processed` sem efeito, nunca
+    estoura P2023 pro Prisma nem vira `failed` terminal.
+
+### Reembolso (admin da loja)
+
+`POST /stores/:slug/orders/:id/refund` não muda o status do pedido — isso só
+acontece quando o webhook de confirmação chega (`charge.refunded` /
+`OPENPIX:CHARGE_REFUND`, acima). Para evitar reembolso duplicado na janela
+entre a chamada e o webhook (segundos a minutos), o endpoint reivindica o
+pagamento atomicamente antes de chamar o gateway:
+`payment.updateMany({ where: { status: "succeeded" }, data: { status:
+"refund_pending" } })`. Se a claim falhar (`count !== 1`), responde 409
+`refund_already_requested` sem tocar o gateway. Se a chamada ao gateway falhar
+depois da claim, ela é revertida para `succeeded` antes do erro subir. A
+`refundCorrelationID` enviada à Woovi é determinística
+(`refund-${payment.id}`) — é a chave de idempotência da Woovi, então não pode
+ser um UUID novo a cada tentativa.
 
 ### Handler de webhook
 
 1. Verifica assinatura, rejeita se inválida (401).
 2. Chama `storeWebhookEvent()`: tenta inserir `(provider, eventId, type, payload)`.
-   Se já existe (dedup), retorna `false` silenciosamente.
-3. Se novo: processa inline com `processWebhookEvents()` (aguarda, responde só
-   após conclusão).
+   Se já existe (dedup), retorna `null` silenciosamente.
+3. Se novo: processa inline só a linha que acabou de gravar
+   (`processWebhookEvents({ eventId })`, aguarda, responde só após conclusão).
+   Nunca drena o backlog inteiro dentro da requisição do provedor — isso é
+   trabalho exclusivo do worker de 15s, evitando timeout de leitura do
+   provedor numa fila congestionada.
 4. Devolve 200 `{ received: true }` sempre que assinatura é válida.
 
 Worker reprocessa eventos com status `received` a cada 15 segundos (crash
-recovery em caso de erro após persistir mas antes de processar).
+recovery em caso de erro após persistir mas antes de processar) — sem
+`eventId`, drena até 50 linhas.
 
 ## Workers in-process
 
 Três workers em loop leve, inicializados em `src/server.ts` ao startup e parados
-no graceful shutdown:
+no graceful shutdown. `startWorkers()` envolve cada tick numa guarda de
+reentrância (um `setInterval` que dispara enquanto a invocação anterior ainda
+está rodando é simplesmente pulado, não empilhado) — protege contra tick lento
+sobrepondo o próximo em instância única; múltiplas instâncias da API ainda
+dependem da claim atômica do outbox abaixo.
 
-- **`expireReservations()`** — a cada 60s, encontra pedidos `pending_payment` com
-  `expiresAt < now`, cancela e devolve estoque.
-- **`relayOutbox()`** — a cada 10s, processa eventos de outbox com status
-  `pending`, envia emails (atualmente só `order.paid`), marca `processed`.
-  Falhas incrementam `attempts`; após 5 tentativas, marca `failed` (terminal).
+- **`expireReservations()`** — a cada 60s, encontra até 200 pedidos
+  `pending_payment` com `expiresAt < now`, cancela e devolve estoque.
+- **`relayOutbox()`** — a cada 10s, reivindica atomicamente até 50 eventos
+  `pending` (`updateMany` para `processing` antes de trabalhar neles — evita
+  duplo envio de email quando um tick demorado se sobrepõe ao próximo, ou
+  quando há mais de uma instância da API), processa (`order.paid` dispara
+  email; `payment.orphaned` só loga erro, sem email — é alerta operacional),
+  marca `processed`. Falhas voltam o evento para `pending` e incrementam
+  `attempts`; após 5 tentativas, marca `failed` (terminal).
 - **`processWebhookEvents()`** — a cada 15s, reprocessa eventos webhook com
   status `received` (recovery de crashes entre persistir e processar).
 
