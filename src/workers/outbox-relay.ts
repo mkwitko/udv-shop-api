@@ -98,14 +98,38 @@ export async function relayOutbox(deps: {
         }
         // Nota: se o interesse sumiu (produto apagado), o evento é marcado processed do
         // mesmo jeito — não há o que notificar.
+      } else if (event.type === "donation.received") {
+        const { donationId } = event.payload as { donationId: string };
+        const donation = await deps.db.donation.findFirst({
+          where: { id: donationId, status: "paid" },
+          include: {
+            user: { select: { email: true, name: true } },
+            store: { select: { name: true } },
+            campaign: { select: { title: true } },
+          },
+        });
+        if (donation) {
+          const destino = donation.campaign
+            ? `a campanha “${donation.campaign.title}”`
+            : `o núcleo ${donation.store.name}`;
+          await deps.email.send({
+            to: donation.user.email,
+            subject: `Recebemos sua doação — ${donation.store.name}`,
+            html: `<p>Olá, ${donation.user.name}!</p><p>Sua doação de R$ ${(donation.amountCents / 100).toFixed(2)} para ${destino} foi confirmada.</p><p>Obrigado por caminhar junto com a gente.</p><p>Com carinho, equipe do núcleo.</p>`,
+          });
+        }
       } else if (event.type === "payment.orphaned") {
-        // Money captured for an order that is no longer pending. No email — this is an
-        // operator alert, not a customer-facing message. Durable + queryable via this row;
-        // logging here just surfaces it in real time too.
-        const { orderId, paymentId } = event.payload as { orderId: string; paymentId: string };
+        // Money captured for an aggregate (order or donation) that is no longer pending.
+        // No email — this is an operator alert, not a customer-facing message. Durable +
+        // queryable via this row; logging here just surfaces it in real time too.
+        const { orderId, donationId, paymentId } = event.payload as {
+          orderId?: string;
+          donationId?: string;
+          paymentId: string;
+        };
         deps.log.error(
-          { orderId, paymentId },
-          "pagamento órfão: pagamento capturado para pedido não pendente, reembolso manual necessário",
+          { orderId, donationId, paymentId },
+          "pagamento órfão: pagamento capturado para agregado não pendente, reembolso manual necessário",
         );
       }
       await deps.db.outboxEvent.update({

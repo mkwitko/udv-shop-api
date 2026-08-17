@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { db } from "../../src/infra/db/client.js";
 import { logger } from "../../src/infra/observability/logger.js";
+import { expireDonations } from "../../src/workers/expire-donations.js";
 import { expireReservations } from "../../src/workers/expire-reservations.js";
 import { relayOutbox } from "../../src/workers/outbox-relay.js";
 import { resetDb } from "../helpers/db.js";
@@ -316,5 +317,82 @@ describe("workers", () => {
     expect(
       (await db.productInterest.findUniqueOrThrow({ where: { id: cancelled.id } })).status,
     ).toBe("cancelled");
+  });
+});
+
+async function seedDonation(
+  expiresAt: Date | null,
+  status: "pending_payment" | "paid" | "refunded" = "pending_payment",
+) {
+  const user = await db.user.create({
+    data: { email: "doador@example.org", name: "Doadora", passwordHash: "x" },
+  });
+  const store = await db.store.create({
+    data: { slug: "nucleo-a", name: "Núcleo A", status: "active" },
+  });
+  const donation = await db.donation.create({
+    data: {
+      storeId: store.id,
+      userId: user.id,
+      amountCents: 5000,
+      status,
+      expiresAt,
+      payment: { create: { provider: "woovi", amountCents: 5000, applicationFeeCents: 250 } },
+    },
+  });
+  return { user, store, donation };
+}
+
+describe("expireDonations", () => {
+  beforeEach(resetDb);
+
+  it("cancela doação vencida e marca o pagamento expired; é no-op na segunda chamada", async () => {
+    const { donation } = await seedDonation(new Date(Date.now() - 60_000));
+    const n = await expireDonations({ db });
+    expect(n).toBe(1);
+    const fresh = await db.donation.findUniqueOrThrow({ where: { id: donation.id } });
+    expect(fresh.status).toBe("cancelled");
+    const payment = await db.payment.findFirstOrThrow({ where: { donationId: donation.id } });
+    expect(payment.status).toBe("expired");
+
+    const second = await expireDonations({ db });
+    expect(second).toBe(0);
+  });
+
+  it("ignora doação dentro do prazo", async () => {
+    await seedDonation(new Date(Date.now() + 60_000));
+    expect(await expireDonations({ db })).toBe(0);
+  });
+});
+
+describe("relayOutbox: doação", () => {
+  beforeEach(resetDb);
+
+  it("processa donation.received e manda exatamente um email para o doador", async () => {
+    const { user, donation } = await seedDonation(null, "paid");
+    await db.outboxEvent.create({
+      data: { type: "donation.received", payload: { donationId: donation.id } },
+    });
+    const gateways = buildFakeGateways();
+    const n = await relayOutbox({ db, email: gateways.email, log: logger });
+    expect(n).toBe(1);
+    expect(gateways.sentEmails).toHaveLength(1);
+    expect(gateways.sentEmails[0]?.to).toBe(user.email);
+    expect(gateways.sentEmails[0]?.subject).toContain("Recebemos sua doação");
+    const event = await db.outboxEvent.findFirstOrThrow();
+    expect(event.status).toBe("processed");
+  });
+
+  it("ignora donation.received de doação que não está mais paid, mas ainda marca o evento como processed", async () => {
+    const { donation } = await seedDonation(null, "refunded");
+    await db.outboxEvent.create({
+      data: { type: "donation.received", payload: { donationId: donation.id } },
+    });
+    const gateways = buildFakeGateways();
+    const n = await relayOutbox({ db, email: gateways.email, log: logger });
+    expect(n).toBe(1);
+    expect(gateways.sentEmails).toHaveLength(0);
+    const event = await db.outboxEvent.findFirstOrThrow();
+    expect(event.status).toBe("processed");
   });
 });

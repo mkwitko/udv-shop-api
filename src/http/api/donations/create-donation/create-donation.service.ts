@@ -1,0 +1,125 @@
+import type { Store } from "@prisma/client";
+import type { StripeGateway } from "../../../../gateways/stripe/stripe.gateway.js";
+import type { WooviGateway } from "../../../../gateways/woovi/woovi.gateway.js";
+import { badGateway, NotFoundError, ValidationError } from "../../../../shared/errors.js";
+import {
+  type CampaignsRepository,
+  isCampaignOpenForDonation,
+} from "../../campaigns/campaigns.repository.js";
+import type { StoresRepository } from "../../stores/stores.repository.js";
+import type { DonationsRepository, DonationWithDetails } from "../donations.repository.js";
+import type { CreateDonationBody, DonationPaymentInstructions } from "../donations.schema.js";
+import { DONATION_TTL_MINUTES } from "../donations.schema.js";
+
+export type CreateDonationDeps = {
+  donations: DonationsRepository;
+  campaigns: CampaignsRepository;
+  stores: StoresRepository;
+  stripe: StripeGateway;
+  woovi: WooviGateway;
+};
+
+export function createDonationService(deps: CreateDonationDeps) {
+  return async (
+    input: CreateDonationBody & { userId: string; userEmail: string },
+  ): Promise<{ donation: DonationWithDetails; payment: DonationPaymentInstructions }> => {
+    const store = await deps.stores.findBySlug(input.storeSlug);
+    if (store?.status !== "active") throw new NotFoundError("store_not_found");
+    assertProviderConfigured(store, input.provider);
+    // Assinatura Pix Woovi fica para o plano 6 junto do onboarding de subconta
+    // (spec §11 registra que o split em assinatura ainda não está confirmado) — D4.
+    if (input.type === "monthly" && input.provider === "woovi") {
+      throw new ValidationError("monthly_not_supported_for_provider");
+    }
+
+    let campaignId: string | null = null;
+    if (input.campaignSlug !== undefined) {
+      const campaign = await deps.campaigns.findBySlug(store.id, input.campaignSlug);
+      if (!campaign) throw new NotFoundError("campaign_not_found");
+      if (!isCampaignOpenForDonation(campaign)) throw new ValidationError("campaign_not_open");
+      if (campaign.acceptedTypes !== "both" && campaign.acceptedTypes !== input.type) {
+        throw new ValidationError("donation_type_not_accepted");
+      }
+      campaignId = campaign.id;
+    }
+
+    const applicationFeeCents = Math.floor((input.amountCents * store.applicationFeeBps) / 10000);
+    // Mensal não tem TTL: a assinatura fica incompleta no Stripe até o cartão confirmar.
+    const expiresAt =
+      input.type === "one_time" ? new Date(Date.now() + DONATION_TTL_MINUTES * 60 * 1000) : null;
+
+    const donation = await deps.donations.createPendingDonation({
+      storeId: store.id,
+      campaignId,
+      userId: input.userId,
+      provider: input.provider,
+      type: input.type,
+      amountCents: input.amountCents,
+      applicationFeeCents,
+      anonymous: input.anonymous,
+      message: input.message ?? null,
+      expiresAt,
+    });
+    const paymentId = donation.payment?.id;
+    if (!paymentId) throw new Error("donation_missing_payment");
+
+    let instructions: DonationPaymentInstructions;
+    try {
+      if (input.type === "monthly") {
+        // Direct charge na conta conectada: Billing com Connect exige (ver D3/ADR-016).
+        const subscription = await deps.stripe.createDonationSubscription({
+          amountCents: input.amountCents,
+          currency: donation.currency,
+          // bps → percentual (500 bps = 5%). Stripe aceita até 2 casas.
+          applicationFeePercent: store.applicationFeeBps / 100,
+          destinationAccountId: store.stripeAccountId as string,
+          customerEmail: input.userEmail,
+          productName: `Doação mensal — ${store.name}`.slice(0, 140),
+          metadata: { donationId: donation.id, paymentId },
+        });
+        await deps.donations.attachProviderId(paymentId, subscription.subscriptionId);
+        await deps.donations.attachSubscriptionRef(donation.id, subscription.subscriptionId);
+        instructions = {
+          provider: "stripe_subscription",
+          clientSecret: subscription.clientSecret,
+          subscriptionId: subscription.subscriptionId,
+        };
+      } else if (input.provider === "stripe") {
+        const intent = await deps.stripe.createPaymentIntent({
+          amountCents: input.amountCents,
+          currency: donation.currency,
+          applicationFeeCents,
+          destinationAccountId: store.stripeAccountId as string,
+          metadata: { donationId: donation.id, paymentId },
+        });
+        await deps.donations.attachProviderId(paymentId, intent.providerId);
+        instructions = { provider: "stripe", clientSecret: intent.clientSecret };
+      } else {
+        const charge = await deps.woovi.createCharge({
+          amountCents: input.amountCents,
+          correlationID: paymentId,
+          expiresInSeconds: DONATION_TTL_MINUTES * 60,
+          splitPixKey: store.wooviPixKey as string,
+          splitValueCents: input.amountCents - applicationFeeCents,
+          comment: `Doação — ${store.name}`.slice(0, 140),
+        });
+        await deps.donations.attachProviderId(paymentId, charge.providerId);
+        instructions = {
+          provider: "woovi",
+          brCode: charge.brCode,
+          qrCodeImageUrl: charge.qrCodeImageUrl,
+          expiresAt: charge.expiresAt,
+        };
+      }
+    } catch (err) {
+      await deps.donations.compensateFailedDonation(donation.id);
+      throw badGateway("payment_provider_error", err);
+    }
+    return { donation, payment: instructions };
+  };
+}
+
+function assertProviderConfigured(store: Store, provider: "stripe" | "woovi"): void {
+  const configured = provider === "stripe" ? store.stripeAccountId : store.wooviPixKey;
+  if (!configured) throw new ValidationError("payments_not_configured");
+}

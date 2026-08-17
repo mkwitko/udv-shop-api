@@ -1,6 +1,7 @@
 import type { PrismaClient } from "@prisma/client";
 import type { FastifyBaseLogger } from "fastify";
 import type { Gateways } from "../types/fastify.js";
+import { expireDonations } from "./expire-donations.js";
 import { expireReservations } from "./expire-reservations.js";
 import { relayOutbox } from "./outbox-relay.js";
 import { processWebhookEvents } from "./webhook-processor.js";
@@ -38,6 +39,10 @@ export function startWorkers(deps: {
     ),
     setInterval(
       guarded("reservas", () => expireReservations({ db: deps.db })),
+      60_000,
+    ),
+    setInterval(
+      guarded("doacoes", () => expireDonations({ db: deps.db })),
       60_000,
     ),
   ];

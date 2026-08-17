@@ -1,7 +1,12 @@
 import type { PrismaClient } from "@prisma/client";
 import type { FastifyBaseLogger } from "fastify";
 import { z } from "zod";
-import { createOrdersRepository } from "../http/api/orders/orders.repository.js";
+import {
+  cancelPaymentAggregate,
+  markPaymentPaid,
+  refundPaymentByPaymentId,
+  refundPaymentByProviderId,
+} from "./payment-routing.js";
 
 const WOOVI_COMPLETED = "OPENPIX:CHARGE_COMPLETED";
 const WOOVI_EXPIRED = "OPENPIX:CHARGE_EXPIRED";
@@ -25,7 +30,6 @@ export async function processWebhookEvents(deps: {
   log: FastifyBaseLogger;
   eventId?: string;
 }): Promise<number> {
-  const orders = createOrdersRepository(deps.db);
   const events = await deps.db.webhookEvent.findMany({
     where: deps.eventId ? { id: deps.eventId, status: "received" } : { status: "received" },
     orderBy: { createdAt: "asc" },
@@ -39,26 +43,24 @@ export async function processWebhookEvents(deps: {
         const object = payload.data?.object ?? {};
         const paymentId = object.metadata?.paymentId;
         if (event.type === "payment_intent.succeeded" && paymentId) {
-          const result = await orders.markPaid(paymentId, object.id ?? null);
-          if (result && !result.orderWasPending) {
-            deps.log.error(
-              { orderId: result.orderId },
-              "pagamento recebido para pedido não pendente",
-            );
-          }
-        } else if (event.type === "payment_intent.canceled" && object.metadata?.orderId) {
-          // Only "canceled" is terminal. "payment_intent.payment_failed" fires on every
-          // declined attempt and the same intent can be retried and later succeed — the
-          // 30-min expiry worker is the single owner of reservation release (see I1 in the
-          // final review / ADR-012 update).
-          await orders.cancelPendingOrder(object.metadata.orderId, "failed");
+          await markPaymentPaid({
+            db: deps.db,
+            log: deps.log,
+            paymentId,
+            providerId: object.id ?? null,
+          });
+        } else if (event.type === "payment_intent.canceled" && paymentId) {
+          // Só "canceled" é terminal. "payment_intent.payment_failed" dispara em toda
+          // tentativa recusada e a mesma intent pode ser retentada e depois aprovada —
+          // o worker de expiração é o dono único da liberação (ADR-012).
+          await cancelPaymentAggregate({ db: deps.db, paymentId, reason: "failed" });
         } else if (event.type === "payment_intent.payment_failed") {
           deps.log.warn(
             { paymentId, orderId: object.metadata?.orderId },
-            "tentativa de pagamento falhou; intent ainda pode ser retentada, pedido segue pending_payment",
+            "tentativa de pagamento falhou; intent ainda pode ser retentada, agregado segue pendente",
           );
         } else if (event.type === "charge.refunded" && object.payment_intent) {
-          await orders.markRefundedByProviderId(object.payment_intent);
+          await refundPaymentByProviderId({ db: deps.db, providerId: object.payment_intent });
         }
       } else {
         const payload = event.payload as WooviPayload;
@@ -72,18 +74,11 @@ export async function processWebhookEvents(deps: {
             : null;
         if (paymentId) {
           if (event.type === WOOVI_COMPLETED) {
-            const result = await orders.markPaid(paymentId, null);
-            if (result && !result.orderWasPending) {
-              deps.log.error(
-                { orderId: result.orderId },
-                "pagamento recebido para pedido não pendente",
-              );
-            }
+            await markPaymentPaid({ db: deps.db, log: deps.log, paymentId, providerId: null });
           } else if (event.type === WOOVI_EXPIRED) {
-            const payment = await deps.db.payment.findUnique({ where: { id: paymentId } });
-            if (payment?.orderId) await orders.cancelPendingOrder(payment.orderId, "expired");
+            await cancelPaymentAggregate({ db: deps.db, paymentId, reason: "expired" });
           } else if (event.type === WOOVI_REFUNDED) {
-            await orders.markRefundedByPaymentId(paymentId);
+            await refundPaymentByPaymentId({ db: deps.db, paymentId });
           }
         }
       }

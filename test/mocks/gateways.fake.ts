@@ -1,5 +1,8 @@
 import type { GoogleProfile } from "../../src/gateways/google/google.gateway.js";
-import type { CreatePaymentIntentInput } from "../../src/gateways/stripe/stripe.gateway.js";
+import type {
+  CreateDonationSubscriptionInput,
+  CreatePaymentIntentInput,
+} from "../../src/gateways/stripe/stripe.gateway.js";
 import type { CreateChargeInput } from "../../src/gateways/woovi/woovi.gateway.js";
 import type { Gateways } from "../../src/types/fastify.js";
 
@@ -8,6 +11,8 @@ export type FakeGateways = Gateways & {
   googleProfile: GoogleProfile;
   stripeIntents: CreatePaymentIntentInput[];
   stripeRefunds: string[];
+  stripeSubscriptions: CreateDonationSubscriptionInput[];
+  stripeCancelledSubscriptions: string[];
   wooviCharges: CreateChargeInput[];
   wooviRefunds: Array<{ chargeCorrelationID: string; refundCorrelationID: string }>;
 };
@@ -22,6 +27,8 @@ export function buildFakeGateways(overrides: Partial<Gateways> = {}): FakeGatewa
   };
   const stripeIntents: FakeGateways["stripeIntents"] = [];
   const stripeRefunds: string[] = [];
+  const stripeSubscriptions: FakeGateways["stripeSubscriptions"] = [];
+  const stripeCancelledSubscriptions: string[] = [];
   const wooviCharges: FakeGateways["wooviCharges"] = [];
   const wooviRefunds: FakeGateways["wooviRefunds"] = [];
   return {
@@ -29,6 +36,8 @@ export function buildFakeGateways(overrides: Partial<Gateways> = {}): FakeGatewa
     googleProfile,
     stripeIntents,
     stripeRefunds,
+    stripeSubscriptions,
+    stripeCancelledSubscriptions,
     wooviCharges,
     wooviRefunds,
     email: overrides.email ?? {
@@ -54,6 +63,16 @@ export function buildFakeGateways(overrides: Partial<Gateways> = {}): FakeGatewa
       },
       async refundPaymentIntent(providerId, _idempotencyKey) {
         stripeRefunds.push(providerId);
+      },
+      async createDonationSubscription(input) {
+        stripeSubscriptions.push(input);
+        return {
+          subscriptionId: `sub_fake_${stripeSubscriptions.length}`,
+          clientSecret: "cs_sub_fake",
+        };
+      },
+      async cancelSubscription(subscriptionId, _connectedAccountId) {
+        stripeCancelledSubscriptions.push(subscriptionId);
       },
       verifyWebhook(rawBody, signature) {
         if (signature === "invalid") throw new Error("invalid_signature");
