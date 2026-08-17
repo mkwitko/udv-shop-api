@@ -27,7 +27,12 @@ export const refundOrderRoute: FastifyPluginAsync = async (app) => {
       const order = await repo.findByIdForStore(id, store.id);
       if (!order) throw new NotFoundError("order_not_found");
       const payment = await repo.findPaymentByOrderId(id);
-      if (!payment || payment.status !== "succeeded") {
+      // "refund_pending" is allowed past this pre-check on purpose: it may be a stale claim
+      // (crash/shutdown before the webhook confirmed it) that claimRefund below is entitled to
+      // re-take. Rejecting it here unconditionally would make every retry 409 forever with no
+      // way for an admin to re-drive it. A genuinely in-flight (non-stale) refund_pending is
+      // still rejected — just by claimRefund's atomic check below, not by this pre-check.
+      if (!payment || (payment.status !== "succeeded" && payment.status !== "refund_pending")) {
         throw new ConflictError("payment_not_refundable");
       }
       if (payment.provider === "stripe" && !payment.providerId) {
@@ -36,11 +41,18 @@ export const refundOrderRoute: FastifyPluginAsync = async (app) => {
       // Claim atomically before calling the gateway: the payment only flips to "refunded"
       // once the provider's webhook confirms it (seconds to minutes later), so without this
       // claim every retry in that window would hit the gateway again (duplicate money out).
+      // claimRefund also re-claims a stale refund_pending; a fresh (non-stale) one fails the
+      // claim and falls through to refund_already_requested below.
       const claimed = await repo.claimRefund(payment.id);
       if (!claimed) throw new ConflictError("refund_already_requested");
       try {
         if (payment.provider === "stripe") {
-          await app.gateways.stripe.refundPaymentIntent(payment.providerId as string);
+          // Same deterministic key pattern as the Woovi branch below: a fresh key per retry
+          // would make every retry a distinct refund.
+          await app.gateways.stripe.refundPaymentIntent(
+            payment.providerId as string,
+            `refund-${payment.id}`,
+          );
         } else {
           await app.gateways.woovi.refundCharge({
             chargeCorrelationID: payment.id,

@@ -258,6 +258,8 @@ model OutboxEvent {
   attempts    Int          @default(0)
   processedAt DateTime?    @map("processed_at")
   createdAt   DateTime     @default(now()) @map("created_at")
+  claimedAt   DateTime?    @map("claimed_at")
+  claimedBy   String?      @map("claimed_by")
 
   @@index([status, createdAt])
   @@map("outbox_events")

@@ -19,7 +19,7 @@ export interface StripeGateway {
   createPaymentIntent(
     input: CreatePaymentIntentInput,
   ): Promise<{ providerId: string; clientSecret: string }>;
-  refundPaymentIntent(providerId: string): Promise<void>;
+  refundPaymentIntent(providerId: string, idempotencyKey: string): Promise<void>;
   verifyWebhook(rawBody: Buffer, signature: string): StripeWebhookEvent;
 }
 
@@ -48,9 +48,13 @@ export function createStripeGateway(cfg: {
       if (!intent.client_secret) throw new Error("stripe_missing_client_secret");
       return { providerId: intent.id, clientSecret: intent.client_secret };
     },
-    async refundPaymentIntent(providerId) {
+    async refundPaymentIntent(providerId, idempotencyKey) {
       try {
-        await stripe().refunds.create({ payment_intent: providerId });
+        // Deterministic idempotency key: a network failure after Stripe has already accepted
+        // the refund must not turn a retry into a second refund attempt (or, combined with
+        // releaseRefundClaim on throw, a "charge_already_refunded" 502 on every subsequent
+        // retry once the claim is released back to "succeeded").
+        await stripe().refunds.create({ payment_intent: providerId }, { idempotencyKey });
       } catch (err) {
         throw badGateway("payment_provider_error", err);
       }

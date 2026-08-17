@@ -183,9 +183,62 @@ describe("gestão de pedidos", () => {
     expect(first.statusCode).toBe(202);
     const second = await refund();
     expect(second.statusCode).toBe(409);
+    expect(second.json()).toMatchObject({
+      code: "CONFLICT",
+      message: "refund_already_requested",
+    });
     expect(gateways.stripeRefunds.length - callsBefore).toBe(1);
     const payment = await db.payment.findFirstOrThrow({ where: { orderId: order.id } });
     expect(payment.status).toBe("refund_pending");
+  });
+
+  it("refund_pending travado (claim nunca confirmado) é re-reivindicável após o timeout e chega a refunded via webhook; claim fresco → 409 refund_already_requested", async () => {
+    const { store, order } = await seed("paid");
+    const admin = await staffToken(app, "s6c@example.org", store.id, "admin");
+    const payment = await db.payment.findFirstOrThrow({ where: { orderId: order.id } });
+    // Simulates a claim that was never confirmed by the webhook (crash/shutdown mid-request):
+    // the pre-check used to reject this unconditionally as payment_not_refundable, stranding
+    // the payment forever.
+    await db.payment.update({
+      where: { id: payment.id },
+      data: { status: "refund_pending", updatedAt: new Date(Date.now() - 16 * 60_000) },
+    });
+    const res = await app.inject({
+      method: "POST",
+      url: `/stores/nucleo-a/orders/${order.id}/refund`,
+      headers: { authorization: `Bearer ${admin}` },
+    });
+    expect(res.statusCode).toBe(202);
+    expect(gateways.stripeRefunds).toContain("pi_1");
+
+    // Immediately re-driven claim is fresh, not stale: a genuine in-flight second call must
+    // still be rejected as an in-flight duplicate, not treated as re-drivable.
+    const second = await app.inject({
+      method: "POST",
+      url: `/stores/nucleo-a/orders/${order.id}/refund`,
+      headers: { authorization: `Bearer ${admin}` },
+    });
+    expect(second.statusCode).toBe(409);
+    expect(second.json()).toMatchObject({
+      code: "CONFLICT",
+      message: "refund_already_requested",
+    });
+
+    const webhookRes = await app.inject({
+      method: "POST",
+      url: "/webhooks/stripe",
+      headers: { "stripe-signature": "ok", "content-type": "application/json" },
+      payload: JSON.stringify({
+        id: "evt_stale_refund",
+        type: "charge.refunded",
+        data: { object: { payment_intent: "pi_1" } },
+      }),
+    });
+    expect(webhookRes.statusCode).toBe(200);
+    const freshOrder = await db.order.findUniqueOrThrow({ where: { id: order.id } });
+    expect(freshOrder.status).toBe("refunded");
+    const freshPayment = await db.payment.findUniqueOrThrow({ where: { id: payment.id } });
+    expect(freshPayment.status).toBe("refunded");
   });
 
   it("reembolso de pedido pending_payment → 409", async () => {

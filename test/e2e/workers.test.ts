@@ -81,4 +81,47 @@ describe("workers", () => {
     expect(event.attempts).toBe(5);
     expect(event.status).toBe("failed");
   });
+
+  it("relayOutbox reclama registro 'processing' com claimedAt velho (crash anterior) e envia o email uma única vez", async () => {
+    const { order, user } = await seed(new Date(Date.now() + 60_000));
+    await db.order.update({ where: { id: order.id }, data: { status: "paid" } });
+    const event = await db.outboxEvent.create({
+      data: {
+        type: "order.paid",
+        payload: { orderId: order.id },
+        status: "processing",
+        claimedBy: "stale-worker-token",
+        claimedAt: new Date(Date.now() - 6 * 60_000),
+      },
+    });
+    const gateways = buildFakeGateways();
+    const n = await relayOutbox({ db, email: gateways.email, log: logger });
+    expect(n).toBe(1);
+    expect(gateways.sentEmails).toHaveLength(1);
+    expect(gateways.sentEmails[0]?.to).toBe(user.email);
+    const fresh = await db.outboxEvent.findUniqueOrThrow({ where: { id: event.id } });
+    expect(fresh.status).toBe("processed");
+    expect(fresh.claimedBy).toBeNull();
+  });
+
+  it("relayOutbox não toca registro 'processing' reivindicado por outro token com claimedAt recente", async () => {
+    const { order } = await seed(new Date(Date.now() + 60_000));
+    await db.order.update({ where: { id: order.id }, data: { status: "paid" } });
+    const event = await db.outboxEvent.create({
+      data: {
+        type: "order.paid",
+        payload: { orderId: order.id },
+        status: "processing",
+        claimedBy: "other-instance-token",
+        claimedAt: new Date(),
+      },
+    });
+    const gateways = buildFakeGateways();
+    const n = await relayOutbox({ db, email: gateways.email, log: logger });
+    expect(n).toBe(0);
+    expect(gateways.sentEmails).toHaveLength(0);
+    const fresh = await db.outboxEvent.findUniqueOrThrow({ where: { id: event.id } });
+    expect(fresh.status).toBe("processing");
+    expect(fresh.claimedBy).toBe("other-instance-token");
+  });
 });

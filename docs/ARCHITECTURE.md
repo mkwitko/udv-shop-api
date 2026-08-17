@@ -235,13 +235,27 @@ acontece quando o webhook de confirmação chega (`charge.refunded` /
 `OPENPIX:CHARGE_REFUND`, acima). Para evitar reembolso duplicado na janela
 entre a chamada e o webhook (segundos a minutos), o endpoint reivindica o
 pagamento atomicamente antes de chamar o gateway:
-`payment.updateMany({ where: { status: "succeeded" }, data: { status:
-"refund_pending" } })`. Se a claim falhar (`count !== 1`), responde 409
-`refund_already_requested` sem tocar o gateway. Se a chamada ao gateway falhar
-depois da claim, ela é revertida para `succeeded` antes do erro subir. A
-`refundCorrelationID` enviada à Woovi é determinística
+`payment.updateMany({ where: { OR: [{ status: "succeeded" }, { status:
+"refund_pending", updatedAt: { lt: now - 15min } }] }, data: { status:
+"refund_pending" } })`. O segundo ramo do `OR` existe porque uma claim que
+nunca é confirmada pelo webhook (crash, shutdown, operador matando o processo
+no meio da requisição) não pode travar o pagamento em `refund_pending` para
+sempre: passados 15 minutos (`STALE_REFUND_CLAIM_MS`) sem confirmação, a claim
+é considerada abandonada e pode ser refeita — a própria escrita do `updateMany`
+atualiza `updatedAt` (`@updatedAt`), o que rearma a janela para a nova claim. O
+pré-check do controller permite `refund_pending` passar adiante exatamente por
+isso: rejeitar incondicionalmente ali faria todo retry 409 para sempre, sem
+jeito de o admin reconduzir. Se a claim falhar (`count !== 1` — pagamento em
+outro status, ou um `refund_pending` genuinamente em andamento e ainda não
+expirado), responde 409 `refund_already_requested` sem tocar o gateway. Se a
+chamada ao gateway falhar depois da claim, ela é revertida para `succeeded`
+antes do erro subir. A `refundCorrelationID` enviada à Woovi é determinística
 (`refund-${payment.id}`) — é a chave de idempotência da Woovi, então não pode
-ser um UUID novo a cada tentativa.
+ser um UUID novo a cada tentativa; o mesmo valor é usado como chave de
+idempotência (`idempotencyKey`) na chamada `stripe.refunds.create`, pelo mesmo
+motivo — sem isso, uma falha de rede *depois* de a Stripe já ter aceitado o
+reembolso soltaria a claim de volta para `succeeded` com o dinheiro já fora, e
+todo retry bateria em `charge_already_refunded`.
 
 ### Handler de webhook
 
@@ -270,13 +284,26 @@ dependem da claim atômica do outbox abaixo.
 
 - **`expireReservations()`** — a cada 60s, encontra até 200 pedidos
   `pending_payment` com `expiresAt < now`, cancela e devolve estoque.
-- **`relayOutbox()`** — a cada 10s, reivindica atomicamente até 50 eventos
-  `pending` (`updateMany` para `processing` antes de trabalhar neles — evita
-  duplo envio de email quando um tick demorado se sobrepõe ao próximo, ou
-  quando há mais de uma instância da API), processa (`order.paid` dispara
-  email; `payment.orphaned` só loga erro, sem email — é alerta operacional),
-  marca `processed`. Falhas voltam o evento para `pending` e incrementam
-  `attempts`; após 5 tentativas, marca `failed` (terminal).
+- **`relayOutbox()`** — a cada 10s: primeiro reivindica (`updateMany`) de volta
+  para `pending` qualquer evento `processing` cujo `claimedAt` seja mais velho
+  que `STALE_CLAIM_MS` (5 min) — sem essa reciclagem, um evento cuja claim
+  nunca chega ao fim (crash, shutdown, exceção entre a claim e a atualização
+  por linha) ficaria `processing` para sempre, já que toda consulta aqui só
+  olha `pending`. Em seguida reivindica atomicamente até 50 eventos `pending`,
+  marcando `processing` e gravando um token por tick (`claimedBy`, um UUID
+  gerado na hora) junto com `claimedAt` — evita duplo envio de email quando um
+  tick demorado se sobrepõe ao próximo, ou quando há mais de uma instância da
+  API. A releitura seguinte filtra por esse token
+  (`status: "processing", claimedBy: token`), não só por `status`: numa claim
+  parcial (`createdAt` empatado pode fazer as janelas de 50 linhas de duas
+  instâncias divergirem) uma releitura sem o token pegaria linhas que a *outra*
+  instância acabou de reivindicar e reenviaria o email dela — o próprio bug que
+  a claim existe para evitar. Processa (`order.paid` dispara email;
+  `payment.orphaned` só loga erro, sem email — é alerta operacional), marca
+  `processed` e limpa `claimedBy`/`claimedAt`. Falhas voltam o evento para
+  `pending` e incrementam `attempts` (claim preservada até o próximo ciclo de
+  reivindicação, que a sobrescreve); após 5 tentativas, marca `failed`
+  (terminal) e também limpa `claimedBy`/`claimedAt`.
 - **`processWebhookEvents()`** — a cada 15s, reprocessa eventos webhook com
   status `received` (recovery de crashes entre persistir e processar).
 

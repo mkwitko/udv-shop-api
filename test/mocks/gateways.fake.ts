@@ -52,7 +52,7 @@ export function buildFakeGateways(overrides: Partial<Gateways> = {}): FakeGatewa
         stripeIntents.push(input);
         return { providerId: `pi_fake_${stripeIntents.length}`, clientSecret: "cs_fake" };
       },
-      async refundPaymentIntent(providerId) {
+      async refundPaymentIntent(providerId, _idempotencyKey) {
         stripeRefunds.push(providerId);
       },
       verifyWebhook(rawBody, signature) {

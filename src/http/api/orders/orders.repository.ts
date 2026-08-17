@@ -8,6 +8,12 @@ import {
 } from "../../../lib/cursor.js";
 import { ConflictError } from "../../../shared/errors.js";
 
+// A refund claim ("refund_pending") that never gets confirmed by the provider's webhook
+// (crash, dropped response, operator killing the process mid-request) would otherwise strand
+// the payment forever: the controller's pre-check treats any refund_pending as "already
+// refunding" and 409s every retry. Past this window we allow the claim to be retaken.
+const STALE_REFUND_CLAIM_MS = 15 * 60_000;
+
 const ORDER_INCLUDE = {
   items: true,
   payment: true,
@@ -190,8 +196,20 @@ export function createOrdersRepository(db: PrismaClient): OrdersRepository {
     markRefundedByPaymentId: (paymentId) => refund(db, paymentId),
 
     claimRefund: async (paymentId) => {
+      // Single atomic updateMany: also re-claims a stale refund_pending (claimed but never
+      // confirmed by the webhook). The write bumps updatedAt, which re-arms the staleness
+      // window for the new claim.
       const claimed = await db.payment.updateMany({
-        where: { id: paymentId, status: "succeeded" },
+        where: {
+          id: paymentId,
+          OR: [
+            { status: "succeeded" },
+            {
+              status: "refund_pending",
+              updatedAt: { lt: new Date(Date.now() - STALE_REFUND_CLAIM_MS) },
+            },
+          ],
+        },
         data: { status: "refund_pending" },
       });
       return claimed.count === 1;
