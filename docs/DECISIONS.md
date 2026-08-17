@@ -80,3 +80,45 @@ pela API (via Kubb).
 dois é o OpenAPI (daí a rigidez do ADR-002 sobre `operationId`/schema). Em
 compensação, mudanças que tocam os dois lados exigem coordenar duas PRs em vez
 de uma só.
+
+## ADR-006: criação de loja aberta a qualquer usuário autenticado, nasce `pending`
+
+**Contexto:** lojas começam com estado `draft` (interna) ou `pending` (aguardando
+ativação humana), e idealmente qualquer usuário autenticado deveria conseguir
+criar uma. Mas ativação automática seria prematura (depende de billing/SaaS).
+
+**Decisão:** `POST /stores` é protegida por `{ any: ["customer"] }` (qualquer
+autenticado); loja nova nasce com `status: pending`. Ativação (transição para
+`active`) exige `platform_admin`, até o Plano 6 adicionar automação de billing.
+
+**Consequências:** loja criada fica invisível no catálogo público e em listagens
+gerais até aprovação. Owner da loja pode editar draft, mas não ativar sozinho.
+Reduz spam/phishing; facilita auditoria de novos sellers.
+
+## ADR-007: slug de produto imutável após criação
+
+**Contexto:** URLs de produto (`/stores/:slug/products/:productSlug`) precisam
+ser estáveis para SEO (links antigos não quebram) e marketing (QR codes,
+impressos).
+
+**Decisão:** `slug` é gerado uma única vez na criação e nunca pode ser mudado.
+Se o usuario quiser mudar slug, deve criar um novo produto e arquivar o antigo.
+
+**Consequências:** garante URLs permanentes; evita complexidade de redirects
+ou histórico de slugs. Usuário tem que refazer trabalho de configuração, mas
+é a escolha certa a longo prazo.
+
+## ADR-008: upload de imagem via presigned PUT R2, com whitelist de content-type
+
+**Contexto:** precisamos armazenar imagens de produto em cloud storage (R2) sem
+expor credenciais S3/R2 direto ao frontend.
+
+**Decisão:** API gera uma presigned URL PUT válida por tempo curto (ex.: 15min),
+com headers restritos (`content-type` whitelist, ex.: `image/jpeg`, `image/png`).
+Frontend faz upload direto via PUT. Chave é namespaced: `stores/<storeId>/products/<productId>/<filename>`.
+
+**Consequências:** frontend não conhece credenciais R2; API controla quotas/tipos
+permitidos. Upload é rápido (não passa pela API). Filename é gerado pelo
+frontend para garantir unicidade + tipo correto (ex.: UUID + `.jpg`).
+Em caso de roubo de presigned URL, limite de tempo (`expirationSeconds`) e
+whitelist de content-type mitigam dano.
