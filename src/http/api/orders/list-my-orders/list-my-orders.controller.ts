@@ -1,5 +1,5 @@
 import type { FastifyPluginAsync } from "fastify";
-import { z } from "zod";
+import type { z } from "zod";
 import { db } from "../../../../infra/db/client.js";
 import { requireUser } from "../../../hooks/auth.js";
 import { createOrdersRepository, toOrderResponse } from "../orders.repository.js";

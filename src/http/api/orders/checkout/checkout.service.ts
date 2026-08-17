@@ -21,7 +21,7 @@ export function createCheckoutService(deps: CheckoutDeps) {
     input: CheckoutBody & { userId: string },
   ): Promise<{ order: OrderWithDetails; payment: PaymentInstructions }> => {
     const store = await deps.stores.findBySlug(input.storeSlug);
-    if (!store || store.status !== "active") throw new NotFoundError("store_not_found");
+    if (store?.status !== "active") throw new NotFoundError("store_not_found");
     assertProviderConfigured(store, input.provider);
 
     const slugs = input.items.map((i) => i.productSlug);
