@@ -5,6 +5,7 @@ import { ordersRoutes } from "./api/orders/index.js";
 import { productsRoutes } from "./api/products/index.js";
 import { storesRoutes } from "./api/stores/index.js";
 import { uploadsRoutes } from "./api/uploads/index.js";
+import { webhooksRoutes } from "./api/webhooks/index.js";
 import { authHook, permissionsHook } from "./hooks/auth.js";
 
 export const httpRoutes: FastifyPluginAsync = async (app) => {
@@ -16,4 +17,5 @@ export const httpRoutes: FastifyPluginAsync = async (app) => {
   await app.register(storesRoutes);
   await app.register(productsRoutes);
   await app.register(ordersRoutes);
+  await app.register(webhooksRoutes);
 };
