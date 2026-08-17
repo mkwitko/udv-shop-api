@@ -201,12 +201,11 @@ encomenda (`status: open`, `notifiedAt: null`) em vez de criar linha nova.
 Ciclo de vida:
 - **Criação/reabertura:** `POST /interests` exigindo `customer`, rejeita produto
   que não seja `on_demand` ou loja que não seja `active`.
-- **Transições:** `open → notified | cancelled`, depois `notified → converted |
-  cancelled`; `converted` e `cancelled` são terminais (só via novo `POST` o
-  cliente reabre). Nota: não há transição direta `open → converted` — conversão
-  acontece no worker de relay, nunca inline.
+- **Transições:** `open → notified | converted | cancelled`, depois
+  `notified → converted | cancelled`; `converted` e `cancelled` são terminais
+  (só via novo `POST` o cliente reabre).
 - **Notificação de chegada:** `POST /stores/:slug/products/:productSlug/interests
-  /notify` (staff+) marca até 500 encomendas `open → notified` de um produto
+  /notify` (admin+) marca até 500 encomendas `open → notified` de um produto
   específico e grava `interest.notified` no outbox para cada uma; email sai no
   relay de 10s, nunca inline.
 - **Conversão automática:** evento `order.paid` no relay converte (via
