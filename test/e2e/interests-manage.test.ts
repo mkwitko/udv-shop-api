@@ -96,7 +96,27 @@ async function seedDemand() {
       status: "converted",
     },
   });
-  return { store, cha, livro };
+  // Segunda loja com sua própria demanda: sem o filtro por storeId, tanto a lista
+  // quanto a demanda agregada de nucleo-a vazariam essas linhas.
+  const otherStore = await db.store.create({
+    data: { slug: "nucleo-fora", name: "Núcleo Fora", status: "active" },
+  });
+  const otherProduct = await db.product.create({
+    data: {
+      storeId: otherStore.id,
+      slug: "produto-fora",
+      name: "Produto de outra loja",
+      priceCents: 4000,
+      availability: "on_demand",
+    },
+  });
+  const otherUser = await db.user.create({
+    data: { email: "fora@example.org", name: "Pessoa Fora", passwordHash: "x" },
+  });
+  await db.productInterest.create({
+    data: { productId: otherProduct.id, userId: otherUser.id, qty: 9 },
+  });
+  return { store, cha, livro, otherStore, otherProduct };
 }
 
 describe("gestão de encomendas", () => {
@@ -117,7 +137,15 @@ describe("gestão de encomendas", () => {
       headers: { authorization: `Bearer ${token}` },
     });
     expect(res.statusCode).toBe(200);
-    expect(res.json().items).toHaveLength(6);
+    const items = res.json().items;
+    // Existem 7 encomendas no banco (6 de nucleo-a + 1 de nucleo-fora); só as 6 da
+    // própria loja devem voltar — isso falharia se `product: { storeId }` sumisse
+    // de listByStoreCursor.
+    expect(await db.productInterest.count()).toBe(7);
+    expect(items).toHaveLength(6);
+    expect(
+      items.some((i: { product: { slug: string } }) => i.product.slug === "produto-fora"),
+    ).toBe(false);
   });
 
   it("filtra por productSlug e por status", async () => {
@@ -148,7 +176,13 @@ describe("gestão de encomendas", () => {
     });
     expect(res.statusCode).toBe(200);
     const items = res.json().items;
+    // nucleo-fora tem demanda aberta de qty 9 (maior que qualquer uma daqui) — se
+    // aparecesse ela liderar-ia o sort por totalQty desc, então isso também prova
+    // que `product: { storeId }` em aggregateDemand está de fato filtrando.
     expect(items).toHaveLength(2);
+    expect(
+      items.some((i: { product: { slug: string } }) => i.product.slug === "produto-fora"),
+    ).toBe(false);
     expect(items[0]).toMatchObject({
       product: { slug: "cha-especial", name: "Chá especial" },
       openCount: 2,
@@ -215,6 +249,24 @@ describe("POST /stores/:slug/products/:productSlug/interests/notify", () => {
     expect(rows.filter((r) => r.notifiedAt !== null)).toHaveLength(3);
     const events = await db.outboxEvent.findMany({ where: { type: "interest.notified" } });
     expect(events).toHaveLength(2);
+  });
+
+  it("notificar duas vezes é no-op na segunda chamada (ADR-014)", async () => {
+    const { store } = await seedDemand();
+    const { token } = await registerWithRole(app, "notify-idem@example.org", store.id, "admin");
+    const first = await app.inject({
+      method: "POST",
+      url: "/stores/nucleo-a/products/cha-especial/interests/notify",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(first.json()).toEqual({ notified: 2 });
+    const second = await app.inject({
+      method: "POST",
+      url: "/stores/nucleo-a/products/cha-especial/interests/notify",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(second.json()).toEqual({ notified: 0 });
+    expect(await db.outboxEvent.count({ where: { type: "interest.notified" } })).toBe(2);
   });
 
   it("sem interesse aberto → notified 0 e nenhum outbox", async () => {

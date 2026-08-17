@@ -165,6 +165,44 @@ describe("workers", () => {
     expect(row.status).toBe("processed");
   });
 
+  it("interest.notified não envia email se o interesse não está mais 'notified'", async () => {
+    const store = await db.store.create({
+      data: { slug: "nucleo-a", name: "Núcleo A", status: "active" },
+    });
+    const product = await db.product.create({
+      data: {
+        storeId: store.id,
+        slug: "cha-especial",
+        name: "Chá especial",
+        priceCents: 5000,
+        availability: "on_demand",
+      },
+    });
+    const user = await db.user.create({
+      data: { email: "cancelou@example.org", name: "Cliente", passwordHash: "x" },
+    });
+    // Cliente cancelou entre o enfileiramento do evento e este tick.
+    const interest = await db.productInterest.create({
+      data: {
+        productId: product.id,
+        userId: user.id,
+        qty: 2,
+        status: "cancelled",
+      },
+    });
+    await db.outboxEvent.create({
+      data: { type: "interest.notified", payload: { interestId: interest.id } },
+    });
+
+    const gateways = buildFakeGateways();
+    const processed = await relayOutbox({ db, email: gateways.email, log: logger });
+
+    expect(processed).toBe(1);
+    expect(gateways.sentEmails).toHaveLength(0);
+    const row = await db.outboxEvent.findFirstOrThrow({ where: { type: "interest.notified" } });
+    expect(row.status).toBe("processed");
+  });
+
   it("order.paid converte os interesses do comprador nos produtos do pedido", async () => {
     const store = await db.store.create({
       data: { slug: "nucleo-a", name: "Núcleo A", status: "active" },
@@ -178,6 +216,17 @@ describe("workers", () => {
         availability: "on_demand",
       },
     });
+    // Segundo produto do mesmo pedido, para cobrir a transição open → converted
+    // diretamente (interesse que nunca foi notificado, convertido pelo order.paid).
+    const product2 = await db.product.create({
+      data: {
+        storeId: store.id,
+        slug: "outro-produto",
+        name: "Outro produto",
+        priceCents: 3000,
+        availability: "on_demand",
+      },
+    });
     const buyer = await db.user.create({
       data: { email: "comprador@example.org", name: "Comprador", passwordHash: "x" },
     });
@@ -187,6 +236,9 @@ describe("workers", () => {
     const mine = await db.productInterest.create({
       data: { productId: product.id, userId: buyer.id, qty: 1, status: "notified" },
     });
+    const mineOpen = await db.productInterest.create({
+      data: { productId: product2.id, userId: buyer.id, qty: 1 },
+    });
     const alheio = await db.productInterest.create({
       data: { productId: product.id, userId: outro.id, qty: 1 },
     });
@@ -195,11 +247,14 @@ describe("workers", () => {
         storeId: store.id,
         userId: buyer.id,
         status: "paid",
-        totalCents: 5000,
+        totalCents: 8000,
         contactPhone: "11999990000",
         expiresAt: new Date(Date.now() + 60_000),
         items: {
-          create: [{ productId: product.id, name: "Chá especial", priceCents: 5000, qty: 1 }],
+          create: [
+            { productId: product.id, name: "Chá especial", priceCents: 5000, qty: 1 },
+            { productId: product2.id, name: "Outro produto", priceCents: 3000, qty: 1 },
+          ],
         },
       },
     });
@@ -211,6 +266,10 @@ describe("workers", () => {
     expect((await db.productInterest.findUniqueOrThrow({ where: { id: mine.id } })).status).toBe(
       "converted",
     );
+    // open → converted direto, sem passar por notified: o caso mais comum de conversão.
+    expect(
+      (await db.productInterest.findUniqueOrThrow({ where: { id: mineOpen.id } })).status,
+    ).toBe("converted");
     // Interesse de outra pessoa no mesmo produto continua na fila.
     expect((await db.productInterest.findUniqueOrThrow({ where: { id: alheio.id } })).status).toBe(
       "open",
