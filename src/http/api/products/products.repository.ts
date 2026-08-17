@@ -19,6 +19,7 @@ export interface ProductsRepository {
     cursor: string | null;
     includeInactive: boolean;
   }): Promise<CursorPage<Product>>;
+  findActiveBySlugs(storeId: string, slugs: string[]): Promise<Product[]>;
 }
 
 export function createProductsRepository(db: PrismaClient): ProductsRepository {
@@ -67,6 +68,8 @@ export function createProductsRepository(db: PrismaClient): ProductsRepository {
         (r) => r,
       );
     },
+    findActiveBySlugs: (storeId, slugs) =>
+      db.product.findMany({ where: { storeId, slug: { in: slugs }, active: true } }),
   };
 }
 
