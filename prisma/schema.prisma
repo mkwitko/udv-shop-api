@@ -23,6 +23,7 @@ model User {
   emailTokens   EmailToken[]
   storeRoles    UserStoreRole[]
   orders        Order[]
+  interests     ProductInterest[]
 
   @@map("users")
 }
@@ -81,6 +82,13 @@ enum ProductAvailability {
   on_demand
 }
 
+enum ProductInterestStatus {
+  open
+  notified
+  converted
+  cancelled
+}
+
 model Store {
   id                String      @id @default(uuid()) @db.Uuid
   slug              String      @unique
@@ -134,10 +142,31 @@ model Product {
 
   store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
   orderItems OrderItem[]
+  interests  ProductInterest[]
 
   @@unique([storeId, slug])
   @@index([storeId, active, createdAt(sort: Desc), id(sort: Desc)])
   @@map("products")
+}
+
+model ProductInterest {
+  id         String                @id @default(uuid()) @db.Uuid
+  productId  String                @map("product_id") @db.Uuid
+  userId     String                @map("user_id") @db.Uuid
+  qty        Int                   @default(1)
+  status     ProductInterestStatus @default(open)
+  note       String?
+  notifiedAt DateTime?             @map("notified_at")
+  createdAt  DateTime              @default(now()) @map("created_at")
+  updatedAt  DateTime              @updatedAt @map("updated_at")
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, userId])
+  @@index([productId, status])
+  @@index([userId, createdAt(sort: Desc), id(sort: Desc)])
+  @@map("product_interests")
 }
 
 enum OrderStatus {

@@ -7,6 +7,7 @@ export async function resetDb() {
     db.order.deleteMany(),
     db.webhookEvent.deleteMany(),
     db.outboxEvent.deleteMany(),
+    db.productInterest.deleteMany(),
     db.product.deleteMany(),
     db.userStoreRole.deleteMany(),
     db.store.deleteMany(),
