@@ -1,11 +1,13 @@
 import { randomBytes } from "node:crypto";
 import type { FastifyPluginAsync } from "fastify";
+import { env } from "../../../../config/env.js";
 
 const OAUTH_COOKIE_OPTS = {
   path: "/auth",
   httpOnly: true,
   sameSite: "lax",
   signed: true,
+  secure: env.NODE_ENV === "production",
   maxAge: 600,
 } as const;
 

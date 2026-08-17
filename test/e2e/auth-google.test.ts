@@ -55,4 +55,14 @@ describe("google oauth", () => {
     expect(res.headers.location).toContain("oauth=erro");
     expect(await db.user.count()).toBe(0);
   });
+
+  it("state ausente → redireciona com erro, sem criar user", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: "/auth/google/callback?code=fake-code",
+    });
+    expect(res.statusCode).toBe(302);
+    expect(res.headers.location).toContain("oauth=erro");
+    expect(await db.user.count()).toBe(0);
+  });
 });

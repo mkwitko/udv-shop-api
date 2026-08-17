@@ -7,7 +7,10 @@ import { setRefreshCookie } from "../cookies.js";
 import { createTokensService } from "../tokens.service.js";
 import { createGoogleAuthService } from "./google.service.js";
 
-const CallbackQuery = z.object({ code: z.string().min(1), state: z.string().min(1) });
+const CallbackQuery = z.object({
+  code: z.string().min(1).optional(),
+  state: z.string().min(1).optional(),
+});
 type CallbackQuery = z.infer<typeof CallbackQuery>;
 
 export const googleCallbackRoute: FastifyPluginAsync = async (app) => {
@@ -30,7 +33,13 @@ export const googleCallbackRoute: FastifyPluginAsync = async (app) => {
       void reply.clearCookie("udv_oauth_state", { path: "/auth" });
       void reply.clearCookie("udv_oauth_nonce", { path: "/auth" });
 
-      if (!stateCookie?.valid || stateCookie.value !== state || !nonceCookie?.valid) {
+      if (
+        !code ||
+        !state ||
+        !stateCookie?.valid ||
+        stateCookie.value !== state ||
+        !nonceCookie?.valid
+      ) {
         return fail();
       }
 
