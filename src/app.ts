@@ -1,3 +1,4 @@
+import cookie from "@fastify/cookie";
 import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
 import sensible from "@fastify/sensible";
@@ -35,6 +36,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
   if (opts.rateLimit ?? env.NODE_ENV !== "test") await app.register(rateLimitPlugin);
   await app.register(gatewaysPlugin, { gateways: opts.gateways });
   await app.register(swaggerPlugin);
+  await app.register(cookie, { secret: env.COOKIE_SECRET });
   await app.register(httpRoutes);
 
   return app;
