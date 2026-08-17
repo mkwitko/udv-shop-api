@@ -20,6 +20,11 @@ const BaseEnvSchema = z.object({
   GOOGLE_REDIRECT_URI: z.string().default(""),
   RESEND_API_KEY: z.string().default(""),
   EMAIL_FROM: z.string().default("Lojinha <nao-responda@example.org>"),
+  R2_ACCOUNT_ID: z.string().default(""),
+  R2_ACCESS_KEY_ID: z.string().default(""),
+  R2_SECRET_ACCESS_KEY: z.string().default(""),
+  R2_BUCKET: z.string().default(""),
+  R2_PUBLIC_BASE_URL: z.string().default(""),
 });
 
 export const EnvSchema = BaseEnvSchema.superRefine((val, ctx) => {
@@ -30,6 +35,11 @@ export const EnvSchema = BaseEnvSchema.superRefine((val, ctx) => {
     "GOOGLE_CLIENT_ID",
     "GOOGLE_CLIENT_SECRET",
     "GOOGLE_REDIRECT_URI",
+    "R2_ACCOUNT_ID",
+    "R2_ACCESS_KEY_ID",
+    "R2_SECRET_ACCESS_KEY",
+    "R2_BUCKET",
+    "R2_PUBLIC_BASE_URL",
   ] as const;
   for (const key of requiredNonEmpty) {
     if (val[key].length === 0) {

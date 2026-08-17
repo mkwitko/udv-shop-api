@@ -29,5 +29,9 @@ export function buildFakeGateways(overrides: Partial<Gateways> = {}): FakeGatewa
           `https://accounts.google.com/o/oauth2/v2/auth?state=${state}&nonce=${nonce}`,
         exchangeCode: async () => googleProfile,
       } satisfies Gateways["google"]),
+    r2: overrides.r2 ?? {
+      presignPut: async ({ key }) => `https://fake-r2.local/put/${key}`,
+      publicUrl: (key) => `https://cdn.fake/${key}`,
+    },
   };
 }

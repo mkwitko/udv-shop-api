@@ -12,6 +12,11 @@ const base = {
   GOOGLE_CLIENT_ID: "client-id",
   GOOGLE_CLIENT_SECRET: "client-secret",
   GOOGLE_REDIRECT_URI: "https://shop.example.org/auth/google/callback",
+  R2_ACCOUNT_ID: "acc",
+  R2_ACCESS_KEY_ID: "key",
+  R2_SECRET_ACCESS_KEY: "secret",
+  R2_BUCKET: "bucket",
+  R2_PUBLIC_BASE_URL: "https://cdn.example.org",
 };
 
 describe("env schema — production strictness", () => {
