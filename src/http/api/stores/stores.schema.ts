@@ -29,3 +29,15 @@ export const ListStoresQuery = z.object({
   cursor: z.string().optional(),
 });
 export type ListStoresQuery = z.infer<typeof ListStoresQuery>;
+
+export const UpdateStoreBody = z.object({
+  name: z.string().min(2).max(120).optional(),
+  description: z.string().max(2000).nullable().optional(),
+  branding: z.record(z.string(), z.unknown()).optional(),
+});
+export type UpdateStoreBody = z.infer<typeof UpdateStoreBody>;
+
+export const UpdateStoreStatusBody = z.object({
+  status: z.enum(["pending", "active", "suspended"]),
+});
+export type UpdateStoreStatusBody = z.infer<typeof UpdateStoreStatusBody>;

@@ -16,7 +16,11 @@ export interface StoresRepository {
   listActiveByCursor(limit: number, cursor: string | null): Promise<CursorPage<Store>>;
   update(
     id: string,
-    data: Partial<{ name: string; description: string | null; branding: unknown }>,
+    data: {
+      name?: string | undefined;
+      description?: string | null | undefined;
+      branding?: unknown;
+    },
   ): Promise<Store>;
   setStatus(id: string, status: StoreStatus): Promise<Store>;
 }
