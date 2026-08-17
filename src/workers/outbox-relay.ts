@@ -136,6 +136,28 @@ export async function relayOutbox(deps: {
           { orderId, donationId, paymentId },
           "pagamento órfão: pagamento capturado para agregado não pendente, reembolso manual necessário",
         );
+      } else if (event.type === "raffle.drawn") {
+        const { raffleId } = event.payload as { raffleId: string };
+        const prizes = await deps.db.rafflePrize.findMany({
+          where: { raffleId, winnerEntryId: { not: null } },
+          orderBy: { position: "asc" },
+          include: {
+            raffle: {
+              select: { campaign: { select: { title: true, store: { select: { name: true } } } } },
+            },
+            winnerEntry: { include: { user: { select: { email: true, name: true } } } },
+          },
+        });
+        for (const prize of prizes) {
+          const winner = prize.winnerEntry;
+          if (!winner) continue;
+          const campaign = prize.raffle.campaign;
+          await deps.email.send({
+            to: winner.user.email,
+            subject: `Você foi sorteado — ${campaign.title}`,
+            html: `<p>Olá, ${winner.user.name}!</p><p>O sorteio da campanha “${campaign.title}”, do núcleo ${campaign.store.name}, aconteceu — e o seu número <strong>${winner.number}</strong> foi contemplado com: ${prize.title}.</p><p>A equipe do núcleo vai entrar em contato para combinar a entrega.</p><p>Obrigado por apoiar essa causa.</p>`,
+          });
+        }
       }
       await deps.db.outboxEvent.update({
         where: { id: event.id },

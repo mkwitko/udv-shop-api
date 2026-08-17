@@ -7,6 +7,8 @@ import {
   KEYSET_ORDER_BY,
   toPage,
 } from "../../../lib/cursor.js";
+import { ConflictError } from "../../../shared/errors.js";
+import { drawWinners, RAFFLE_ALGORITHM } from "./draw.js";
 import { RAFFLE_MAX_NUMBERS_PER_DONATION } from "./raffles.schema.js";
 
 const RAFFLE_INCLUDE = {
@@ -38,6 +40,7 @@ export interface RafflesRepository {
     limit: number;
     cursor: string | null;
   }): Promise<CursorPage<EntryWithUser>>;
+  draw(raffleId: string, seed: string): Promise<RaffleWithPrizes>;
 }
 
 export function createRafflesRepository(db: PrismaClient): RafflesRepository {
@@ -141,6 +144,46 @@ export function createRafflesRepository(db: PrismaClient): RafflesRepository {
         (r) => r,
       );
     },
+
+    draw: (raffleId, seed) =>
+      db.$transaction(async (tx) => {
+        // Reivindicação atômica: dois cliques no botão de sortear não podem produzir
+        // dois sorteios. O segundo perde a claim e recebe 409.
+        const claimed = await tx.raffle.updateMany({
+          where: { id: raffleId, status: "open" },
+          data: { status: "drawn", seed, drawnAt: new Date(), algorithm: RAFFLE_ALGORITHM },
+        });
+        if (claimed.count !== 1) throw new ConflictError("raffle_not_open");
+
+        const entries = await tx.raffleEntry.findMany({
+          where: { raffleId },
+          select: { id: true, number: true },
+        });
+        // Sortear sem participante não é um sorteio. Lançar aqui desfaz a claim junto
+        // com a transação, então o sorteio continua "open" para quando houver gente.
+        if (entries.length === 0) throw new ConflictError("raffle_has_no_entries");
+
+        const prizes = await tx.rafflePrize.findMany({
+          where: { raffleId },
+          orderBy: { position: "asc" },
+        });
+        const winners = drawWinners(
+          seed,
+          entries.map((e) => e.number),
+          prizes.length,
+        );
+        const idByNumber = new Map(entries.map((e) => [e.number, e.id]));
+        for (const [i, prize] of prizes.entries()) {
+          const number = winners[i];
+          if (number === undefined) break;
+          await tx.rafflePrize.update({
+            where: { id: prize.id },
+            data: { winnerEntryId: idByNumber.get(number) ?? null },
+          });
+        }
+        await tx.outboxEvent.create({ data: { type: "raffle.drawn", payload: { raffleId } } });
+        return tx.raffle.findUniqueOrThrow({ where: { id: raffleId }, include: RAFFLE_INCLUDE });
+      }),
   };
 }
 
