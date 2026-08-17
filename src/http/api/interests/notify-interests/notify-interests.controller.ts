@@ -29,7 +29,7 @@ export const notifyInterestsRoute: FastifyPluginAsync = async (app) => {
       const { productSlug } = req.params as { productSlug: string };
       const product = await products.findBySlug(store.id, productSlug);
       if (!product) throw new NotFoundError("product_not_found");
-      const notified = await repo.notifyArrival(product.id);
+      const notified = await repo.notifyArrival(product.id, req.log);
       return { notified };
     },
   );

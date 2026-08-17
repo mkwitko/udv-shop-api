@@ -1,4 +1,5 @@
 import type { Prisma, PrismaClient, ProductInterestStatus } from "@prisma/client";
+import type { FastifyBaseLogger } from "fastify";
 import {
   afterCursorWhere,
   type CursorPage,
@@ -6,6 +7,7 @@ import {
   KEYSET_ORDER_BY,
   toPage,
 } from "../../../lib/cursor.js";
+import { DEMAND_MAX_PRODUCTS } from "./interests.schema.js";
 
 const INTEREST_INCLUDE = {
   product: {
@@ -54,7 +56,7 @@ export interface InterestsRepository {
       totalQty: number;
     }>
   >;
-  notifyArrival(productId: string): Promise<number>;
+  notifyArrival(productId: string, log: FastifyBaseLogger): Promise<number>;
   convertForOrder(input: { userId: string; productIds: string[] }): Promise<number>;
 }
 
@@ -140,6 +142,9 @@ export function createInterestsRepository(db: PrismaClient): InterestsRepository
         current.totalQty += row._sum.qty ?? 0;
         acc.set(row.productId, current);
       }
+      // Teto é uma propriedade do agregado, não da resposta HTTP: o groupBy acima
+      // ainda é ilimitado (conhecido — ver M2 na revisão), mas nada além do teto sai
+      // do repositório.
       return [...acc.entries()]
         .flatMap(([productId, counts]) => {
           const product = byId.get(productId);
@@ -157,11 +162,13 @@ export function createInterestsRepository(db: PrismaClient): InterestsRepository
               ]
             : [];
         })
-        .sort((a, b) => b.totalQty - a.totalQty || a.product.slug.localeCompare(b.product.slug));
+        .sort((a, b) => b.totalQty - a.totalQty || a.product.slug.localeCompare(b.product.slug))
+        .slice(0, DEMAND_MAX_PRODUCTS);
     },
 
-    notifyArrival: (productId) =>
+    notifyArrival: (productId, log) =>
       db.$transaction(async (tx) => {
+        const notifiedAt = new Date();
         // Teto por chamada: a loja pode chamar de novo para drenar o resto, e cada
         // interesse já notificado sai do conjunto "open".
         const rows = await tx.productInterest.findMany({
@@ -173,15 +180,28 @@ export function createInterestsRepository(db: PrismaClient): InterestsRepository
         const ids = rows.map((r) => r.id);
         const updated = await tx.productInterest.updateMany({
           where: { id: { in: ids }, status: "open" },
-          data: { status: "notified", notifiedAt: new Date() },
+          data: { status: "notified", notifiedAt },
+        });
+        // Deriva os eventos do que o updateMany realmente escreveu, não da pré-seleção:
+        // um cancelamento concorrente entre o findMany e o updateMany tira a linha do
+        // conjunto "notified" e ela não deve gerar email nem contar como enfileirada.
+        const notifiedRows = await tx.productInterest.findMany({
+          where: { id: { in: ids }, status: "notified", notifiedAt },
+          select: { id: true },
         });
         // Email nunca sai inline no request da loja: o outbox garante entrega e retry.
         await tx.outboxEvent.createMany({
-          data: ids.map((interestId) => ({
+          data: notifiedRows.map((r) => ({
             type: "interest.notified",
-            payload: { interestId },
+            payload: { interestId: r.id },
           })),
         });
+        if (rows.length === 500) {
+          log.warn(
+            { productId },
+            "notifyArrival: teto de 500 encomendas atingido nesta chamada, chame de novo para drenar o resto",
+          );
+        }
         return updated.count;
       }),
 
