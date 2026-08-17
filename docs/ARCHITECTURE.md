@@ -190,6 +190,57 @@ erro, grava um `OutboxEvent` `payment.orphaned` (`{ orderId, paymentId }`) na
 mesma transação, para o reembolso manual ficar consultável em vez de só
 aparecer no stdout. Ver ADR-012.
 
+## Encomendas (interests)
+
+Uma **encomenda** (`ProductInterest`) é uma linha única de demanda de um cliente
+por um produto `on_demand` específico de uma loja `active`. O par `(productId,
+userId)` é único — múltiplas encomendas do mesmo cliente pelo mesmo produto não
+são permitidas; um `POST /interests` que atualiza `qty`/`note` e reabre a
+encomenda (`status: open`, `notifiedAt: null`) em vez de criar linha nova.
+
+Ciclo de vida:
+- **Criação/reabertura:** `POST /interests` exigindo `customer`, rejeita produto
+  que não seja `on_demand` ou loja que não seja `active`.
+- **Transições:** `open → notified | cancelled`, depois `notified → converted |
+  cancelled`; `converted` e `cancelled` são terminais (só via novo `POST` o
+  cliente reabre). Nota: não há transição direta `open → converted` — conversão
+  acontece no worker de relay, nunca inline.
+- **Notificação de chegada:** `POST /stores/:slug/products/:productSlug/interests
+  /notify` (staff+) marca até 500 encomendas `open → notified` de um produto
+  específico e grava `interest.notified` no outbox para cada uma; email sai no
+  relay de 10s, nunca inline.
+- **Conversão automática:** evento `order.paid` no relay converte (via
+  `updateMany` guardado) encomendas `open | notified` do comprador referentes aos
+  produtos do pedido para `status: converted`, evitando duplicação de demanda.
+- **Consultas:**
+  - `GET /interests` (customer): lista encomendas do usuário por cursor, pode
+    filtrar por status.
+  - `GET /stores/:slug/interests` (staff+): lista encomendas da loja, filtra por
+    status ou `productSlug` (cursor).
+  - `GET /stores/:slug/interests/demand` (staff+): demanda agregada — soma só
+    `open` e `notified`, por produto, ordenada por qty total desc, máximo 100
+    produtos na resposta.
+- **Cancelamento:** `DELETE /interests/:id` (customer) marca `open | notified →
+  cancelled`; interesse convertido não pode ser cancelado (é compra, tem seu
+  pedido).
+
+Routes e permissões:
+| Método | Rota | Personas | Efeito |
+|--------|------|----------|--------|
+| `POST` | `/interests` | `customer` | cria/reabre (`upsertOpen`) |
+| `GET` | `/interests` | `customer` | lista do usuário (cursor + status filter) |
+| `DELETE` | `/interests/:id` | `customer` | cancela `open/notified` |
+| `GET` | `/stores/:slug/interests` | `staff+` | lista da loja (cursor + status/produto filter) |
+| `POST` | `/stores/:slug/products/:productSlug/interests/notify` | `admin+` | marca `open → notified`, grava outbox |
+| `GET` | `/stores/:slug/interests/demand` | `staff+` | agregado da loja (qty desc, teto 100) |
+
+Repository (`InterestsRepository`) expõe: `upsertOpen`, `listMineCursor`,
+`findByIdForUser`, `cancelMine`, `listByStoreCursor`, `aggregateDemand`,
+`notifyArrival`, `convertForOrder`. Índices de banco:
+- `product_interests(product_id, status)` — busca `notifyArrival` / agregado.
+- `product_interests(user_id, created_at DESC, id DESC)` — cursor lista pessoal.
+- `product_interests(product_id, user_id) UNIQUE` — garante uma linha por par.
+
 ## Webhooks
 
 Integração com Stripe e Woovi por webhooks idempotentes. Ambas as rotas são

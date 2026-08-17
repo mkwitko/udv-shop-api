@@ -229,3 +229,30 @@ neste plano.
 webhook de onboarding. Plano 6 adiciona forms de autenticação e automação.
 Lojas sem nenhum método configurado não conseguem vender (erro 400), o que é
 intencional — força setup mínimo antes de aceitar pedidos.
+
+## ADR-014: Encomenda é uma linha única por (produto, usuário), com notificação via outbox
+
+**Contexto:** a spec demanda `product_interests` com status `open | notified |
+converted | cancelled` e gestão com demanda agregada + aviso de chegada. Permitir
+múltiplas linhas por par (produto, usuário) inflaria a demanda agregada (cliente
+vê demanda de si mesmo contabilizada várias vezes) e abriria porta para spam;
+mandar email de chegada **dentro do request** da loja travaria a resposta com
+centenas de interesses e perderia entrega em caso de falha da rede/email antes da
+resposta.
+
+**Decisão:** unique constraint `(productId, userId)`; `POST /interests` é
+idempotente e reabre linha existente em vez de criar nova (`upsertOpen` com
+`update` setando `status: open, notifiedAt: null`); notificação de chegada
+(`POST .../interests/notify`) grava `interest.notified` evento no outbox e o
+worker `relayOutbox` processa de forma assíncrona, enviando email sem bloquear a
+resposta; conversão automática (interesse vira compra após `order.paid`) rodam
+dentro do mesmo relayOutbox via `updateMany` idempotente guardado por status
+(`status: { in: ["open", "notified"] }`).
+
+**Consequências:** demanda agregada é confiável por construção (uma linha por
+par); cliente não consegue duplicar sua própria encomenda; reprocessar um evento
+outbox é no-op (queries guardadas por status anterior); entrega de email é
+durável mesmo se loja receber timeout (outbox retry a cada 10s por até 5
+tentativas); o custo é que histórico de encomendas anteriores do mesmo par se
+perde na reabertura — tradeoff aceito, pois clientes com necessidade de auditoria
+completa têm os `Order`.
