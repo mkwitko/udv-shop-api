@@ -63,6 +63,12 @@ export interface DonationsRepository {
     limit: number;
     cursor: string | null;
   }): Promise<CursorPage<DonationWithDonor>>;
+  markSubscriptionInvoicePaid(input: {
+    subscriptionRef: string;
+    invoiceId: string;
+    amountCents: number;
+  }): Promise<{ donationId: string; created: boolean } | null>;
+  markSubscriptionCancelled(subscriptionRef: string): Promise<boolean>;
 }
 
 export function createDonationsRepository(db: PrismaClient): DonationsRepository {
@@ -214,6 +220,94 @@ export function createDonationsRepository(db: PrismaClient): DonationsRepository
         (r) => ({ createdAt: r.createdAt, id: r.id }),
         (r) => r,
       );
+    },
+
+    markSubscriptionInvoicePaid: async ({ subscriptionRef, invoiceId, amountCents }) => {
+      // Idempotência do ciclo: providerInvoiceId é @unique. Duas entregas do mesmo
+      // invoice.paid (o Stripe reenvia) só podem produzir uma linha — ver D5.
+      const already = await db.donation.findUnique({ where: { providerInvoiceId: invoiceId } });
+      if (already) return null;
+      // A âncora é a doação criada no POST /donations, a mais antiga do subscriptionRef.
+      const anchor = await db.donation.findFirst({
+        where: { subscriptionRef },
+        orderBy: { createdAt: "asc" },
+      });
+      if (!anchor) return null;
+
+      if (anchor.status === "pending_payment") {
+        return db.$transaction(async (tx) => {
+          const claimed = await tx.donation.updateMany({
+            where: { id: anchor.id, status: "pending_payment" },
+            data: { status: "paid", providerInvoiceId: invoiceId },
+          });
+          if (claimed.count !== 1) return null;
+          await tx.payment.updateMany({
+            where: { donationId: anchor.id, status: { in: ["pending", "failed", "expired"] } },
+            data: { status: "succeeded", providerId: invoiceId },
+          });
+          await tx.outboxEvent.create({
+            data: { type: "donation.received", payload: { donationId: anchor.id } },
+          });
+          return { donationId: anchor.id, created: false };
+        });
+      }
+
+      // Ciclo seguinte: linha nova, para a meta da campanha e os números do sorteio
+      // andarem todo mês.
+      const store = await db.store.findUniqueOrThrow({
+        where: { id: anchor.storeId },
+        select: { applicationFeeBps: true },
+      });
+      const applicationFeeCents = Math.floor((amountCents * store.applicationFeeBps) / 10000);
+      try {
+        return await db.$transaction(async (tx) => {
+          const child = await tx.donation.create({
+            data: {
+              storeId: anchor.storeId,
+              campaignId: anchor.campaignId,
+              userId: anchor.userId,
+              type: "monthly",
+              amountCents,
+              status: "paid",
+              anonymous: anchor.anonymous,
+              message: anchor.message,
+              subscriptionRef,
+              providerInvoiceId: invoiceId,
+              payment: {
+                create: {
+                  provider: "stripe",
+                  providerId: invoiceId,
+                  amountCents,
+                  applicationFeeCents,
+                  status: "succeeded",
+                },
+              },
+            },
+          });
+          await tx.outboxEvent.create({
+            data: { type: "donation.received", payload: { donationId: child.id } },
+          });
+          return { donationId: child.id, created: true };
+        });
+      } catch (err) {
+        // Corrida entre duas entregas do mesmo invoice: o @unique é o árbitro final.
+        if (
+          typeof err === "object" &&
+          err !== null &&
+          (err as { code?: string }).code === "P2002"
+        ) {
+          return null;
+        }
+        throw err;
+      }
+    },
+
+    markSubscriptionCancelled: async (subscriptionRef) => {
+      const updated = await db.donation.updateMany({
+        where: { subscriptionRef, subscriptionCancelledAt: null },
+        data: { subscriptionCancelledAt: new Date() },
+      });
+      return updated.count > 0;
     },
   };
 }

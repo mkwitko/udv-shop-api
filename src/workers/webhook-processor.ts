@@ -1,6 +1,7 @@
 import type { PrismaClient } from "@prisma/client";
 import type { FastifyBaseLogger } from "fastify";
 import { z } from "zod";
+import { createDonationsRepository } from "../http/api/donations/donations.repository.js";
 import {
   cancelPaymentAggregate,
   markPaymentPaid,
@@ -15,7 +16,16 @@ const WOOVI_REFUNDED = "OPENPIX:CHARGE_REFUND";
 const uuidSchema = z.string().uuid();
 
 type StripePayload = {
-  data?: { object?: { id?: string; payment_intent?: string; metadata?: Record<string, string> } };
+  data?: {
+    object?: {
+      id?: string;
+      payment_intent?: string;
+      subscription?: string;
+      amount_paid?: number;
+      billing_reason?: string;
+      metadata?: Record<string, string>;
+    };
+  };
 };
 type WooviPayload = { charge?: { correlationID?: string } };
 
@@ -42,6 +52,12 @@ export async function processWebhookEvents(deps: {
         const payload = event.payload as StripePayload;
         const object = payload.data?.object ?? {};
         const paymentId = object.metadata?.paymentId;
+        const invoice =
+          typeof object.id === "string" &&
+          typeof object.subscription === "string" &&
+          typeof object.amount_paid === "number"
+            ? { id: object.id, subscription: object.subscription, amount_paid: object.amount_paid }
+            : null;
         if (event.type === "payment_intent.succeeded" && paymentId) {
           await markPaymentPaid({
             db: deps.db,
@@ -61,6 +77,14 @@ export async function processWebhookEvents(deps: {
           );
         } else if (event.type === "charge.refunded" && object.payment_intent) {
           await refundPaymentByProviderId({ db: deps.db, providerId: object.payment_intent });
+        } else if (event.type === "invoice.paid" && invoice?.subscription) {
+          await createDonationsRepository(deps.db).markSubscriptionInvoicePaid({
+            subscriptionRef: invoice.subscription,
+            invoiceId: invoice.id,
+            amountCents: invoice.amount_paid,
+          });
+        } else if (event.type === "customer.subscription.deleted" && object.id) {
+          await createDonationsRepository(deps.db).markSubscriptionCancelled(object.id);
         }
       } else {
         const payload = event.payload as WooviPayload;
