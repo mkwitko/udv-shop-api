@@ -39,6 +39,21 @@ export interface InterestsRepository {
   }): Promise<CursorPage<InterestWithDetails>>;
   findByIdForUser(id: string, userId: string): Promise<InterestWithDetails | null>;
   cancelMine(id: string, userId: string): Promise<boolean>;
+  listByStoreCursor(args: {
+    storeId: string;
+    productId: string | null;
+    status: ProductInterestStatus | null;
+    limit: number;
+    cursor: string | null;
+  }): Promise<CursorPage<InterestWithDetails>>;
+  aggregateDemand(storeId: string): Promise<
+    Array<{
+      product: { slug: string; name: string; priceCents: number; availability: string };
+      openCount: number;
+      notifiedCount: number;
+      totalQty: number;
+    }>
+  >;
 }
 
 export function createInterestsRepository(db: PrismaClient): InterestsRepository {
@@ -78,6 +93,69 @@ export function createInterestsRepository(db: PrismaClient): InterestsRepository
         data: { status: "cancelled" },
       });
       return cancelled.count === 1;
+    },
+
+    listByStoreCursor: async ({ storeId, productId, status, limit, cursor }) => {
+      const after = cursor ? afterCursorWhere(decodeCursor(cursor)) : {};
+      const rows = await db.productInterest.findMany({
+        where: {
+          product: { storeId },
+          ...(productId !== null && { productId }),
+          ...(status !== null && { status }),
+          ...after,
+        },
+        orderBy: [...KEYSET_ORDER_BY],
+        take: limit + 1,
+        include: INTEREST_INCLUDE,
+      });
+      return toPage(
+        rows,
+        limit,
+        (r) => ({ createdAt: r.createdAt, id: r.id }),
+        (r) => r,
+      );
+    },
+
+    aggregateDemand: async (storeId) => {
+      // Só demanda viva: convertida já virou pedido, cancelada saiu da fila.
+      const grouped = await db.productInterest.groupBy({
+        by: ["productId", "status"],
+        where: { product: { storeId }, status: { in: ["open", "notified"] } },
+        _count: { _all: true },
+        _sum: { qty: true },
+      });
+      if (grouped.length === 0) return [];
+      const products = await db.product.findMany({
+        where: { id: { in: [...new Set(grouped.map((g) => g.productId))] } },
+        select: { id: true, slug: true, name: true, priceCents: true, availability: true },
+      });
+      const byId = new Map(products.map((p) => [p.id, p]));
+      const acc = new Map<string, { openCount: number; notifiedCount: number; totalQty: number }>();
+      for (const row of grouped) {
+        const current = acc.get(row.productId) ?? { openCount: 0, notifiedCount: 0, totalQty: 0 };
+        if (row.status === "open") current.openCount = row._count._all;
+        if (row.status === "notified") current.notifiedCount = row._count._all;
+        current.totalQty += row._sum.qty ?? 0;
+        acc.set(row.productId, current);
+      }
+      return [...acc.entries()]
+        .flatMap(([productId, counts]) => {
+          const product = byId.get(productId);
+          return product
+            ? [
+                {
+                  product: {
+                    slug: product.slug,
+                    name: product.name,
+                    priceCents: product.priceCents,
+                    availability: product.availability as string,
+                  },
+                  ...counts,
+                },
+              ]
+            : [];
+        })
+        .sort((a, b) => b.totalQty - a.totalQty || a.product.slug.localeCompare(b.product.slug));
     },
   };
 }
