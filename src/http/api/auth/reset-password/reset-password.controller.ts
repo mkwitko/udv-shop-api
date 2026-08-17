@@ -1,4 +1,5 @@
 import type { FastifyPluginAsync } from "fastify";
+import { z } from "zod";
 import { db } from "../../../../infra/db/client.js";
 import { createAuthRepository } from "../auth.repository.js";
 import { createTokensService } from "../tokens.service.js";
@@ -10,7 +11,12 @@ export const resetPasswordRoute: FastifyPluginAsync = async (app) => {
     "/auth/reset-password",
     {
       config: { public: true, rateLimit: { max: 5, timeWindow: "1 minute" } },
-      schema: { operationId: "resetPassword", tags: ["auth"], body: ResetPasswordBody },
+      schema: {
+        operationId: "resetPassword",
+        tags: ["auth"],
+        body: ResetPasswordBody,
+        response: { 204: z.null().describe("No Content") },
+      },
     },
     async (req, reply) => {
       const repo = createAuthRepository(db);

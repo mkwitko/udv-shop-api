@@ -1,4 +1,5 @@
 import type { FastifyPluginAsync } from "fastify";
+import { z } from "zod";
 import { db } from "../../../../infra/db/client.js";
 import { createAuthRepository } from "../auth.repository.js";
 import { ForgotPasswordBody } from "./forgot-password.schema.js";
@@ -9,7 +10,12 @@ export const forgotPasswordRoute: FastifyPluginAsync = async (app) => {
     "/auth/forgot-password",
     {
       config: { public: true, rateLimit: { max: 5, timeWindow: "1 minute" } },
-      schema: { operationId: "forgotPassword", tags: ["auth"], body: ForgotPasswordBody },
+      schema: {
+        operationId: "forgotPassword",
+        tags: ["auth"],
+        body: ForgotPasswordBody,
+        response: { 204: z.null().describe("No Content") },
+      },
     },
     async (req, reply) => {
       const service = createForgotPasswordService({

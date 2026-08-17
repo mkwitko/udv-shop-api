@@ -1,4 +1,5 @@
 import type { FastifyPluginAsync } from "fastify";
+import { z } from "zod";
 import { db } from "../../../../infra/db/client.js";
 import { createAuthRepository } from "../auth.repository.js";
 import { VerifyEmailBody } from "./verify-email.schema.js";
@@ -9,7 +10,12 @@ export const verifyEmailRoute: FastifyPluginAsync = async (app) => {
     "/auth/verify-email",
     {
       config: { public: true, rateLimit: { max: 10, timeWindow: "1 minute" } },
-      schema: { operationId: "verifyEmail", tags: ["auth"], body: VerifyEmailBody },
+      schema: {
+        operationId: "verifyEmail",
+        tags: ["auth"],
+        body: VerifyEmailBody,
+        response: { 204: z.null().describe("No Content") },
+      },
     },
     async (req, reply) => {
       const service = createVerifyEmailService({ repo: createAuthRepository(db) });

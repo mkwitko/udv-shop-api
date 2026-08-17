@@ -16,7 +16,7 @@ export const googleStartRoute: FastifyPluginAsync = async (app) => {
     "/auth/google/start",
     {
       config: { public: true, rateLimit: { max: 10, timeWindow: "1 minute" } },
-      schema: { operationId: "googleStart", tags: ["auth"] },
+      schema: { operationId: "googleStart", tags: ["auth"], hide: true },
     },
     async (_req, reply) => {
       const state = randomBytes(16).toString("base64url");

@@ -1,4 +1,5 @@
 import type { FastifyPluginAsync } from "fastify";
+import { z } from "zod";
 import { db } from "../../../../infra/db/client.js";
 import { createAuthRepository } from "../auth.repository.js";
 import { clearRefreshCookie, REFRESH_COOKIE } from "../cookies.js";
@@ -9,7 +10,11 @@ export const logoutRoute: FastifyPluginAsync = async (app) => {
     "/auth/logout",
     {
       config: { public: true },
-      schema: { operationId: "logout", tags: ["auth"] },
+      schema: {
+        operationId: "logout",
+        tags: ["auth"],
+        response: { 204: z.null().describe("No Content") },
+      },
     },
     async (req, reply) => {
       const raw = req.cookies[REFRESH_COOKIE];

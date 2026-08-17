@@ -18,7 +18,12 @@ export const googleCallbackRoute: FastifyPluginAsync = async (app) => {
     "/auth/google/callback",
     {
       config: { public: true, rateLimit: { max: 10, timeWindow: "1 minute" } },
-      schema: { operationId: "googleCallback", tags: ["auth"], querystring: CallbackQuery },
+      schema: {
+        operationId: "googleCallback",
+        tags: ["auth"],
+        querystring: CallbackQuery,
+        hide: true,
+      },
     },
     async (req, reply) => {
       const fail = () => reply.redirect(`${env.WEB_ORIGIN}/entrar?oauth=erro`);
