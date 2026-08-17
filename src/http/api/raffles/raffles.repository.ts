@@ -15,7 +15,11 @@ const RAFFLE_INCLUDE = {
   campaign: { select: { slug: true, storeId: true } },
   prizes: {
     orderBy: { position: "asc" },
-    include: { winnerEntry: { include: { user: { select: { name: true } } } } },
+    include: {
+      winnerEntry: {
+        include: { user: { select: { name: true } }, donation: { select: { anonymous: true } } },
+      },
+    },
   },
 } satisfies Prisma.RaffleInclude;
 
@@ -43,10 +47,67 @@ export interface RafflesRepository {
   draw(raffleId: string, seed: string): Promise<RaffleWithPrizes>;
 }
 
+/**
+ * Reserva a faixa de números de uma doação paga e cria as entradas. Compartilhado pela
+ * concessão vinda do outbox (`donation.received`) e pelo backfill do PUT de configuração.
+ */
+async function grantWithinTx(
+  tx: Prisma.TransactionClient,
+  raffle: { id: string; centsPerNumber: number },
+  donation: { id: string; userId: string; amountCents: number },
+  log?: FastifyBaseLogger,
+): Promise<number> {
+  const uncapped = Math.floor(donation.amountCents / raffle.centsPerNumber);
+  if (uncapped < 1) return 0;
+  const count = Math.min(uncapped, RAFFLE_MAX_NUMBERS_PER_DONATION);
+  if (count < uncapped) {
+    log?.warn(
+      { donationId: donation.id, uncapped, count },
+      "concessão de números limitada pelo teto por doação",
+    );
+  }
+
+  // Reivindicação: reprocessar donation.received nunca concede número duas vezes.
+  const claimed = await tx.donation.updateMany({
+    where: { id: donation.id, raffleGranted: false },
+    data: { raffleGranted: true },
+  });
+  if (claimed.count !== 1) return 0;
+
+  // Reserva a faixa com UPDATE ... RETURNING guardado por status: entre a leitura do
+  // sorteio e este ponto um sorteio concorrente pode tê-lo fechado, e número emitido
+  // depois do draw tem chance zero. O guard trava a linha e falha nesse caso — a claim
+  // acima é desfeita para a doação continuar elegível se o sorteio voltar a abrir.
+  const reserved = await tx.$queryRaw<Array<{ next_number: number }>>`
+    UPDATE raffles SET next_number = next_number + ${count}
+    WHERE id = ${raffle.id}::uuid AND status = 'open'
+    RETURNING next_number
+  `;
+  const row = reserved[0];
+  if (!row) {
+    await tx.donation.updateMany({ where: { id: donation.id }, data: { raffleGranted: false } });
+    return 0;
+  }
+  const start = row.next_number - count;
+  await tx.raffleEntry.createMany({
+    data: Array.from({ length: count }, (_, i) => ({
+      raffleId: raffle.id,
+      donationId: donation.id,
+      userId: donation.userId,
+      number: start + i,
+    })),
+  });
+  return count;
+}
+
 export function createRafflesRepository(db: PrismaClient): RafflesRepository {
   return {
     upsertConfig: ({ campaignId, centsPerNumber, drawAt, prizes }) =>
       db.$transaction(async (tx) => {
+        const existing = await tx.raffle.findUnique({
+          where: { campaignId },
+          select: { id: true },
+        });
         const raffle = await tx.raffle.upsert({
           where: { campaignId },
           create: { campaignId, centsPerNumber, drawAt },
@@ -59,6 +120,20 @@ export function createRafflesRepository(db: PrismaClient): RafflesRepository {
         await tx.rafflePrize.createMany({
           data: prizes.map((p) => ({ raffleId: raffle.id, position: p.position, title: p.title })),
         });
+        // Backfill só na criação: sorteio configurado depois de a campanha já ter
+        // recebido doações. Essas doações não vão gerar outro donation.received, então
+        // sem isto quem doou antes do PUT ficaria com zero números para sempre. Num PUT
+        // de reconfiguração não há o que preencher — dali em diante o outbox concede.
+        if (!existing) {
+          const ungranted = await tx.donation.findMany({
+            where: { campaignId, status: "paid", raffleGranted: false },
+            select: { id: true, userId: true, amountCents: true },
+            orderBy: { createdAt: "asc" },
+          });
+          for (const donation of ungranted) {
+            await grantWithinTx(tx, raffle, donation);
+          }
+        }
         return tx.raffle.findUniqueOrThrow({ where: { id: raffle.id }, include: RAFFLE_INCLUDE });
       }),
 
@@ -88,42 +163,7 @@ export function createRafflesRepository(db: PrismaClient): RafflesRepository {
         if (!donation || donation.status !== "paid" || !donation.campaignId) return 0;
         const raffle = await tx.raffle.findUnique({ where: { campaignId: donation.campaignId } });
         if (!raffle || raffle.status !== "open") return 0;
-
-        const uncapped = Math.floor(donation.amountCents / raffle.centsPerNumber);
-        if (uncapped < 1) return 0;
-        const count = Math.min(uncapped, RAFFLE_MAX_NUMBERS_PER_DONATION);
-        if (count < uncapped) {
-          log.warn(
-            { donationId, uncapped, count },
-            "concessão de números limitada pelo teto por doação",
-          );
-        }
-
-        // Reivindicação: reprocessar donation.received nunca concede número duas vezes.
-        const claimed = await tx.donation.updateMany({
-          where: { id: donation.id, raffleGranted: false },
-          data: { raffleGranted: true },
-        });
-        if (claimed.count !== 1) return 0;
-
-        // Reserva a faixa com um UPDATE que trava a linha do sorteio: dois
-        // donation.received concorrentes serializam aqui em vez de colidirem no
-        // unique (raffleId, number).
-        const updated = await tx.raffle.update({
-          where: { id: raffle.id },
-          data: { nextNumber: { increment: count } },
-          select: { nextNumber: true },
-        });
-        const start = updated.nextNumber - count;
-        await tx.raffleEntry.createMany({
-          data: Array.from({ length: count }, (_, i) => ({
-            raffleId: raffle.id,
-            donationId: donation.id,
-            userId: donation.userId,
-            number: start + i,
-          })),
-        });
-        return count;
+        return grantWithinTx(tx, raffle, donation, log);
       }),
 
     listEntriesCursor: async ({ raffleId, limit, cursor }) => {
@@ -218,7 +258,12 @@ export function toRaffleResponse(
       position: p.position,
       title: p.title,
       winner: p.winnerEntry
-        ? { number: p.winnerEntry.number, participant: maskName(p.winnerEntry.user.name, false) }
+        ? {
+            number: p.winnerEntry.number,
+            // Mesma regra da lista de entradas: quem doou anônimo continua anônimo na
+            // vitrine. Entregar o prêmio é da gestão, que vê identidade completa.
+            participant: maskName(p.winnerEntry.user.name, p.winnerEntry.donation.anonymous),
+          }
         : null,
     })),
   };

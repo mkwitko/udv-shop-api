@@ -85,12 +85,19 @@ export async function refundPaymentByPaymentId(deps: {
   }
 }
 
+/**
+ * Recebe candidatos porque `providerId` não é sempre o payment_intent: cobrança única
+ * guarda o intent, mas ciclo de assinatura guarda o id do invoice. Procurar só pelo
+ * intent fazia todo reembolso de doação mensal virar no-op silencioso.
+ */
 export async function refundPaymentByProviderId(deps: {
   db: PrismaClient;
-  providerId: string;
+  providerIds: string[];
 }): Promise<void> {
+  const providerIds = deps.providerIds.filter((id) => id.length > 0);
+  if (providerIds.length === 0) return;
   const payment = await deps.db.payment.findFirst({
-    where: { providerId: deps.providerId },
+    where: { providerId: { in: providerIds } },
     select: { id: true },
   });
   if (!payment) return;

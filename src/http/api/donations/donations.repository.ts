@@ -1,4 +1,5 @@
-import type { DonationStatus, Prisma, PrismaClient } from "@prisma/client";
+import type { DonationStatus, PrismaClient } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import {
   afterCursorWhere,
   type CursorPage,
@@ -167,10 +168,18 @@ export function createDonationsRepository(db: PrismaClient): DonationsRepository
         if (updated.count !== 1) return false;
         const payment = await tx.payment.findUniqueOrThrow({ where: { id: paymentId } });
         if (payment.donationId) {
-          await tx.donation.updateMany({
+          const refunded = await tx.donation.updateMany({
             where: { id: payment.donationId, status: "paid" },
-            data: { status: "refunded" },
+            data: { status: "refunded", raffleGranted: false },
           });
+          // Dinheiro devolvido não concorre a prêmio: os números voltam para o sorteio.
+          // Só enquanto ele está "open" — depois do draw, apagar entradas apagaria o
+          // vencedor já registrado, e aí o caso é da gestão resolver fora do sistema.
+          if (refunded.count === 1) {
+            await tx.raffleEntry.deleteMany({
+              where: { donationId: payment.donationId, raffle: { status: "open" } },
+            });
+          }
         }
         return true;
       }),
@@ -291,11 +300,7 @@ export function createDonationsRepository(db: PrismaClient): DonationsRepository
         });
       } catch (err) {
         // Corrida entre duas entregas do mesmo invoice: o @unique é o árbitro final.
-        if (
-          typeof err === "object" &&
-          err !== null &&
-          (err as { code?: string }).code === "P2002"
-        ) {
+        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
           return null;
         }
         throw err;

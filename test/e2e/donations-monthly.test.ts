@@ -101,7 +101,9 @@ describe("doação mensal — assinatura Stripe", () => {
       data: {
         object: {
           id: "in_1",
-          subscription: subscriptionId,
+          // Forma Basil+ (API fixada: 2026-07-29.dahlia). O campo plano `subscription`
+          // não existe mais no Invoice.
+          parent: { subscription_details: { subscription: subscriptionId } },
           amount_paid: 3000,
           billing_reason: "subscription_create",
         },
@@ -128,7 +130,9 @@ describe("doação mensal — assinatura Stripe", () => {
       data: {
         object: {
           id: "in_1",
-          subscription: subscriptionId,
+          // Forma Basil+ (API fixada: 2026-07-29.dahlia). O campo plano `subscription`
+          // não existe mais no Invoice.
+          parent: { subscription_details: { subscription: subscriptionId } },
           amount_paid: 3000,
           billing_reason: "subscription_create",
         },
@@ -168,7 +172,9 @@ describe("doação mensal — assinatura Stripe", () => {
       data: {
         object: {
           id: "in_1",
-          subscription: subscriptionId,
+          // Forma Basil+ (API fixada: 2026-07-29.dahlia). O campo plano `subscription`
+          // não existe mais no Invoice.
+          parent: { subscription_details: { subscription: subscriptionId } },
           amount_paid: 3000,
           billing_reason: "subscription_create",
         },
@@ -181,7 +187,9 @@ describe("doação mensal — assinatura Stripe", () => {
       data: {
         object: {
           id: "in_2",
-          subscription: subscriptionId,
+          // Forma Basil+ (API fixada: 2026-07-29.dahlia). O campo plano `subscription`
+          // não existe mais no Invoice.
+          parent: { subscription_details: { subscription: subscriptionId } },
           amount_paid: 3000,
           billing_reason: "subscription_cycle",
         },

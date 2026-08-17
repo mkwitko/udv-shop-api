@@ -228,4 +228,39 @@ describe("configuração do sorteio", () => {
     expect(draftRes.statusCode).toBe(404);
     expect(draftRes.json().message).toBe("campaign_not_found");
   });
+
+  it("PUT depois de a campanha já ter doações pagas: backfill concede os números de quem doou antes da configuração", async () => {
+    const { store, campaign } = await seedCampaign();
+    const { token } = await registerWithRole(app, "admin7@example.org", store.id, "admin");
+    const { user: doador } = await registerWithRole(app, "doador7@example.org", null, null);
+    const donation = await db.donation.create({
+      data: {
+        storeId: store.id,
+        campaignId: campaign.id,
+        userId: doador.id,
+        type: "one_time",
+        amountCents: 5000,
+        status: "paid",
+      },
+    });
+
+    const res = await app.inject({
+      method: "PUT",
+      url: `/stores/nx/campaigns/${campaign.slug}/raffle`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { centsPerNumber: 1000, prizes: [{ position: 1, title: "Prêmio" }] },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().totalEntries).toBe(5);
+
+    expect(
+      (await db.donation.findUniqueOrThrow({ where: { id: donation.id } })).raffleGranted,
+    ).toBe(true);
+    const numbers = await db.raffleEntry.findMany({
+      where: { donationId: donation.id },
+      orderBy: { number: "asc" },
+      select: { number: true },
+    });
+    expect(numbers.map((n) => n.number)).toEqual([1, 2, 3, 4, 5]);
+  });
 });

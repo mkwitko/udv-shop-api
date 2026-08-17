@@ -357,3 +357,11 @@ liderança / trending são honestas (nomes mascarados), evitando viés de nome
 real que prejudicaria anonimato. (d) Testes de vazamento (`no applicationFee*
 in response` etc) precisam cobrir também resposta de sorteio e vitrine de
 doadores.
+
+**Ajuste (implementação):** as duas superfícies públicas do sorteio aplicam a
+mesma regra — `GET .../raffle` (vencedores) e `GET .../raffle/entries` chamam
+`maskName(nome, donation.anonymous)`. Quem doou anônimo aparece como
+`"Doador anônimo"` também quando é sorteado; antes o vencedor era mascarado por
+nome (`"Maria S."`) enquanto a lista de entradas já o tratava como anônimo.
+Entregar o prêmio é responsabilidade da gestão, que enxerga identidade completa
+em `GET /stores/:slug/donations`.
