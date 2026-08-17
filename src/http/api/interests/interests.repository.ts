@@ -38,6 +38,7 @@ export interface InterestsRepository {
     cursor: string | null;
   }): Promise<CursorPage<InterestWithDetails>>;
   findByIdForUser(id: string, userId: string): Promise<InterestWithDetails | null>;
+  cancelMine(id: string, userId: string): Promise<boolean>;
 }
 
 export function createInterestsRepository(db: PrismaClient): InterestsRepository {
@@ -70,6 +71,14 @@ export function createInterestsRepository(db: PrismaClient): InterestsRepository
 
     findByIdForUser: (id, userId) =>
       db.productInterest.findFirst({ where: { id, userId }, include: INTEREST_INCLUDE }),
+
+    cancelMine: async (id, userId) => {
+      const cancelled = await db.productInterest.updateMany({
+        where: { id, userId, status: { in: ["open", "notified"] } },
+        data: { status: "cancelled" },
+      });
+      return cancelled.count === 1;
+    },
   };
 }
 
