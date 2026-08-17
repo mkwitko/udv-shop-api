@@ -164,4 +164,98 @@ describe("workers", () => {
     const row = await db.outboxEvent.findFirstOrThrow({ where: { type: "interest.notified" } });
     expect(row.status).toBe("processed");
   });
+
+  it("order.paid converte os interesses do comprador nos produtos do pedido", async () => {
+    const store = await db.store.create({
+      data: { slug: "nucleo-a", name: "Núcleo A", status: "active" },
+    });
+    const product = await db.product.create({
+      data: {
+        storeId: store.id,
+        slug: "cha-especial",
+        name: "Chá especial",
+        priceCents: 5000,
+        availability: "on_demand",
+      },
+    });
+    const buyer = await db.user.create({
+      data: { email: "comprador@example.org", name: "Comprador", passwordHash: "x" },
+    });
+    const outro = await db.user.create({
+      data: { email: "outro@example.org", name: "Outro", passwordHash: "x" },
+    });
+    const mine = await db.productInterest.create({
+      data: { productId: product.id, userId: buyer.id, qty: 1, status: "notified" },
+    });
+    const alheio = await db.productInterest.create({
+      data: { productId: product.id, userId: outro.id, qty: 1 },
+    });
+    const order = await db.order.create({
+      data: {
+        storeId: store.id,
+        userId: buyer.id,
+        status: "paid",
+        totalCents: 5000,
+        contactPhone: "11999990000",
+        expiresAt: new Date(Date.now() + 60_000),
+        items: {
+          create: [{ productId: product.id, name: "Chá especial", priceCents: 5000, qty: 1 }],
+        },
+      },
+    });
+    await db.outboxEvent.create({ data: { type: "order.paid", payload: { orderId: order.id } } });
+
+    const gateways = buildFakeGateways();
+    await relayOutbox({ db, email: gateways.email, log: logger });
+
+    expect((await db.productInterest.findUniqueOrThrow({ where: { id: mine.id } })).status).toBe(
+      "converted",
+    );
+    // Interesse de outra pessoa no mesmo produto continua na fila.
+    expect((await db.productInterest.findUniqueOrThrow({ where: { id: alheio.id } })).status).toBe(
+      "open",
+    );
+  });
+
+  it("conversão não reabre interesse cancelado", async () => {
+    const store = await db.store.create({
+      data: { slug: "nucleo-a", name: "Núcleo A", status: "active" },
+    });
+    const product = await db.product.create({
+      data: {
+        storeId: store.id,
+        slug: "cha-especial",
+        name: "Chá especial",
+        priceCents: 5000,
+        availability: "on_demand",
+      },
+    });
+    const buyer = await db.user.create({
+      data: { email: "comprador2@example.org", name: "Comprador", passwordHash: "x" },
+    });
+    const cancelled = await db.productInterest.create({
+      data: { productId: product.id, userId: buyer.id, qty: 1, status: "cancelled" },
+    });
+    const order = await db.order.create({
+      data: {
+        storeId: store.id,
+        userId: buyer.id,
+        status: "paid",
+        totalCents: 5000,
+        contactPhone: "11999990000",
+        expiresAt: new Date(Date.now() + 60_000),
+        items: {
+          create: [{ productId: product.id, name: "Chá especial", priceCents: 5000, qty: 1 }],
+        },
+      },
+    });
+    await db.outboxEvent.create({ data: { type: "order.paid", payload: { orderId: order.id } } });
+
+    const gateways = buildFakeGateways();
+    await relayOutbox({ db, email: gateways.email, log: logger });
+
+    expect(
+      (await db.productInterest.findUniqueOrThrow({ where: { id: cancelled.id } })).status,
+    ).toBe("cancelled");
+  });
 });

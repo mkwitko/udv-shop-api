@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { PrismaClient } from "@prisma/client";
 import type { FastifyBaseLogger } from "fastify";
 import type { EmailGateway } from "../gateways/email/email.gateway.js";
+import { createInterestsRepository } from "../http/api/interests/interests.repository.js";
 
 const MAX_ATTEMPTS = 5;
 // A row claimed into "processing" that never reaches "processed"/"failed" (crash, shutdown,
@@ -63,6 +64,11 @@ export async function relayOutbox(deps: {
             to: order.user.email,
             subject: `Pagamento confirmado — ${order.store.name}`,
             html: `<p>Olá, ${order.user.name}!</p><p>Recebemos o pagamento do seu pedido na loja ${order.store.name}. A equipe do núcleo vai entrar em contato pelo telefone informado para combinar a entrega.</p><ul>${lines}</ul><p>Total: R$ ${(order.totalCents / 100).toFixed(2)}</p><p>Obrigado por apoiar o núcleo!</p>`,
+          });
+          // Encomenda virou compra: tira o interesse da fila do núcleo.
+          await createInterestsRepository(deps.db).convertForOrder({
+            userId: order.userId,
+            productIds: order.items.map((i) => i.productId),
           });
         }
       } else if (event.type === "interest.notified") {

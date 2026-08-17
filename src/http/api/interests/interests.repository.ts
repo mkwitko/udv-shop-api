@@ -55,6 +55,7 @@ export interface InterestsRepository {
     }>
   >;
   notifyArrival(productId: string): Promise<number>;
+  convertForOrder(input: { userId: string; productIds: string[] }): Promise<number>;
 }
 
 export function createInterestsRepository(db: PrismaClient): InterestsRepository {
@@ -183,6 +184,17 @@ export function createInterestsRepository(db: PrismaClient): InterestsRepository
         });
         return updated.count;
       }),
+
+    convertForOrder: async ({ userId, productIds }) => {
+      if (productIds.length === 0) return 0;
+      // updateMany guardado por status: reprocessar o mesmo order.paid é no-op, e
+      // interesse cancelado/já convertido não é tocado.
+      const converted = await db.productInterest.updateMany({
+        where: { userId, productId: { in: productIds }, status: { in: ["open", "notified"] } },
+        data: { status: "converted" },
+      });
+      return converted.count;
+    },
   };
 }
 
