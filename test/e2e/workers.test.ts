@@ -396,3 +396,134 @@ describe("relayOutbox: doação", () => {
     expect(event.status).toBe("processed");
   });
 });
+
+async function seedCampaignDonation(amountCents: number, opts?: { withRaffle?: boolean }) {
+  const user = await db.user.create({
+    data: { email: `doador-${Math.random()}@example.org`, name: "Doadora", passwordHash: "x" },
+  });
+  const store = await db.store.create({
+    data: {
+      slug: `nucleo-${Math.random().toString(36).slice(2)}`,
+      name: "Núcleo A",
+      status: "active",
+    },
+  });
+  const campaign = await db.campaign.create({
+    data: { storeId: store.id, slug: "reforma", title: "Reforma", status: "active" },
+  });
+  if (opts?.withRaffle ?? true) {
+    await db.raffle.create({ data: { campaignId: campaign.id, centsPerNumber: 5000 } });
+  }
+  const donation = await db.donation.create({
+    data: {
+      storeId: store.id,
+      campaignId: campaign.id,
+      userId: user.id,
+      amountCents,
+      status: "paid",
+    },
+  });
+  return { user, store, campaign, donation };
+}
+
+describe("relayOutbox: concessão de números do sorteio", () => {
+  beforeEach(resetDb);
+
+  it("doação de R$ 100 com centsPerNumber 5000 gera 2 números consecutivos a partir de 1 e marca raffleGranted", async () => {
+    const { donation } = await seedCampaignDonation(10_000);
+    await db.outboxEvent.create({
+      data: { type: "donation.received", payload: { donationId: donation.id } },
+    });
+    const gateways = buildFakeGateways();
+    await relayOutbox({ db, email: gateways.email, log: logger });
+
+    const entries = await db.raffleEntry.findMany({
+      where: { donationId: donation.id },
+      orderBy: { number: "asc" },
+    });
+    expect(entries.map((e) => e.number)).toEqual([1, 2]);
+    const fresh = await db.donation.findUniqueOrThrow({ where: { id: donation.id } });
+    expect(fresh.raffleGranted).toBe(true);
+  });
+
+  it("reprocessar o mesmo donation.received não gera número novo", async () => {
+    const { donation } = await seedCampaignDonation(10_000);
+    await db.outboxEvent.create({
+      data: { type: "donation.received", payload: { donationId: donation.id } },
+    });
+    const gateways = buildFakeGateways();
+    await relayOutbox({ db, email: gateways.email, log: logger });
+
+    // Reenfileira o mesmo evento à mão e roda o relay de novo.
+    await db.outboxEvent.create({
+      data: { type: "donation.received", payload: { donationId: donation.id } },
+    });
+    await relayOutbox({ db, email: gateways.email, log: logger });
+
+    const entries = await db.raffleEntry.findMany({ where: { donationId: donation.id } });
+    expect(entries).toHaveLength(2);
+  });
+
+  it("duas doações geram faixas disjuntas (1–2 e 3–4)", async () => {
+    const { campaign, store, donation: donation1 } = await seedCampaignDonation(10_000);
+    const donor2 = await db.user.create({
+      data: { email: "doadora2@example.org", name: "Doadora 2", passwordHash: "x" },
+    });
+    const donation2 = await db.donation.create({
+      data: {
+        storeId: store.id,
+        campaignId: campaign.id,
+        userId: donor2.id,
+        amountCents: 10_000,
+        status: "paid",
+      },
+    });
+    await db.outboxEvent.create({
+      data: { type: "donation.received", payload: { donationId: donation1.id } },
+    });
+    await db.outboxEvent.create({
+      data: { type: "donation.received", payload: { donationId: donation2.id } },
+    });
+    const gateways = buildFakeGateways();
+    await relayOutbox({ db, email: gateways.email, log: logger });
+
+    const entries1 = await db.raffleEntry.findMany({
+      where: { donationId: donation1.id },
+      orderBy: { number: "asc" },
+    });
+    const entries2 = await db.raffleEntry.findMany({
+      where: { donationId: donation2.id },
+      orderBy: { number: "asc" },
+    });
+    expect(entries1.map((e) => e.number)).toEqual([1, 2]);
+    expect(entries2.map((e) => e.number)).toEqual([3, 4]);
+  });
+
+  it("doação avulsa (sem campanha) e doação em campanha sem sorteio não geram nada", async () => {
+    const { donation: comSorteio } = await seedCampaignDonation(10_000, { withRaffle: false });
+    const { donation } = await seedDonation(null, "paid");
+    await db.outboxEvent.create({
+      data: { type: "donation.received", payload: { donationId: donation.id } },
+    });
+    await db.outboxEvent.create({
+      data: { type: "donation.received", payload: { donationId: comSorteio.id } },
+    });
+    const gateways = buildFakeGateways();
+    await relayOutbox({ db, email: gateways.email, log: logger });
+
+    expect(await db.raffleEntry.count()).toBe(0);
+  });
+
+  it("doação de R$ 10 com centsPerNumber 5000 gera zero números e ainda manda o email de agradecimento", async () => {
+    const { donation, user } = await seedCampaignDonation(1_000);
+    await db.outboxEvent.create({
+      data: { type: "donation.received", payload: { donationId: donation.id } },
+    });
+    const gateways = buildFakeGateways();
+    await relayOutbox({ db, email: gateways.email, log: logger });
+
+    expect(await db.raffleEntry.count({ where: { donationId: donation.id } })).toBe(0);
+    expect(gateways.sentEmails).toHaveLength(1);
+    expect(gateways.sentEmails[0]?.to).toBe(user.email);
+  });
+});

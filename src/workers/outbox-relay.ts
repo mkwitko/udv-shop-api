@@ -3,6 +3,7 @@ import type { PrismaClient } from "@prisma/client";
 import type { FastifyBaseLogger } from "fastify";
 import type { EmailGateway } from "../gateways/email/email.gateway.js";
 import { createInterestsRepository } from "../http/api/interests/interests.repository.js";
+import { createRafflesRepository } from "../http/api/raffles/raffles.repository.js";
 
 const MAX_ATTEMPTS = 5;
 // A row claimed into "processing" that never reaches "processed"/"failed" (crash, shutdown,
@@ -109,6 +110,10 @@ export async function relayOutbox(deps: {
           },
         });
         if (donation) {
+          // Antes do email: é reivindicado por raffleGranted (idempotente), então uma
+          // falha de envio nunca perde números e o retry nunca reenvia email por causa
+          // deles.
+          await createRafflesRepository(deps.db).grantNumbersForDonation(donation.id, deps.log);
           const destino = donation.campaign
             ? `a campanha “${donation.campaign.title}”`
             : `o núcleo ${donation.store.name}`;
