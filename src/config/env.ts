@@ -15,6 +15,13 @@ const BaseEnvSchema = z.object({
   ACCESS_TOKEN_TTL_S: z.coerce.number().default(900),
   REFRESH_TOKEN_TTL_D: z.coerce.number().default(30),
   COOKIE_SECRET: z.string().min(16),
+  // `true` quando o front roda num site diferente do da API (registrable domain distinto,
+  // ex.: web na Vercel e API na Fly). Nesse caso o cookie de refresh precisa de
+  // SameSite=None + Secure, senão o navegador não o envia no fetch do front.
+  COOKIE_CROSS_SITE: z
+    .string()
+    .default("false")
+    .transform((v) => v === "true" || v === "1"),
   GOOGLE_CLIENT_ID: z.string().default(""),
   GOOGLE_CLIENT_SECRET: z.string().default(""),
   GOOGLE_REDIRECT_URI: z.string().default(""),

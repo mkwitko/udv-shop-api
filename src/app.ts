@@ -30,7 +30,10 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
   await app.register(cors, {
     origin: env.NODE_ENV === "production" ? env.WEB_ORIGIN : true,
     credentials: true,
-    methods: ["GET", "HEAD", "POST", "PATCH", "DELETE"],
+    // PUT está aqui porque existem rotas PUT (raffle config, woovi connect): sem ele o
+    // preflight do navegador reprova a chamada antes de ela sair.
+    methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    maxAge: 86400,
   });
   await app.register(errorHandlerPlugin);
   if (opts.rateLimit ?? env.NODE_ENV !== "test") await app.register(rateLimitPlugin);
