@@ -102,6 +102,8 @@ describe("reembolso e órfão de doação", () => {
     await stripeEvent(app, {
       id: "evt_inv",
       type: "invoice.paid",
+      // Assinatura de doação é direct charge na conta do núcleo: o evento nasce lá.
+      account: "acct_1",
       data: {
         object: {
           id: "in_1",

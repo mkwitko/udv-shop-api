@@ -3,6 +3,11 @@ import type { FastifyBaseLogger } from "fastify";
 import { z } from "zod";
 import { createDonationsRepository } from "../http/api/donations/donations.repository.js";
 import {
+  applyAccountUpdated,
+  applyCheckoutCompleted,
+  applySubscriptionEvent,
+} from "./billing-webhook.js";
+import {
   cancelPaymentAggregate,
   markPaymentPaid,
   refundPaymentByPaymentId,
@@ -15,6 +20,7 @@ const WOOVI_REFUNDED = "OPENPIX:CHARGE_REFUND";
 
 const uuidSchema = z.string().uuid();
 
+/** União dos campos que este arquivo lê dos objetos que o Stripe entrega neste endpoint. */
 type StripeObject = {
   id?: string;
   payment_intent?: string;
@@ -23,8 +29,27 @@ type StripeObject = {
   amount_paid?: number;
   parent?: { subscription_details?: { subscription?: string | { id?: string } } } | null;
   metadata?: Record<string, string>;
+  // checkout.session
+  mode?: string;
+  client_reference_id?: string | null;
+  // customer.subscription.*
+  customer?: string | { id?: string };
+  status?: string;
+  cancel_at_period_end?: boolean;
+  current_period_end?: number;
+  items?: { data?: Array<{ current_period_end?: number; price?: { id?: string } }> };
+  // account.updated
+  charges_enabled?: boolean;
+  payouts_enabled?: boolean;
+  details_submitted?: boolean;
 };
-type StripePayload = { data?: { object?: StripeObject } };
+type StripePayload = {
+  // Só eventos nascidos numa conta conectada trazem `account`. Assinatura de doação
+  // (direct charge no núcleo) e assinatura SaaS (conta da plataforma) compartilham os
+  // mesmos tipos de evento, e é este campo que decide qual agregado é o dono — ver ADR-021.
+  account?: string;
+  data?: { object?: StripeObject };
+};
 type WooviPayload = { charge?: { correlationID?: string } };
 
 /**
@@ -63,6 +88,10 @@ export async function processWebhookEvents(deps: {
       if (event.provider === "stripe") {
         const payload = event.payload as StripePayload;
         const object = payload.data?.object ?? {};
+        // Evento da conta conectada (assinatura de doação, onboarding) × evento da
+        // plataforma (assinatura SaaS). Sem esta separação, o cancelamento de uma
+        // assinatura SaaS cairia no ramo de doação e vice-versa.
+        const fromConnectedAccount = typeof payload.account === "string";
         const paymentId = object.metadata?.paymentId;
         const subscriptionRef = subscriptionRefOf(object);
         const invoice =
@@ -97,14 +126,35 @@ export async function processWebhookEvents(deps: {
               (id): id is string => typeof id === "string",
             ),
           });
-        } else if (event.type === "invoice.paid" && invoice?.subscription) {
+        } else if (event.type === "invoice.paid" && invoice?.subscription && fromConnectedAccount) {
           await createDonationsRepository(deps.db).markSubscriptionInvoicePaid({
             subscriptionRef: invoice.subscription,
             invoiceId: invoice.id,
             amountCents: invoice.amount_paid,
           });
-        } else if (event.type === "customer.subscription.deleted" && object.id) {
+        } else if (
+          event.type === "customer.subscription.deleted" &&
+          object.id &&
+          fromConnectedAccount
+        ) {
           await createDonationsRepository(deps.db).markSubscriptionCancelled(object.id);
+        } else if (event.type === "account.updated") {
+          const matched = await applyAccountUpdated(deps.db, object);
+          if (matched === 0) {
+            deps.log.warn(
+              { stripeAccountId: object.id },
+              "account.updated de conta conectada sem loja correspondente",
+            );
+          }
+        } else if (event.type === "checkout.session.completed" && !fromConnectedAccount) {
+          await applyCheckoutCompleted(deps.db, object);
+        } else if (
+          !fromConnectedAccount &&
+          (event.type === "customer.subscription.created" ||
+            event.type === "customer.subscription.updated" ||
+            event.type === "customer.subscription.deleted")
+        ) {
+          await applySubscriptionEvent(deps.db, object, event.type);
         }
       } else {
         const payload = event.payload as WooviPayload;

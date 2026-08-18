@@ -107,7 +107,9 @@ export function buildFakeGateways(overrides: Partial<Gateways> = {}): FakeGatewa
       },
       async createAccountLink(input) {
         stripeAccountLinks.push(input);
-        return { url: `https://connect.fake/onboard/${input.accountId}` };
+        // A URL real do onboarding hospedado não carrega o id da conta — mantê-la sem ele
+        // aqui é o que dá poder ao teste de vazamento na resposta da rota.
+        return { url: `https://connect.fake/onboard/${stripeAccountLinks.length}` };
       },
       async retrieveAccountStatus(_accountId) {
         return stripeAccountStatus;

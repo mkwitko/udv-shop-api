@@ -43,12 +43,17 @@ function donateMonthly(app: FastifyInstance, token: string, payload: Record<stri
   });
 }
 
+/**
+ * Todo evento deste arquivo é de assinatura de doação, que é direct charge na conta do
+ * núcleo — por isso vai sempre com `account`. É esse campo que separa esses eventos da
+ * assinatura SaaS da plataforma, que compartilha os mesmos tipos.
+ */
 function stripeEvent(app: FastifyInstance, event: Record<string, unknown>, signature = "ok") {
   return app.inject({
     method: "POST",
     url: "/webhooks/stripe",
     headers: { "stripe-signature": signature, "content-type": "application/json" },
-    payload: JSON.stringify(event),
+    payload: JSON.stringify({ account: "acct_1", ...event }),
   });
 }
 

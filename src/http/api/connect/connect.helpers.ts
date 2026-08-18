@@ -1,0 +1,20 @@
+import type { Store } from "@prisma/client";
+import { env } from "../../../config/env.js";
+
+/** URLs de volta do onboarding hospedado, sempre no domínio do front. */
+export function connectUrls(slug: string) {
+  const base = `${env.WEB_ORIGIN}/gestao/${slug}/configuracoes`;
+  return { refreshUrl: `${base}?connect=refresh`, returnUrl: `${base}?connect=ok` };
+}
+
+export function toConnectStatusResponse(store: Store) {
+  return {
+    stripe: {
+      connected: store.stripeAccountId !== null,
+      chargesEnabled: store.stripeChargesEnabled,
+      payoutsEnabled: store.stripePayoutsEnabled,
+      detailsSubmitted: store.stripeDetailsSubmitted,
+    },
+    woovi: { connected: store.wooviPixKey !== null },
+  };
+}

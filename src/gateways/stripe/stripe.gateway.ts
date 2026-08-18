@@ -53,7 +53,10 @@ export interface StripeGateway {
     input: CreateDonationSubscriptionInput,
   ): Promise<{ subscriptionId: string; clientSecret: string }>;
   cancelSubscription(subscriptionId: string, connectedAccountId: string): Promise<void>;
-  createConnectedAccount(input: { email: string; storeName: string }): Promise<{ accountId: string }>;
+  createConnectedAccount(input: {
+    email: string;
+    storeName: string;
+  }): Promise<{ accountId: string }>;
   createAccountLink(input: {
     accountId: string;
     refreshUrl: string;

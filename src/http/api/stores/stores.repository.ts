@@ -23,6 +23,12 @@ export interface StoresRepository {
     },
   ): Promise<Store>;
   setStatus(id: string, status: StoreStatus): Promise<Store>;
+  attachStripeAccount(id: string, stripeAccountId: string): Promise<Store>;
+  setStripeCapabilities(
+    stripeAccountId: string,
+    caps: { chargesEnabled: boolean; payoutsEnabled: boolean; detailsSubmitted: boolean },
+  ): Promise<number>;
+  setWooviConnect(id: string, input: { pixKey: string; subaccountId: string }): Promise<Store>;
 }
 
 export function createStoresRepository(db: PrismaClient): StoresRepository {
@@ -60,6 +66,30 @@ export function createStoresRepository(db: PrismaClient): StoresRepository {
       return db.store.update({ where: { id }, data: updateData });
     },
     setStatus: (id, status) => db.store.update({ where: { id }, data: { status } }),
+
+    attachStripeAccount: (id, stripeAccountId) =>
+      db.store.update({ where: { id }, data: { stripeAccountId } }),
+
+    // Chaveado pelo id da conta conectada porque é só isso que o account.updated traz.
+    // updateMany (e não update) para um evento de conta que não é nossa virar no-op em
+    // vez de erro — o endpoint recebe eventos de todas as contas conectadas.
+    setStripeCapabilities: async (stripeAccountId, caps) => {
+      const updated = await db.store.updateMany({
+        where: { stripeAccountId },
+        data: {
+          stripeChargesEnabled: caps.chargesEnabled,
+          stripePayoutsEnabled: caps.payoutsEnabled,
+          stripeDetailsSubmitted: caps.detailsSubmitted,
+        },
+      });
+      return updated.count;
+    },
+
+    setWooviConnect: (id, input) =>
+      db.store.update({
+        where: { id },
+        data: { wooviPixKey: input.pixKey, wooviSubaccountId: input.subaccountId },
+      }),
   };
 }
 

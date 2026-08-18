@@ -19,6 +19,7 @@ const base = {
   R2_PUBLIC_BASE_URL: "https://cdn.example.org",
   STRIPE_SECRET_KEY: "sk_live_key",
   STRIPE_WEBHOOK_SECRET: "whsec_key",
+  STRIPE_SAAS_PRICE_ID: "price_live_saas",
   WOOVI_API_KEY: "woovi_key",
   WOOVI_WEBHOOK_HMAC_SECRET: "woovi_hmac_secret",
 };
