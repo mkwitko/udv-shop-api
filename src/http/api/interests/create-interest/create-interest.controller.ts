@@ -29,8 +29,10 @@ export const createInterestRoute: FastifyPluginAsync = async (app) => {
       if (store?.status !== "active") throw new NotFoundError("store_not_found");
       const product = await products.findBySlug(store.id, productSlug);
       if (!product?.active) throw new NotFoundError("product_not_found");
-      if (product.availability !== "on_demand") {
-        throw new ValidationError("product_not_on_demand");
+      // Sob encomenda sempre aceita; produto de estoque só quando esgotou — é o
+      // "me avise quando chegar" da página do produto, não uma fila paralela à venda.
+      if (product.availability !== "on_demand" && product.stock > 0) {
+        throw new ValidationError("product_available");
       }
       const interest = await interests.upsertOpen({
         productId: product.id,

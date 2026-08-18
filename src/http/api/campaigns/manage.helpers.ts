@@ -12,14 +12,6 @@ export async function resolveStoreForRole(req: FastifyRequest, minRole: StoreRol
   return store;
 }
 
-const STAFF_ROLES = new Set(["owner", "admin", "staff"]);
-
-/** Membro da loja (ou platform_admin) enxerga rascunho e loja não-ativa. */
-export function isStoreMember(
-  user: { platformAdmin: boolean; roles: Record<string, string> } | null,
-  storeId: string | undefined,
-): boolean {
-  if (!user) return false;
-  if (user.platformAdmin) return true;
-  return STAFF_ROLES.has(user.roles[storeId ?? ""] ?? "");
-}
+// Visibilidade pública mora num lugar só (stores/store-visibility.ts); aqui fica o
+// re-export para os controllers de campanha/sorteio que já importavam daqui.
+export { isStoreMember } from "../stores/store-visibility.js";

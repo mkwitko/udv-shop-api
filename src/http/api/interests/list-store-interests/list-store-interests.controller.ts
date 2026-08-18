@@ -3,8 +3,8 @@ import { z } from "zod";
 import { db } from "../../../../infra/db/client.js";
 import { NotFoundError } from "../../../../shared/errors.js";
 import { createProductsRepository } from "../../products/products.repository.js";
-import { createInterestsRepository, toInterestResponse } from "../interests.repository.js";
-import { InterestsPageResponse, StoreInterestsQuery } from "../interests.schema.js";
+import { createInterestsRepository, toStoreInterestResponse } from "../interests.repository.js";
+import { StoreInterestsPageResponse, StoreInterestsQuery } from "../interests.schema.js";
 import { resolveStoreForRole } from "../manage.helpers.js";
 
 export const listStoreInterestsRoute: FastifyPluginAsync = async (app) => {
@@ -19,7 +19,7 @@ export const listStoreInterestsRoute: FastifyPluginAsync = async (app) => {
         tags: ["interests"],
         params: z.object({ slug: z.string() }),
         querystring: StoreInterestsQuery,
-        response: { 200: InterestsPageResponse },
+        response: { 200: StoreInterestsPageResponse },
       },
     },
     async (req) => {
@@ -40,7 +40,7 @@ export const listStoreInterestsRoute: FastifyPluginAsync = async (app) => {
         limit,
         cursor: cursor ?? null,
       });
-      return { items: page.items.map(toInterestResponse), nextCursor: page.nextCursor };
+      return { items: page.items.map(toStoreInterestResponse), nextCursor: page.nextCursor };
     },
   );
 };

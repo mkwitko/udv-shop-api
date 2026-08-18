@@ -101,7 +101,7 @@ describe("POST /interests", () => {
     expect(await db.productInterest.count()).toBe(1);
   });
 
-  it("produto in_stock → 400 product_not_on_demand", async () => {
+  it("produto in_stock com estoque → 400 product_available", async () => {
     const { token } = await register(app, "c@example.org");
     await seedStoreWithProducts();
     const res = await app.inject({
@@ -111,7 +111,21 @@ describe("POST /interests", () => {
       payload: { storeSlug: "nucleo-a", productSlug: "camiseta", qty: 1 },
     });
     expect(res.statusCode).toBe(400);
-    expect(res.json().message).toBe("product_not_on_demand");
+    expect(res.json().message).toBe("product_available");
+  });
+
+  it("produto in_stock esgotado → aceita o aviso de chegada", async () => {
+    const { token } = await register(app, "esgotado@example.org");
+    const { inStock } = await seedStoreWithProducts();
+    await db.product.update({ where: { id: inStock.id }, data: { stock: 0 } });
+    const res = await app.inject({
+      method: "POST",
+      url: "/interests",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { storeSlug: "nucleo-a", productSlug: "camiseta", qty: 1 },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(res.json()).toMatchObject({ status: "open", product: { slug: "camiseta" } });
   });
 
   it("produto arquivado → 404", async () => {

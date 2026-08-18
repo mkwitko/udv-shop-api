@@ -1,14 +1,13 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { db } from "../../../../infra/db/client.js";
-import { NotFoundError } from "../../../../shared/errors.js";
 import { optionalUser } from "../../../hooks/optional-user.js";
+import { assertStoreReadable, isStoreMember } from "../../stores/store-visibility.js";
 import { createStoresRepository } from "../../stores/stores.repository.js";
 import { createProductsRepository, toProductResponse } from "../products.repository.js";
 import { ListProductsQuery, ProductsPageResponse } from "../products.schema.js";
 
 const Params = z.object({ slug: z.string() });
-const STAFF_ROLES = new Set(["owner", "admin", "staff"]);
 
 export const listProductsRoute: FastifyPluginAsync = async (app) => {
   app.get(
@@ -28,11 +27,8 @@ export const listProductsRoute: FastifyPluginAsync = async (app) => {
         (req.params as z.infer<typeof Params>).slug,
       );
       const user = await optionalUser(req);
-      const isMember =
-        !!user && (user.platformAdmin || STAFF_ROLES.has(user.roles[store?.id ?? ""] ?? ""));
-      if (!store || (store.status !== "active" && !isMember)) {
-        throw new NotFoundError("store not found");
-      }
+      assertStoreReadable(store, user);
+      const isMember = isStoreMember(user, store.id);
       const { limit, cursor, all } = req.query as ListProductsQuery;
       const page = await createProductsRepository(db).listByStoreCursor({
         storeId: store.id,

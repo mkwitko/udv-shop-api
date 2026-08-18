@@ -1,12 +1,11 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { db } from "../../../../infra/db/client.js";
-import { NotFoundError } from "../../../../shared/errors.js";
 import { optionalUser } from "../../../hooks/optional-user.js";
+import { assertStoreReadable, isStoreMember } from "../../stores/store-visibility.js";
 import { createStoresRepository } from "../../stores/stores.repository.js";
 import { createCampaignsRepository, toCampaignResponse } from "../campaigns.repository.js";
 import { CampaignsPageResponse, ListCampaignsQuery } from "../campaigns.schema.js";
-import { isStoreMember } from "../manage.helpers.js";
 
 const Params = z.object({ slug: z.string() });
 
@@ -29,10 +28,8 @@ export const listCampaignsRoute: FastifyPluginAsync = async (app) => {
         (req.params as z.infer<typeof Params>).slug,
       );
       const user = await optionalUser(req);
-      const member = isStoreMember(user, store?.id);
-      if (!store || (store.status !== "active" && !member)) {
-        throw new NotFoundError("store_not_found");
-      }
+      assertStoreReadable(store, user);
+      const member = isStoreMember(user, store.id);
       const { limit, cursor, all } = req.query as ListCampaignsQuery;
       const page = await repo.listByStoreCursor({
         storeId: store.id,

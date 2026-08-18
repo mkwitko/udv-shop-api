@@ -3,6 +3,7 @@ import { z } from "zod";
 import { db } from "../../../../infra/db/client.js";
 import { NotFoundError } from "../../../../shared/errors.js";
 import { optionalUser } from "../../../hooks/optional-user.js";
+import { assertStoreReadable, isStoreMember } from "../../stores/store-visibility.js";
 import { createStoresRepository } from "../../stores/stores.repository.js";
 import { createProductsRepository, toProductResponse } from "../products.repository.js";
 import { ProductResponse } from "../products.schema.js";
@@ -25,10 +26,8 @@ export const getProductRoute: FastifyPluginAsync = async (app) => {
       const { slug, productSlug } = req.params as z.infer<typeof Params>;
       const store = await createStoresRepository(db).findBySlug(slug);
       const user = await optionalUser(req);
-      const isMember = !!user && (user.platformAdmin || !!user.roles[store?.id ?? ""]);
-      if (!store || (store.status !== "active" && !isMember)) {
-        throw new NotFoundError("store not found");
-      }
+      assertStoreReadable(store, user);
+      const isMember = isStoreMember(user, store.id);
       const product = await createProductsRepository(db).findBySlug(store.id, productSlug);
       if (!product || (!product.active && !isMember)) {
         throw new NotFoundError("product not found");

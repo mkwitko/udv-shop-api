@@ -31,6 +31,22 @@ export const InterestsPageResponse = z.object({
   nextCursor: z.string().nullable(),
 });
 
+/**
+ * Fila vista pela loja: precisa de quem é a pessoa para combinar a entrega, mas o
+ * telefone sai mascarado — a lista inteira não é lugar de dado de contato completo.
+ */
+export const StoreInterestResponse = InterestResponse.extend({
+  customer: z.object({
+    name: z.string(),
+    phoneMasked: z.string().nullable(),
+  }),
+});
+
+export const StoreInterestsPageResponse = z.object({
+  items: z.array(StoreInterestResponse),
+  nextCursor: z.string().nullable(),
+});
+
 export const InterestsListQuery = z.object({
   limit: z.coerce.number().int().min(1).max(50).default(20),
   cursor: z.string().optional(),

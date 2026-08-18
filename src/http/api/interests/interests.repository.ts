@@ -7,6 +7,7 @@ import {
   KEYSET_ORDER_BY,
   toPage,
 } from "../../../lib/cursor.js";
+import { maskPhone } from "../../../lib/mask.js";
 import { DEMAND_MAX_PRODUCTS } from "./interests.schema.js";
 
 const INTEREST_INCLUDE = {
@@ -20,6 +21,7 @@ const INTEREST_INCLUDE = {
       store: { select: { slug: true, name: true } },
     },
   },
+  user: { select: { name: true, phone: true } },
 } satisfies Prisma.ProductInterestInclude;
 
 export type InterestWithDetails = Prisma.ProductInterestGetPayload<{
@@ -214,6 +216,17 @@ export function createInterestsRepository(db: PrismaClient): InterestsRepository
         data: { status: "converted" },
       });
       return converted.count;
+    },
+  };
+}
+
+/** Resposta da fila da loja: identidade suficiente para agir, contato mascarado. */
+export function toStoreInterestResponse(interest: InterestWithDetails) {
+  return {
+    ...toInterestResponse(interest),
+    customer: {
+      name: interest.user.name,
+      phoneMasked: maskPhone(interest.user.phone),
     },
   };
 }

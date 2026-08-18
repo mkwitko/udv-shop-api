@@ -101,4 +101,11 @@ describe("stores", () => {
     });
     expect(owner.statusCode).toBe(200);
   });
+
+  it("get público: suspensa 200 com status suspended — o link já circulava", async () => {
+    await db.store.create({ data: { slug: "fora", name: "Fora do ar", status: "suspended" } });
+    const res = await app.inject({ method: "GET", url: "/stores/fora" });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ slug: "fora", status: "suspended" });
+  });
 });

@@ -125,6 +125,8 @@ describe("connect — onboarding Stripe e subconta Woovi", () => {
         detailsSubmitted: true,
       },
       woovi: { connected: false },
+      // taxa real da loja vai para a tela de recebimento (§27: nada de "100% grátis")
+      applicationFeeBps: 500,
     });
     const persisted = await db.store.findUniqueOrThrow({ where: { id: store.id } });
     expect(persisted.stripeChargesEnabled).toBe(true);

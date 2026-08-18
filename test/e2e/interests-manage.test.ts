@@ -148,6 +148,33 @@ describe("gestão de encomendas", () => {
     ).toBe(false);
   });
 
+  it("lista da loja traz nome e telefone mascarado, nunca o número inteiro", async () => {
+    const { store, cha } = await seedDemand();
+    const pessoa = await db.user.create({
+      data: {
+        email: "contato@example.org",
+        name: "Maria Silva",
+        passwordHash: "x",
+        phone: "5548999995678",
+      },
+    });
+    await db.productInterest.create({
+      data: { productId: cha.id, userId: pessoa.id, qty: 1 },
+    });
+    const { token } = await registerWithRole(app, "staff-mask@example.org", store.id, "staff");
+    const res = await app.inject({
+      method: "GET",
+      url: "/stores/nucleo-a/interests?limit=50",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(200);
+    const item = res
+      .json()
+      .items.find((i: { customer: { name: string } }) => i.customer.name === "Maria Silva");
+    expect(item.customer).toEqual({ name: "Maria Silva", phoneMasked: "(48) ****-5678" });
+    expect(res.payload).not.toContain("999995678");
+  });
+
   it("filtra por productSlug e por status", async () => {
     const { store } = await seedDemand();
     const { token } = await registerWithRole(app, "staff2@example.org", store.id, "staff");

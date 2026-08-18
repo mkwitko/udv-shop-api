@@ -16,5 +16,6 @@ export function toConnectStatusResponse(store: Store) {
       detailsSubmitted: store.stripeDetailsSubmitted,
     },
     woovi: { connected: store.wooviPixKey !== null },
+    applicationFeeBps: store.applicationFeeBps,
   };
 }

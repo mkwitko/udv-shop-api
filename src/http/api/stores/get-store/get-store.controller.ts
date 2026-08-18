@@ -1,8 +1,8 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { db } from "../../../../infra/db/client.js";
-import { NotFoundError } from "../../../../shared/errors.js";
 import { optionalUser } from "../../../hooks/optional-user.js";
+import { assertStoreReadable } from "../store-visibility.js";
 import { createStoresRepository, toStoreResponse } from "../stores.repository.js";
 import { StoreResponse } from "../stores.schema.js";
 
@@ -23,12 +23,8 @@ export const getStoreRoute: FastifyPluginAsync = async (app) => {
     async (req) => {
       const { slug } = req.params as z.infer<typeof Params>;
       const store = await createStoresRepository(db).findBySlug(slug);
-      if (!store) throw new NotFoundError(`store ${slug} not found`);
-      if (store.status !== "active") {
-        const user = await optionalUser(req);
-        const canSee = user && (user.platformAdmin || user.roles[store.id]);
-        if (!canSee) throw new NotFoundError(`store ${slug} not found`);
-      }
+      // Suspensa continua legível: a página pública precisa dizer que está fora do ar.
+      assertStoreReadable(store, await optionalUser(req));
       return toStoreResponse(store);
     },
   );

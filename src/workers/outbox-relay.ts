@@ -79,7 +79,7 @@ export async function relayOutbox(deps: {
           await deps.email.send({
             to: order.user.email,
             subject: `Pagamento confirmado — ${order.store.name}`,
-            html: `<p>Olá, ${escapeHtml(order.user.name)}!</p><p>Recebemos o pagamento do seu pedido na loja ${escapeHtml(order.store.name)}. A equipe do núcleo vai entrar em contato pelo telefone informado para combinar a entrega.</p><ul>${lines}</ul><p>Total: R$ ${(order.totalCents / 100).toFixed(2)}</p><p>Obrigado por apoiar o núcleo!</p>`,
+            html: `<p>Olá, ${escapeHtml(order.user.name)}!</p><p>Recebemos o pagamento do seu pedido na loja ${escapeHtml(order.store.name)}. Quem cuida da loja vai entrar em contato pelo telefone informado para combinar a entrega.</p><ul>${lines}</ul><p>Total: R$ ${(order.totalCents / 100).toFixed(2)}</p><p>Obrigado por apoiar ${escapeHtml(order.store.name)}!</p>`,
           });
         }
       } else if (event.type === "interest.notified") {
@@ -98,7 +98,7 @@ export async function relayOutbox(deps: {
           await deps.email.send({
             to: interest.user.email,
             subject: `Chegou: ${interest.product.name} — ${interest.product.store.name}`,
-            html: `<p>Olá, ${escapeHtml(interest.user.name)}!</p><p>O produto <strong>${escapeHtml(interest.product.name)}</strong> que você encomendou no núcleo ${escapeHtml(interest.product.store.name)} chegou.</p><p>Sua encomenda era de ${interest.qty} unidade(s). É só acessar a loja para finalizar o pedido — quem chega antes garante.</p><p>Com carinho, equipe do núcleo.</p>`,
+            html: `<p>Olá, ${escapeHtml(interest.user.name)}!</p><p>O produto <strong>${escapeHtml(interest.product.name)}</strong> que você encomendou em ${escapeHtml(interest.product.store.name)} chegou.</p><p>Sua encomenda era de ${interest.qty} unidade(s). É só acessar a loja para finalizar o pedido — quem chega antes garante.</p><p>Com carinho, quem cuida de ${escapeHtml(interest.product.store.name)}.</p>`,
           });
         }
         // Nota: se o interesse sumiu (produto apagado), o evento é marcado processed do
@@ -120,11 +120,11 @@ export async function relayOutbox(deps: {
           await createRafflesRepository(deps.db).grantNumbersForDonation(donation.id, deps.log);
           const destino = donation.campaign
             ? `a campanha “${escapeHtml(donation.campaign.title)}”`
-            : `o núcleo ${escapeHtml(donation.store.name)}`;
+            : escapeHtml(donation.store.name);
           await deps.email.send({
             to: donation.user.email,
             subject: `Recebemos sua doação — ${donation.store.name}`,
-            html: `<p>Olá, ${escapeHtml(donation.user.name)}!</p><p>Sua doação de R$ ${(donation.amountCents / 100).toFixed(2)} para ${destino} foi confirmada.</p><p>Obrigado por caminhar junto com a gente.</p><p>Com carinho, equipe do núcleo.</p>`,
+            html: `<p>Olá, ${escapeHtml(donation.user.name)}!</p><p>Sua doação de R$ ${(donation.amountCents / 100).toFixed(2)} para ${destino} foi confirmada.</p><p>Obrigado por caminhar junto com a gente.</p><p>Com carinho, quem cuida de ${escapeHtml(donation.store.name)}.</p>`,
           });
         }
       } else if (event.type === "payment.orphaned") {
@@ -159,7 +159,7 @@ export async function relayOutbox(deps: {
           await deps.email.send({
             to: winner.user.email,
             subject: `Você foi sorteado — ${campaign.title}`,
-            html: `<p>Olá, ${escapeHtml(winner.user.name)}!</p><p>O sorteio da campanha “${escapeHtml(campaign.title)}”, do núcleo ${escapeHtml(campaign.store.name)}, aconteceu — e o seu número <strong>${winner.number}</strong> foi contemplado com: ${escapeHtml(prize.title)}.</p><p>A equipe do núcleo vai entrar em contato para combinar a entrega.</p><p>Obrigado por apoiar essa causa.</p>`,
+            html: `<p>Olá, ${escapeHtml(winner.user.name)}!</p><p>O sorteio da campanha “${escapeHtml(campaign.title)}”, de ${escapeHtml(campaign.store.name)}, aconteceu — e o seu número <strong>${winner.number}</strong> foi contemplado com: ${escapeHtml(prize.title)}.</p><p>Quem cuida da loja vai entrar em contato para combinar a entrega.</p><p>Obrigado por apoiar essa causa.</p>`,
           });
         }
       }

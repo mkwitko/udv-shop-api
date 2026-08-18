@@ -131,4 +131,62 @@ describe("gestão de produtos", () => {
     });
     expect(res.statusCode).toBe(201);
   });
+
+  it("arquivar e restaurar: o produto volta para a vitrine com o histórico", async () => {
+    const store = await db.store.create({ data: { slug: "nx", name: "NX", status: "active" } });
+    const token = await staffToken(app, "restore@example.org", store.id);
+    await app.inject({
+      method: "POST",
+      url: "/stores/nx/products",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { name: "Caneca", slug: "caneca", priceCents: 2500, stock: 4 },
+    });
+    await app.inject({
+      method: "DELETE",
+      url: "/stores/nx/products/caneca",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect((await db.product.findFirstOrThrow({ where: { slug: "caneca" } })).active).toBe(false);
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/stores/nx/products/caneca/restore",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ slug: "caneca", active: true, stock: 4 });
+    expect((await db.product.findFirstOrThrow({ where: { slug: "caneca" } })).active).toBe(true);
+
+    // idempotente: restaurar de novo não é erro
+    const again = await app.inject({
+      method: "POST",
+      url: "/stores/nx/products/caneca/restore",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(again.statusCode).toBe(200);
+  });
+
+  it("restaurar em loja suspensa → 403; produto inexistente → 404", async () => {
+    const store = await db.store.create({
+      data: { slug: "nx", name: "NX", status: "suspended" },
+    });
+    const token = await staffToken(app, "restore2@example.org", store.id);
+    await db.product.create({
+      data: { storeId: store.id, slug: "caneca", name: "Caneca", priceCents: 100, active: false },
+    });
+    const susp = await app.inject({
+      method: "POST",
+      url: "/stores/nx/products/caneca/restore",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(susp.statusCode).toBe(403);
+
+    await db.store.update({ where: { id: store.id }, data: { status: "active" } });
+    const missing = await app.inject({
+      method: "POST",
+      url: "/stores/nx/products/nao-existe/restore",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(missing.statusCode).toBe(404);
+  });
 });

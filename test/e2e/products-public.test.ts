@@ -89,4 +89,18 @@ describe("catálogo público", () => {
     const gone = await app.inject({ method: "GET", url: "/stores/nx/products/inativo" });
     expect(gone.statusCode).toBe(404);
   });
+
+  it("loja suspensa → lista e detalhe 200 (a página pública explica o estado)", async () => {
+    const store = await db.store.create({
+      data: { slug: "fora", name: "Fora", status: "suspended" },
+    });
+    await db.product.create({
+      data: { storeId: store.id, slug: "caneca", name: "Caneca", priceCents: 2500, stock: 3 },
+    });
+    const lista = await app.inject({ method: "GET", url: "/stores/fora/products" });
+    expect(lista.statusCode).toBe(200);
+    expect(lista.json().items).toHaveLength(1);
+    const detalhe = await app.inject({ method: "GET", url: "/stores/fora/products/caneca" });
+    expect(detalhe.statusCode).toBe(200);
+  });
 });

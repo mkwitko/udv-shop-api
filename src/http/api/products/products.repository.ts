@@ -13,6 +13,7 @@ export interface ProductsRepository {
   create(storeId: string, data: CreateProductBody): Promise<Product>;
   update(id: string, data: UpdateProductBody): Promise<Product>;
   archive(id: string): Promise<void>;
+  restore(id: string): Promise<void>;
   listByStoreCursor(args: {
     storeId: string;
     limit: number;
@@ -53,6 +54,10 @@ export function createProductsRepository(db: PrismaClient): ProductsRepository {
       }),
     archive: async (id) => {
       await db.product.update({ where: { id }, data: { active: false } });
+    },
+    // Arquivar não apaga: restaurar é o caminho de volta para a vitrine.
+    restore: async (id) => {
+      await db.product.update({ where: { id }, data: { active: true } });
     },
     listByStoreCursor: async ({ storeId, limit, cursor, includeInactive }) => {
       const after = cursor ? afterCursorWhere(decodeCursor(cursor)) : {};
