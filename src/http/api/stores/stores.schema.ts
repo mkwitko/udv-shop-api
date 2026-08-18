@@ -19,6 +19,14 @@ export const StoreResponse = z.object({
   createdAt: z.string(),
 });
 
+export const MyStoreResponse = StoreResponse.extend({
+  role: z.enum(["owner", "admin", "staff"]),
+});
+
+export const MyStoresResponse = z.object({
+  items: z.array(MyStoreResponse),
+});
+
 export const StoresPageResponse = z.object({
   items: z.array(StoreResponse),
   nextCursor: z.string().nullable(),

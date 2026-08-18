@@ -5,7 +5,8 @@ services:
       POSTGRES_USER: udv
       POSTGRES_PASSWORD: udv
       POSTGRES_DB: udvshop
-    ports: ["5433:5432"]
+    # 5433 já é usada por outro projeto nesta máquina (jurispro-test-db)
+    ports: ["5436:5432"]
     volumes: [pgdata:/var/lib/postgresql/data]
   postgres-test:
     image: postgres:17-alpine

@@ -1,4 +1,4 @@
-import type { Prisma, PrismaClient, Store, StoreStatus } from "@prisma/client";
+import type { Prisma, PrismaClient, Store, StoreRole, StoreStatus } from "@prisma/client";
 import {
   afterCursorWhere,
   type CursorPage,
@@ -14,6 +14,7 @@ export interface StoresRepository {
     ownerUserId: string,
   ): Promise<Store>;
   listActiveByCursor(limit: number, cursor: string | null): Promise<CursorPage<Store>>;
+  listByMember(userId: string): Promise<{ store: Store; role: StoreRole }[]>;
   update(
     id: string,
     data: {
@@ -58,6 +59,15 @@ export function createStoresRepository(db: PrismaClient): StoresRepository {
         (r) => r,
       );
     },
+    listByMember: async (userId) => {
+      const rows = await db.userStoreRole.findMany({
+        where: { userId },
+        include: { store: true },
+        orderBy: { store: { createdAt: "desc" } },
+      });
+      return rows.map((r) => ({ store: r.store, role: r.role }));
+    },
+
     update: (id, data) => {
       const updateData: Prisma.StoreUpdateInput = {};
       if (data.name !== undefined) updateData.name = data.name;
