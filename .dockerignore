@@ -1,0 +1,15 @@
+node_modules
+dist
+.git
+.env
+.env.*
+!.env.example
+test
+docs
+scripts
+graphify-out
+.claude
+.remember
+.superpowers
+*.md
+docker-compose*.yml

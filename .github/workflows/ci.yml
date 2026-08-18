@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: udv
+          POSTGRES_PASSWORD: udv
+          POSTGRES_DB: udvshop_test
+        ports:
+          # .env.test aponta para 5434
+          - 5434:5432
+        options: >-
+          --health-cmd "pg_isready -U udv"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm db:generate
+      - run: pnpm typecheck
+      - name: migrations no banco de teste
+        run: pnpm db:deploy
+        env:
+          DATABASE_URL: postgresql://udv:udv@localhost:5434/udvshop_test
+      - run: pnpm test
+      - run: pnpm build

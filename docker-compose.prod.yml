@@ -1,0 +1,34 @@
+# Produção na VM (Oracle): API + Postgres. A imagem vem do GHCR via CI.
+# Subir: docker compose -f docker-compose.prod.yml up -d
+# Backup diário: agendar scripts/backup-db.sh no cron do host (ver docs/DEPLOY.md).
+services:
+  api:
+    image: ${API_IMAGE:-ghcr.io/OWNER/udv-shop-api:latest}
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://udv:${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}@postgres:5432/udvshop
+    ports:
+      # só loopback: quem expõe para fora é o proxy da Cloudflare -> caddy/nginx no host
+      - "127.0.0.1:3333:3333"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: udv
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}
+      POSTGRES_DB: udvshop
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U udv -d udvshop"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:

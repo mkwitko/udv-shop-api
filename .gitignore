@@ -3,3 +3,6 @@ dist
 .env
 *.local
 graphify-out/
+.remember/
+.superpowers/
+.claude/settings.local.json
