@@ -14,6 +14,11 @@ export interface StoresRepository {
     ownerUserId: string,
   ): Promise<Store>;
   listActiveByCursor(limit: number, cursor: string | null): Promise<CursorPage<Store>>;
+  listAllByCursor(
+    limit: number,
+    cursor: string | null,
+    status: StoreStatus | undefined,
+  ): Promise<CursorPage<Store>>;
   listByMember(userId: string): Promise<{ store: Store; role: StoreRole }[]>;
   update(
     id: string,
@@ -49,6 +54,20 @@ export function createStoresRepository(db: PrismaClient): StoresRepository {
       const after = cursor ? afterCursorWhere(decodeCursor(cursor)) : {};
       const rows = await db.store.findMany({
         where: { status: "active", ...after },
+        orderBy: [...KEYSET_ORDER_BY],
+        take: limit + 1,
+      });
+      return toPage(
+        rows,
+        limit,
+        (r) => ({ createdAt: r.createdAt, id: r.id }),
+        (r) => r,
+      );
+    },
+    listAllByCursor: async (limit, cursor, status) => {
+      const after = cursor ? afterCursorWhere(decodeCursor(cursor)) : {};
+      const rows = await db.store.findMany({
+        where: { ...(status ? { status } : {}), ...after },
         orderBy: [...KEYSET_ORDER_BY],
         take: limit + 1,
       });

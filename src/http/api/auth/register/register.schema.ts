@@ -15,6 +15,7 @@ export const PublicUserSchema = z.object({
   name: z.string(),
   email: z.string(),
   emailVerified: z.boolean(),
+  platformAdmin: z.boolean(),
 });
 
 export const AuthResponse = z.object({

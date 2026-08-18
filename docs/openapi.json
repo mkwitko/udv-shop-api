@@ -110,13 +110,17 @@
                         },
                         "emailVerified": {
                           "type": "boolean"
+                        },
+                        "platformAdmin": {
+                          "type": "boolean"
                         }
                       },
                       "required": [
                         "id",
                         "name",
                         "email",
-                        "emailVerified"
+                        "emailVerified",
+                        "platformAdmin"
                       ],
                       "additionalProperties": false
                     }
@@ -233,13 +237,17 @@
                         },
                         "emailVerified": {
                           "type": "boolean"
+                        },
+                        "platformAdmin": {
+                          "type": "boolean"
                         }
                       },
                       "required": [
                         "id",
                         "name",
                         "email",
-                        "emailVerified"
+                        "emailVerified",
+                        "platformAdmin"
                       ],
                       "additionalProperties": false
                     }
@@ -287,13 +295,17 @@
                         },
                         "emailVerified": {
                           "type": "boolean"
+                        },
+                        "platformAdmin": {
+                          "type": "boolean"
                         }
                       },
                       "required": [
                         "id",
                         "name",
                         "email",
-                        "emailVerified"
+                        "emailVerified",
+                        "platformAdmin"
                       ],
                       "additionalProperties": false
                     }
@@ -460,13 +472,17 @@
                     },
                     "emailVerified": {
                       "type": "boolean"
+                    },
+                    "platformAdmin": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
                     "id",
                     "name",
                     "email",
-                    "emailVerified"
+                    "emailVerified",
+                    "platformAdmin"
                   ],
                   "additionalProperties": false
                 }
@@ -665,6 +681,121 @@
             "in": "query",
             "name": "cursor",
             "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "slug": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "pending",
+                              "active",
+                              "suspended"
+                            ]
+                          },
+                          "branding": {
+                            "nullable": true
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "slug",
+                          "name",
+                          "description",
+                          "status",
+                          "branding",
+                          "createdAt"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "nextCursor": {
+                      "nullable": true,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "nextCursor"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/stores": {
+      "get": {
+        "operationId": "adminListStores",
+        "tags": [
+          "stores"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "default": 20,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "cursor",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "active",
+                "suspended"
+              ]
+            },
+            "in": "query",
+            "name": "status",
+            "required": false
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
           }
         ],
         "responses": {

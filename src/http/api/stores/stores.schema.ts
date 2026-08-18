@@ -38,6 +38,13 @@ export const ListStoresQuery = z.object({
 });
 export type ListStoresQuery = z.infer<typeof ListStoresQuery>;
 
+export const AdminListStoresQuery = z.object({
+  limit: z.coerce.number().int().min(1).max(50).default(20),
+  cursor: z.string().optional(),
+  status: z.enum(["pending", "active", "suspended"]).optional(),
+});
+export type AdminListStoresQuery = z.infer<typeof AdminListStoresQuery>;
+
 export const UpdateStoreBody = z.object({
   name: z.string().min(2).max(120).optional(),
   description: z.string().max(2000).nullable().optional(),

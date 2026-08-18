@@ -5,6 +5,7 @@ export type PublicUser = {
   name: string;
   email: string;
   emailVerified: boolean;
+  platformAdmin: boolean;
 };
 
 export type AuthResult = {
@@ -14,5 +15,11 @@ export type AuthResult = {
 };
 
 export function toPublicUser(user: User): PublicUser {
-  return { id: user.id, name: user.name, email: user.email, emailVerified: user.emailVerified };
+  return {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    emailVerified: user.emailVerified,
+    platformAdmin: user.platformAdmin,
+  };
 }
