@@ -4,6 +4,7 @@ import { db } from "../../../../infra/db/client.js";
 import { NotFoundError } from "../../../../shared/errors.js";
 import { requireStoreRole, requireWritableStore } from "../../../hooks/store-role.js";
 import { createStoresRepository } from "../../stores/stores.repository.js";
+import { assertPayoutForStore } from "../product-payout.js";
 import { createProductsRepository, toProductResponse } from "../products.repository.js";
 import { CreateProductBody, ProductResponse } from "../products.schema.js";
 import { createCreateProductService } from "./create-product.service.js";
@@ -30,9 +31,13 @@ export const createProductRoute: FastifyPluginAsync = async (app) => {
       if (!store) throw new NotFoundError("store not found");
       requireStoreRole(req, store.id, "staff");
       requireWritableStore(req, store);
+      const body = req.body as CreateProductBody;
+      await assertPayoutForStore(store, { ...body, priceCents: body.priceCents });
       const service = createCreateProductService({ repo: createProductsRepository(db) });
-      const product = await service({ ...(req.body as CreateProductBody), storeId: store.id });
-      void reply.code(201).send(toProductResponse(product, app.gateways.r2.publicUrl));
+      const product = await service({ ...body, storeId: store.id });
+      void reply
+        .code(201)
+        .send(toProductResponse(product, app.gateways.r2.publicUrl, { payout: true }));
     },
   );
 };

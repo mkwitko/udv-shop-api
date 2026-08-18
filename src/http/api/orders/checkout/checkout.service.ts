@@ -2,6 +2,7 @@ import type { Store } from "@prisma/client";
 import type { StripeGateway } from "../../../../gateways/stripe/stripe.gateway.js";
 import type { WooviGateway } from "../../../../gateways/woovi/woovi.gateway.js";
 import { badGateway, NotFoundError, ValidationError } from "../../../../shared/errors.js";
+import { itemPayoutCents } from "../../payouts/payouts.helpers.js";
 import type { ProductsRepository } from "../../products/products.repository.js";
 import type { StoresRepository } from "../../stores/stores.repository.js";
 import type { OrdersRepository, OrderWithDetails } from "../orders.repository.js";
@@ -38,6 +39,9 @@ export function createCheckoutService(deps: CheckoutDeps) {
         name: product.name,
         priceCents: product.priceCents,
         qty: i.qty,
+        // o acordo de repasse vale como estava na hora da compra
+        supplierId: product.supplierId,
+        payoutCents: itemPayoutCents(product, i.qty),
       };
     });
 

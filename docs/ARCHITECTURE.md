@@ -240,6 +240,54 @@ Repository (`InterestsRepository`) expõe: `upsertOpen`, `listMineCursor`,
 - `product_interests(user_id, created_at DESC, id DESC)` — cursor lista pessoal.
 - `product_interests(product_id, user_id) UNIQUE` — garante uma linha por par.
 
+## Repasses a parceiros (payouts)
+
+Um **parceiro** (`Supplier`) é quem faz um produto da loja e recebe parte do valor da
+venda: artesã, produtor, fornecedor da comunidade. O dinheiro da venda continua caindo
+na conta da loja (direct charge, ADR-020) — não há divisão automática no gateway. O que
+existe é **registro contábil**: quanto a loja deve a quem, e quanto já pagou.
+
+Modelo:
+- `Product.supplierId` + `Product.payoutKind` (`fixed_cents | percent_bps`) +
+  `Product.payoutValue` formam o **acordo vigente**. Os três andam juntos: `null` nos três
+  significa "a loja fica com tudo menos a taxa" (`normalizePayoutFields` recusa meio acordo
+  com `payout_incomplete`).
+- `OrderItem.supplierId` + `OrderItem.payoutCents` **congelam** o acordo no momento da
+  compra, já multiplicados pela quantidade (`itemPayoutCents` no checkout). Mudar o acordo
+  depois não reescreve venda passada.
+- `SupplierSettlement` é um repasse que a loja já pagou (valor, data, observação, autor).
+
+Saldo é sempre **derivado**, nunca materializado: soma de `order_items.payout_cents` de
+pedidos em `PAYOUT_ORDER_STATUSES` (`paid`, `delivery_arranged`, `delivered`) menos a soma
+dos settlements. Consequências disso:
+- pedido `pending_payment` não gera repasse (pode expirar);
+- `cancelled` e `refunded` saem da soma — um reembolso depois do repasse pago deixa o saldo
+  **negativo**, e é assim que a loja vê que tem crédito com o parceiro;
+- pagar mais do que o saldo é permitido (adiantamento).
+
+`assertPayoutForStore` valida na escrita do produto, sempre com o trio efetivo e o preço
+efetivo (baixar o preço de um produto com repasse combinado também é checado):
+`supplier_not_found` (inclusive parceiro de outra loja), `supplier_inactive` e
+`payout_exceeds_price` — repasse não pode passar de `preço − taxa da plataforma`.
+
+Visibilidade: acordo comercial não é vitrine. `ProductResponse.payout` só vem preenchido
+para membro da loja (`isStoreMember`); a resposta pública devolve `null`, sem o nome do
+parceiro. E as rotas de repasse exigem **admin+**, não staff.
+
+Routes e permissões:
+| Método | Rota | Personas | Efeito |
+|--------|------|----------|--------|
+| `GET` | `/stores/:slug/suppliers` | `admin+` | lista parceiros (cursor, `all=true` inclui desativados) |
+| `POST` | `/stores/:slug/suppliers` | `admin+` | cadastra (nome único por loja → 409) |
+| `PATCH` | `/stores/:slug/suppliers/:supplierId` | `admin+` | edita, inclusive `active: false` |
+| `GET` | `/stores/:slug/payouts` | `admin+` | saldo por parceiro + totais (teto 200 parceiros) |
+| `GET` | `/stores/:slug/payouts/:supplierId` | `admin+` | extrato: 50 vendas + 50 pagamentos |
+| `POST` | `/stores/:slug/payouts/:supplierId/settlements` | `admin+` | registra repasse pago |
+
+Parceiro não é apagado — `active: false` tira das opções e o histórico fica. Índices:
+`suppliers(store_id, name) UNIQUE`, `order_items(supplier_id)`, `products(supplier_id)`,
+`supplier_settlements(supplier_id, paid_at DESC, id DESC)`.
+
 ## Campanhas e doações
 
 Uma **campanha** (`Campaign`) é uma arrecadação de fundos para um objetivo

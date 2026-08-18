@@ -112,6 +112,27 @@ export async function seedDatabase(db: PrismaClient): Promise<string> {
     );
   }
 
+  // Parceira que recebe repasse: metade da camiseta, valor fixo na caneca.
+  const supplier = await db.supplier.upsert({
+    where: { storeId_name: { storeId: store.id, name: "Dona Ana" } },
+    update: {},
+    create: {
+      storeId: store.id,
+      name: "Dona Ana",
+      phone: "48999995678",
+      pixKey: "ana@example.org",
+      note: "Costura as camisetas e pinta as canecas.",
+    },
+  });
+  await db.product.update({
+    where: { storeId_slug: { storeId: store.id, slug: "camiseta-uniao" } },
+    data: { supplierId: supplier.id, payoutKind: "percent_bps", payoutValue: 5000 },
+  });
+  await db.product.update({
+    where: { storeId_slug: { storeId: store.id, slug: "caneca-esperanca" } },
+    data: { supplierId: supplier.id, payoutKind: "fixed_cents", payoutValue: 2000 },
+  });
+
   const campaign = await db.campaign.upsert({
     where: { storeId_slug: { storeId: store.id, slug: "reforma-do-templo" } },
     update: { status: "active" },
@@ -157,7 +178,17 @@ export async function seedDatabase(db: PrismaClient): Promise<string> {
         contactPhone: "+5511999990000",
         expiresAt: new Date("2026-01-01T00:00:00Z"),
         items: {
-          create: [{ productId: shirt.id, name: shirt.name, priceCents: shirt.priceCents, qty: 1 }],
+          create: [
+            {
+              productId: shirt.id,
+              name: shirt.name,
+              priceCents: shirt.priceCents,
+              qty: 1,
+              // repasse congelado na venda: metade da camiseta é da Dona Ana
+              supplierId: supplier.id,
+              payoutCents: Math.floor(shirt.priceCents / 2),
+            },
+          ],
         },
       },
     });

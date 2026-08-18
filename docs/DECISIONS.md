@@ -420,3 +420,22 @@ funcionar em silêncio; (b) os testes de doação mensal passaram a mandar `acco
 evento, como o Stripe faz — um teste que omita o campo agora testa o ramo errado;
 (c) `account.updated` não precisa do gate, porque só existe no mundo Connect e é
 resolvido pelo `stripeAccountId` (`@unique`) da loja.
+
+## ADR-022: repasse a parceiro é registro contábil, não divisão de pagamento
+
+**Contexto:** boa parte dos produtos de um núcleo é feita por outra pessoa — a artesã
+costura, a loja vende, e depois alguém precisa lembrar quanto devolver. A tentação é
+dividir o pagamento no gateway (Stripe Connect transfer, split Woovi por chave).
+
+**Decisão:** o dinheiro continua caindo inteiro na conta da loja. O repasse é registrado:
+o acordo fica no produto, o valor é congelado no `OrderItem` da venda, e o saldo é
+derivado (vendas pagas − repasses registrados). A loja paga por fora (Pix, dinheiro) e
+registra o pagamento.
+
+**Consequências:** (a) nenhum parceiro precisa abrir conta Stripe nem passar por KYC — a
+feature funciona no dia um, para quem vende feira e bazar; (b) a plataforma não vira
+intermediária de pagamento a terceiro, o que traria obrigação regulatória que hoje ela não
+tem; (c) em troca, o repasse depende da loja registrar o que pagou — é um livro-caixa
+honesto, não uma garantia; (d) reembolso depois de repasse pago aparece como saldo
+negativo (crédito), em vez de exigir estorno do parceiro; (e) se um dia o split real for
+necessário, o `OrderItem.payoutCents` já é o número que o transfer usaria.

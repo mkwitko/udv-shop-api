@@ -22,7 +22,14 @@ const ORDER_INCLUDE = {
 
 export type OrderWithDetails = Prisma.OrderGetPayload<{ include: typeof ORDER_INCLUDE }>;
 
-type NewOrderItem = { productId: string; name: string; priceCents: number; qty: number };
+type NewOrderItem = {
+  productId: string;
+  name: string;
+  priceCents: number;
+  qty: number;
+  supplierId: string | null;
+  payoutCents: number;
+};
 
 export interface OrdersRepository {
   createPendingOrder(input: {

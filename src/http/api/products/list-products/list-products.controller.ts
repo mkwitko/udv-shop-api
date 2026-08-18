@@ -37,7 +37,9 @@ export const listProductsRoute: FastifyPluginAsync = async (app) => {
         includeInactive: all && isMember,
       });
       return {
-        items: page.items.map((p) => toProductResponse(p, app.gateways.r2.publicUrl)),
+        items: page.items.map((p) =>
+          toProductResponse(p, app.gateways.r2.publicUrl, { payout: isMember }),
+        ),
         nextCursor: page.nextCursor,
       };
     },

@@ -35,7 +35,9 @@ export const restoreProductRoute: FastifyPluginAsync = async (app) => {
       const product = await repo.findBySlug(store.id, productSlug);
       if (!product) throw new NotFoundError("product not found");
       if (!product.active) await repo.restore(product.id);
-      return toProductResponse({ ...product, active: true }, app.gateways.r2.publicUrl);
+      return toProductResponse({ ...product, active: true }, app.gateways.r2.publicUrl, {
+        payout: true,
+      });
     },
   );
 };

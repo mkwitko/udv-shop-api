@@ -32,7 +32,7 @@ export const getProductRoute: FastifyPluginAsync = async (app) => {
       if (!product || (!product.active && !isMember)) {
         throw new NotFoundError("product not found");
       }
-      return toProductResponse(product, app.gateways.r2.publicUrl);
+      return toProductResponse(product, app.gateways.r2.publicUrl, { payout: isMember });
     },
   );
 };

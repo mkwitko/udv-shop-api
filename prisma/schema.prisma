@@ -26,6 +26,7 @@ model User {
   interests     ProductInterest[]
   donations     Donation[]
   raffleEntries RaffleEntry[]
+  settlements   SupplierSettlement[]
 
   @@map("users")
 }
@@ -128,6 +129,8 @@ model Store {
   campaigns    Campaign[]
   donations    Donation[]
   subscription StoreSubscription?
+  suppliers    Supplier[]
+  settlements  SupplierSettlement[]
 
   @@index([status, createdAt(sort: Desc), id(sort: Desc)])
   @@map("stores")
@@ -182,12 +185,20 @@ model Product {
   createdAt    DateTime            @default(now()) @map("created_at")
   updatedAt    DateTime            @updatedAt @map("updated_at")
 
+  /// Acordo de repasse vigente. Vale para vendas futuras: cada OrderItem congela o
+  /// valor no momento da compra, então mudar o acordo não reescreve o passado.
+  supplierId  String?     @map("supplier_id") @db.Uuid
+  payoutKind  PayoutKind? @map("payout_kind")
+  payoutValue Int?        @map("payout_value")
+
   store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  supplier   Supplier?         @relation(fields: [supplierId], references: [id], onDelete: SetNull)
   orderItems OrderItem[]
   interests  ProductInterest[]
 
   @@unique([storeId, slug])
   @@index([storeId, active, createdAt(sort: Desc), id(sort: Desc)])
+  @@index([supplierId])
   @@map("products")
 }
 
@@ -209,6 +220,59 @@ model ProductInterest {
   @@index([productId, status])
   @@index([userId, createdAt(sort: Desc), id(sort: Desc)])
   @@map("product_interests")
+}
+
+/// Como o repasse de um produto é calculado: valor fixo por unidade vendida ou
+/// percentual do preço (em basis points, mesma unidade de applicationFeeBps).
+enum PayoutKind {
+  fixed_cents
+  percent_bps
+}
+
+/// Quem recebe repasse de uma venda: artesã, produtor, fornecedor da comunidade.
+/// O dinheiro da venda cai na conta da loja (direct charge, ADR-019) — este cadastro
+/// registra quanto a loja deve a quem, não é um destino de pagamento automático.
+model Supplier {
+  id        String   @id @default(uuid()) @db.Uuid
+  storeId   String   @map("store_id") @db.Uuid
+  name      String
+  phone     String?
+  pixKey    String?  @map("pix_key")
+  note      String?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  store       Store                @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  products    Product[]
+  orderItems  OrderItem[]
+  settlements SupplierSettlement[]
+
+  @@unique([storeId, name])
+  @@index([storeId, createdAt(sort: Desc), id(sort: Desc)])
+  @@map("suppliers")
+}
+
+/// Um repasse que a loja já pagou. O saldo devido é derivado: soma dos
+/// `order_items.payout_cents` de pedidos pagos menos a soma daqui. Nada de saldo
+/// materializado — duas fontes de verdade para dinheiro sempre divergem.
+model SupplierSettlement {
+  id          String   @id @default(uuid()) @db.Uuid
+  storeId     String   @map("store_id") @db.Uuid
+  supplierId  String   @map("supplier_id") @db.Uuid
+  amountCents Int      @map("amount_cents")
+  note        String?
+  paidAt      DateTime @map("paid_at")
+  createdById String?  @map("created_by_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  store     Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  supplier  Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  createdBy User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([supplierId, paidAt(sort: Desc), id(sort: Desc)])
+  @@index([storeId, paidAt(sort: Desc), id(sort: Desc)])
+  @@map("supplier_settlements")
 }
 
 enum OrderStatus {
@@ -280,11 +344,18 @@ model OrderItem {
   priceCents Int    @map("price_cents")
   qty        Int
 
-  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  product Product @relation(fields: [productId], references: [id])
+  /// Repasse congelado na venda, já multiplicado pela quantidade. Zero quando o
+  /// produto não tem parceiro — a loja fica com tudo menos a taxa.
+  supplierId  String? @map("supplier_id") @db.Uuid
+  payoutCents Int     @default(0) @map("payout_cents")
+
+  order    Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product  Product   @relation(fields: [productId], references: [id])
+  supplier Supplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull)
 
   @@index([orderId])
   @@index([productId])
+  @@index([supplierId])
   @@map("order_items")
 }
 

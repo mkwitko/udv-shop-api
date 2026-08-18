@@ -1,5 +1,16 @@
 import { z } from "zod";
+import { PayoutKindSchema } from "../payouts/payouts.schema.js";
 import { SLUG_REGEX } from "../stores/stores.schema.js";
+
+/**
+ * Acordo de repasse do produto. Os três campos andam juntos: `null` nos três
+ * significa "a loja fica com tudo menos a taxa".
+ */
+const PayoutFields = {
+  supplierId: z.string().uuid().nullable().optional(),
+  payoutKind: PayoutKindSchema.nullable().optional(),
+  payoutValue: z.number().int().min(0).nullable().optional(),
+};
 
 export const CreateProductBody = z.object({
   name: z.string().min(2).max(160),
@@ -9,6 +20,7 @@ export const CreateProductBody = z.object({
   images: z.array(z.string().startsWith("stores/")).max(10).optional(),
   stock: z.number().int().min(0).default(0),
   availability: z.enum(["in_stock", "on_demand"]).default("in_stock"),
+  ...PayoutFields,
 });
 export type CreateProductBody = z.infer<typeof CreateProductBody>;
 
@@ -19,6 +31,7 @@ export const UpdateProductBody = z.object({
   images: z.array(z.string().startsWith("stores/")).max(10).optional(),
   stock: z.number().int().min(0).optional(),
   availability: z.enum(["in_stock", "on_demand"]).optional(),
+  ...PayoutFields,
 });
 export type UpdateProductBody = z.infer<typeof UpdateProductBody>;
 
@@ -35,6 +48,19 @@ export const ProductResponse = z.object({
   availability: z.enum(["in_stock", "on_demand"]),
   active: z.boolean(),
   createdAt: z.string(),
+  /**
+   * Só quem cuida da loja recebe isto preenchido: quanto do preço é combinado com
+   * o parceiro é acordo interno, não vitrine.
+   */
+  payout: z
+    .object({
+      supplierId: z.string(),
+      supplierName: z.string(),
+      kind: PayoutKindSchema,
+      value: z.number().int(),
+      unitCents: z.number().int(),
+    })
+    .nullable(),
 });
 
 export const ProductsPageResponse = z.object({
