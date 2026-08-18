@@ -111,6 +111,11 @@ model Store {
   status            StoreStatus @default(pending)
   isPlatformOwner   Boolean     @default(false) @map("is_platform_owner")
   applicationFeeBps Int         @default(500) @map("application_fee_bps")
+  /// Domínio próprio da loja (ex.: "loja.comunidade.org"), único na plataforma. Só
+  /// resolve para a loja depois de verificado — antes disso é intenção, não endereço.
+  customDomain           String?   @unique @map("custom_domain")
+  customDomainVerifiedAt DateTime? @map("custom_domain_verified_at")
+
   stripeAccountId   String?     @unique @map("stripe_account_id")
   wooviPixKey       String?     @map("woovi_pix_key")
   createdAt         DateTime    @default(now()) @map("created_at")

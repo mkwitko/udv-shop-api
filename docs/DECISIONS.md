@@ -439,3 +439,22 @@ tem; (c) em troca, o repasse depende da loja registrar o que pagou — é um liv
 honesto, não uma garantia; (d) reembolso depois de repasse pago aparece como saldo
 negativo (crédito), em vez de exigir estorno do parceiro; (e) se um dia o split real for
 necessário, o `OrderItem.payoutCents` já é o número que o transfer usaria.
+
+## ADR-023: domínio próprio é reescrita no servidor do front, não redirect
+
+**Contexto:** uma loja com endereço próprio (`loja.comunidade.org`) precisa servir as
+mesmas páginas que `/loja/{slug}`. Redirect resolveria em uma linha, mas o endereço da
+comunidade sumiria da barra no primeiro clique — que é justamente o ponto de ter um.
+
+**Decisão:** o worker do front (`src/server.ts`) resolve o Host pela API
+(`/stores/by-domain`, cache de 60s em memória) e **reescreve** o caminho para
+`/loja/{slug}{path}` antes de entregar ao roteador. Host da plataforma, arquivo com
+extensão e chamada de server function passam intactos. API fora do ar ou host
+desconhecido: nada é reescrito e o visitante cai na landing.
+
+**Consequências:** (a) nenhuma rota nova, nenhum componente duplicado — o app inteiro
+funciona no domínio da loja sem saber disso; (b) `wrangler.jsonc` passou a apontar
+`main` para `src/server.ts`, senão o Vite ignora a entrada customizada; (c) o TLS do
+domínio da loja depende de **Cloudflare for SaaS** (custom hostnames), que é pago e
+precisa de token de zona — a aplicação está pronta, a conta ainda não; (d) verificação
+por CNAME não é permanente: a próxima verificação desfaz se o registro sair do ar.

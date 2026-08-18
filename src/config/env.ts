@@ -38,6 +38,9 @@ const BaseEnvSchema = z.object({
   STRIPE_SAAS_PRICE_ID: z.string().default(""),
   // País da conta conectada criada no onboarding — Connect exige no create.
   STRIPE_CONNECT_COUNTRY: z.string().length(2).default("BR"),
+  // Alvo do CNAME que a loja aponta quando usa domínio próprio (ex.: "lojas.colheita.app").
+  // Vazio desliga a feature: a API recusa configurar domínio sem ter para onde apontar.
+  CUSTOM_DOMAIN_TARGET: z.string().default(""),
   WOOVI_API_KEY: z.string().default(""),
   WOOVI_WEBHOOK_HMAC_SECRET: z.string().default(""),
   // Liga o gateway Pix falso com autoconfirmação em ~8s — só para demo/desenvolvimento

@@ -47,3 +47,23 @@
 - O e2e do CI do web faz checkout deste repo (`<owner>/udv-shop-api`) para subir
   a API com `DEV_FAKE_PAYMENTS=true` — os dois repos precisam estar na mesma
   conta/organização (ou trocar por um PAT com acesso de leitura).
+
+## Domínio próprio de loja (opcional, pago)
+
+A aplicação já resolve `Host` → loja e reescreve para `/loja/{slug}` no worker do front
+(ADR-023). Falta a parte de infraestrutura, que custa dinheiro e não dá para provisionar
+pelo código:
+
+1. Ativar **Cloudflare for SaaS** (custom hostnames) na zona da plataforma. É cobrado por
+   hostname ativo, mais o certificado.
+2. Publicar um hostname que sirva de alvo do CNAME — por exemplo `lojas.colheita.app`
+   apontando para o worker.
+3. Na API, definir `CUSTOM_DOMAIN_TARGET` com esse alvo. **Vazio desliga a feature**: a
+   tela de Configurações diz que não está liberada e as rotas recusam com
+   `custom_domain_disabled`.
+4. Para cada loja aprovada, registrar o hostname na Cloudflare (API de custom hostnames)
+   para emitir o certificado. Sem isso o CNAME resolve mas o HTTPS falha.
+
+A verificação de CNAME que a loja vê na tela é independente disso: ela só confirma que o
+DNS aponta para o alvo. Enquanto o passo 4 não existir, o endereço funciona em HTTP mas
+não em HTTPS — não anuncie a feature antes.

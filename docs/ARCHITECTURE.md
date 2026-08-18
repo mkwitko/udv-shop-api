@@ -288,6 +288,49 @@ Parceiro não é apagado — `active: false` tira das opções e o histórico fi
 `suppliers(store_id, name) UNIQUE`, `order_items(supplier_id)`, `products(supplier_id)`,
 `supplier_settlements(supplier_id, paid_at DESC, id DESC)`.
 
+## Extrato e exportação (reports)
+
+`GET /stores/:slug/statement?months=6` (admin+) fecha a conta da loja por mês:
+`payments` com `status: succeeded` — pedido reembolsado sai da soma porque o pagamento
+vira `refunded` — mais a soma de `order_items.payout_cents` do mesmo período.
+`netCents = vendas + doações − taxa − repasse`. Duas queries e não um join só: somar
+itens junto com pagamentos multiplicaria a receita pelo número de itens do pedido.
+`payoutsOpenCents` traz só saldos positivos, para bater com a aba Repasses.
+
+Exportação em CSV vive fora do OpenAPI (`hide: true`): devolve arquivo, não JSON, e o
+cliente gerado espera JSON. O front baixa com um fetch próprio (`lib/api/download.ts`).
+
+| Método | Rota | Personas | Efeito |
+|--------|------|----------|--------|
+| `GET` | `/stores/:slug/statement` | `admin+` | extrato por mês + totais |
+| `GET` | `/stores/:slug/orders.csv` | `admin+` | pedidos em planilha |
+| `GET` | `/stores/:slug/interests.csv` | `admin+` | encomendas em planilha |
+
+O CSV usa `;`, BOM e vírgula decimal (planilha brasileira), escapa aspas e neutraliza
+célula começando com `=`, `+`, `-` ou `@` — texto que a planilha executaria como fórmula.
+O telefone da lista de encomendas sai mascarado, igual à tela.
+
+## Domínio próprio da loja
+
+`Store.customDomain` (único) + `customDomainVerifiedAt`. Fluxo: a loja grava o endereço
+(`PUT`), aponta um CNAME para `CUSTOM_DOMAIN_TARGET`, e pede verificação (`POST`), que
+consulta o DNS pelo gateway `dns` e grava — ou apaga — a data. **Só domínio verificado
+resolve**: `GET /stores/by-domain?host=` (público) é o que o SSR do front consulta para
+descobrir de quem é o Host. Trocar o endereço zera a verificação.
+
+`parseStoreDomain` normaliza o que a pessoa colar (protocolo, porta, ponto final,
+maiúsculas) e recusa: endereço inválido, endereço da plataforma (`WEB_ORIGIN`) e o
+próprio alvo do CNAME — seria capturar tráfego alheio. `CUSTOM_DOMAIN_TARGET` vazio
+desliga a feature inteira (`enabled: false` na resposta).
+
+| Método | Rota | Personas | Efeito |
+|--------|------|----------|--------|
+| `GET` | `/stores/:slug/domain` | `admin+` | estado e instruções de DNS |
+| `PUT` | `/stores/:slug/domain` | `owner` | grava (409 se já for de outra loja) |
+| `DELETE` | `/stores/:slug/domain` | `owner` | solta o endereço |
+| `POST` | `/stores/:slug/domain/verify` | `owner` | consulta o DNS e grava o resultado |
+| `GET` | `/stores/by-domain` | público | resolve Host → loja verificada |
+
 ## Campanhas e doações
 
 Uma **campanha** (`Campaign`) é uma arrecadação de fundos para um objetivo

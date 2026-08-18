@@ -9,6 +9,10 @@ import {
 
 export interface StoresRepository {
   findBySlug(slug: string): Promise<Store | null>;
+  /** Só domínio já verificado resolve para a loja. */
+  findByVerifiedDomain(domain: string): Promise<Store | null>;
+  setCustomDomain(id: string, domain: string | null): Promise<Store>;
+  markDomainVerified(id: string, verifiedAt: Date | null): Promise<Store>;
   createWithOwner(
     data: { slug: string; name: string; description?: string | null },
     ownerUserId: string,
@@ -40,6 +44,18 @@ export interface StoresRepository {
 export function createStoresRepository(db: PrismaClient): StoresRepository {
   return {
     findBySlug: (slug) => db.store.findUnique({ where: { slug } }),
+    findByVerifiedDomain: (domain) =>
+      db.store.findFirst({
+        where: { customDomain: domain, customDomainVerifiedAt: { not: null } },
+      }),
+    // trocar o domínio zera a verificação: o CNAME do endereço novo ainda não foi visto
+    setCustomDomain: (id, domain) =>
+      db.store.update({
+        where: { id },
+        data: { customDomain: domain, customDomainVerifiedAt: null },
+      }),
+    markDomainVerified: (id, verifiedAt) =>
+      db.store.update({ where: { id }, data: { customDomainVerifiedAt: verifiedAt } }),
     createWithOwner: (data, ownerUserId) =>
       db.$transaction(async (tx) => {
         const store = await tx.store.create({

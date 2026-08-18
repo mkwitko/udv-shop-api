@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import fp from "fastify-plugin";
 import { env } from "../../config/env.js";
+import { createDnsGateway } from "../../gateways/dns/dns.gateway.js";
 import { createEmailGateway } from "../../gateways/email/email.gateway.js";
 import { createGoogleGateway } from "../../gateways/google/google.gateway.js";
 import { createR2Gateway } from "../../gateways/r2/r2.gateway.js";
@@ -11,6 +12,7 @@ import type { Gateways } from "../../types/fastify.js";
 
 export function buildDefaultGateways(): Gateways {
   return {
+    dns: createDnsGateway(),
     email: createEmailGateway({ apiKey: env.RESEND_API_KEY, from: env.EMAIL_FROM }),
     google: createGoogleGateway({
       clientId: env.GOOGLE_CLIENT_ID,

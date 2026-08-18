@@ -1,5 +1,6 @@
 import type { FastifyPluginAsync } from "fastify";
 import { db } from "../../../../infra/db/client.js";
+import { strictLimit } from "../../../plugins/rate-limit.js";
 import { createAuthRepository } from "../auth.repository.js";
 import { setRefreshCookie } from "../cookies.js";
 import { createTokensService } from "../tokens.service.js";
@@ -10,7 +11,7 @@ export const loginRoute: FastifyPluginAsync = async (app) => {
   app.post(
     "/auth/login",
     {
-      config: { public: true, rateLimit: { max: 5, timeWindow: "1 minute" } },
+      config: { public: true, rateLimit: strictLimit(5) },
       schema: {
         operationId: "login",
         tags: ["auth"],

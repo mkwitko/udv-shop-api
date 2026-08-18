@@ -26,10 +26,13 @@ export type FakeGateways = Gateways & {
   wooviSubAccounts: CreateSubAccountInput[];
   wooviCharges: CreateChargeInput[];
   wooviRefunds: Array<{ chargeCorrelationID: string; refundCorrelationID: string }>;
+  /** CNAMEs que o DNS falso devolve, por host. O teste escreve aqui. */
+  dnsCnames: Map<string, string[]>;
 };
 
 export function buildFakeGateways(overrides: Partial<Gateways> = {}): FakeGateways {
   const sentEmails: FakeGateways["sentEmails"] = [];
+  const dnsCnames: FakeGateways["dnsCnames"] = new Map();
   const googleProfile: GoogleProfile = {
     sub: "google-sub-1",
     email: "google@example.org",
@@ -54,6 +57,7 @@ export function buildFakeGateways(overrides: Partial<Gateways> = {}): FakeGatewa
   const wooviRefunds: FakeGateways["wooviRefunds"] = [];
   return {
     sentEmails,
+    dnsCnames,
     googleProfile,
     stripeIntents,
     stripeRefunds,
@@ -67,6 +71,9 @@ export function buildFakeGateways(overrides: Partial<Gateways> = {}): FakeGatewa
     wooviSubAccounts,
     wooviCharges,
     wooviRefunds,
+    dns: overrides.dns ?? {
+      resolveCname: async (host) => dnsCnames.get(host) ?? [],
+    },
     email: overrides.email ?? {
       async send(input) {
         sentEmails.push(input);
