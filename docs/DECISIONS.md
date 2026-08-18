@@ -365,3 +365,58 @@ mesma regra — `GET .../raffle` (vencedores) e `GET .../raffle/entries` chamam
 nome (`"Maria S."`) enquanto a lista de entradas já o tratava como anônimo.
 Entregar o prêmio é responsabilidade da gestão, que enxerga identidade completa
 em `GET /stores/:slug/donations`.
+
+## ADR-019: assinatura SaaS mora na conta da plataforma, separada do dinheiro do núcleo
+
+**Contexto:** a plataforma tem duas relações financeiras com o núcleo, e elas são
+opostas. Na venda e na doação, o dinheiro é do núcleo e a plataforma tira uma
+comissão (`application_fee`). Na assinatura SaaS, o dinheiro é da plataforma e o
+núcleo é o cliente. Misturar as duas na mesma conta Stripe embaralharia
+conciliação, relatório fiscal e reembolso.
+
+**Decisão:** a assinatura SaaS é um Checkout Session em modo `subscription` criado
+**sem** `stripeAccount` — na conta da plataforma, sem `application_fee`, com o
+`storeId` viajando em `metadata` e em `subscription_data.metadata`. O estado vive em
+`StoreSubscription` (`@unique` em `storeId`), tabela separada de `Payment`, que
+continua sendo só de pedido e doação.
+
+**Consequências:** (a) o `Payment` polimórfico do ADR-015 não precisou de um terceiro
+dono; (b) o portal do Stripe pode ser aberto para o núcleo gerir o próprio cartão sem
+dar acesso a nada do fluxo de doação; (c) a plataforma precisa de webhook da própria
+conta *e* das conectadas no mesmo endpoint — ver ADR-021.
+
+## ADR-020: Connect standard, não express
+
+**Contexto:** Connect oferece `standard`, `express` e `custom`. Muda quem é dono da
+relação com o Stripe: obrigações fiscais, disputas, suporte, e quem vê qual dashboard.
+
+**Decisão:** contas `standard`. O núcleo cria (ou conecta) uma conta Stripe própria, com
+dashboard próprio, e é ele quem responde por disputa e obrigação fiscal. A plataforma
+faz destination charge com `application_fee` e nada mais.
+
+**Consequências:** (a) o onboarding é mais pesado para o núcleo (CNPJ, dados bancários —
+risco já registrado na §11 da spec) e a plataforma não pode preencher os dados por ele;
+(b) em compensação, a plataforma não vira responsável solidária por disputa de cartão de
+uma loja; (c) o núcleo pode ver e reembolsar as próprias cobranças pelo dashboard do
+Stripe, fora do nosso sistema — os webhooks nos mantêm em dia quando isso acontece.
+
+## ADR-021: o campo `account` do evento é o que separa Connect da plataforma
+
+**Contexto:** `/webhooks/stripe` é um endpoint só, e recebe eventos da conta da
+plataforma e de todas as contas conectadas. Vários tipos existem nos dois mundos com
+significados opostos: `customer.subscription.deleted` é "um doador cancelou a doação
+mensal" quando vem do núcleo e "a loja parou de pagar a plataforma" quando vem da
+plataforma. `invoice.paid` idem.
+
+**Decisão:** o payload inteiro do evento é persistido, e o roteamento lê `event.account`,
+presente só quando o evento nasce numa conta conectada. Ramos de doação exigem `account`
+presente; ramos de billing exigem ausente. Cobrança de pedido e doação única são
+*destination charges*, criadas na conta da plataforma, e continuam chegando sem `account` —
+nada mudou para elas.
+
+**Consequências:** (a) o endpoint precisa estar registrado com `connect: true` no Stripe,
+senão os eventos das contas conectadas simplesmente não chegam e a doação mensal para de
+funcionar em silêncio; (b) os testes de doação mensal passaram a mandar `account` no
+evento, como o Stripe faz — um teste que omita o campo agora testa o ramo errado;
+(c) `account.updated` não precisa do gate, porque só existe no mundo Connect e é
+resolvido pelo `stripeAccountId` (`@unique`) da loja.

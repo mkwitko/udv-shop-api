@@ -355,6 +355,71 @@ completo, sem números de CPF ou dados financeiros). Vencedor também é mascara
 mesmo em doação nomeada (mostro `"J. Silva"` ganhou, não `"João Felipe da Silva"`)
 — risco jurídico de doador ter identidade exposição. Anônimo continua anônimo.
 
+## Onboarding do núcleo (Connect)
+
+Antes de vender ou receber doação, o núcleo precisa de uma conta que receba o
+dinheiro. São dois caminhos independentes, e a loja pode ter os dois.
+
+**Stripe (cartão).** `POST /stores/:slug/connect/stripe/link` (owner) cria a conta
+conectada **standard** se ainda não existir, grava `stripeAccountId` e devolve um
+Account Link de onboarding hospedado. A conta é persistida *antes* de gerar o link:
+se a criação do link falhar, o retry reusa a conta em vez de abrir uma segunda conta
+para o mesmo núcleo. O link é de uso único e expira em minutos, então a rota gera um
+novo a cada chamada em vez de guardar a URL.
+
+Terminar o onboarding não é a mesma coisa que voltar para o site: o Account Link
+redireciona o usuário sem nenhuma garantia de que o Stripe habilitou a conta. Quem diz
+a verdade é o webhook `account.updated`, que espelha `charges_enabled`,
+`payouts_enabled` e `details_submitted` nas colunas `stripe*Enabled`/`stripeDetailsSubmitted`
+da loja (`stripeAccountId` é `@unique` justamente para o evento resolver a loja pelo id
+da conta). `GET /stores/:slug/connect` serve essas colunas; enquanto
+`detailsSubmitted` é falso — a janela em que o núcleo fica olhando a tela e o valor
+envelhece a cada passo dado no Stripe — ele relê o Stripe e regrava. Depois disso, zero
+chamada externa.
+
+**Woovi (Pix).** `PUT /stores/:slug/connect/woovi` (owner) cria a subconta na Woovi e só
+então grava `wooviPixKey`/`wooviSubaccountId`. A ordem importa: a cobrança Pix usa
+`splits[].pixKey` com `SPLIT_SUB_ACCOUNT`, e uma chave gravada sem subconta virou Pix
+quebrado no checkout. O formato da resposta da Woovi ainda não foi verificado contra a
+conta real (risco registrado na §11 da spec) — o gateway lê o id de forma defensiva e cai
+para a própria chave.
+
+Nenhuma resposta desta slice devolve `stripeAccountId`, `wooviPixKey` ou
+`wooviSubaccountId`: o front só precisa saber se está conectado e se já pode cobrar.
+
+## Assinatura SaaS do núcleo (billing)
+
+A plataforma cobra uma assinatura do núcleo. Ela roda na conta **da plataforma**, não
+passa por Connect e não tem `application_fee` — é receita direta.
+
+- `POST /stores/:slug/billing/checkout` (owner) → Checkout Session em modo
+  `subscription`, com `storeId` em `metadata` **e** em `subscription_data.metadata`.
+  Reusa o `stripeCustomerId` quando já existe, para manter histórico e método de
+  pagamento entre tentativas. 409 se já houver assinatura `active`/`trialing`.
+- `POST /stores/:slug/billing/portal` (owner) → sessão do portal do Stripe (trocar cartão,
+  cancelar). 409 sem assinatura, porque o portal é por customer.
+- `GET /stores/:slug/billing` (admin+) → `status`, `currentPeriodEnd`,
+  `cancelAtPeriodEnd`. Nunca devolve `stripeCustomerId`/`stripeSubscriptionId`.
+
+`StoreSubscription` tem `@unique` em `storeId`: é isso que impede dois checkouts
+concorrentes virarem duas assinaturas cobradas.
+
+**Efeito no status da loja**, aplicado na mesma transação que grava a assinatura:
+
+| Status da assinatura | Loja |
+|---|---|
+| `active`, `trialing` | `pending` → `active` (e só de `pending`) |
+| `past_due`, `paused` | inalterado — é carência |
+| `canceled`, `unpaid`, `incomplete_expired` | `active` → `suspended` |
+
+Uma loja `suspended` nunca é reativada por assinatura em dia: suspensão é decisão de
+moderação da plataforma (ADR-006), e quem a reverte é o `platform_admin`. Já
+`POST /billing/checkout` **não** usa `requireWritableStore` — uma loja suspensa por falta
+de pagamento precisa justamente poder assinar de novo.
+
+O período vem de `items.data[0].current_period_end`: em Basil+ o campo saiu do topo da
+Subscription e vive no item.
+
 ## Webhooks
 
 Integração com Stripe e Woovi por webhooks idempotentes. Ambas as rotas são
@@ -376,6 +441,23 @@ no escopo do plugin `webhooksRoutes`).
   - `charge.refunded` → marca payment como `refunded` e order passa para esse
     estado (se em estado válido; aceita payment `succeeded` ou
     `refund_pending`).
+  - `invoice.paid` **(conta conectada)** → ciclo de doação mensal.
+  - `customer.subscription.deleted` **(conta conectada)** → marca a doação mensal
+    como cancelada.
+  - `account.updated` → espelha as capacidades da conta conectada na loja.
+  - `checkout.session.completed` **(plataforma)** → guarda o customer da assinatura SaaS.
+  - `customer.subscription.created|updated|deleted` **(plataforma)** → status da
+    assinatura SaaS e transição de status da loja.
+
+**Um endpoint, duas origens.** O mesmo `/webhooks/stripe` recebe eventos da conta da
+plataforma e das contas conectadas (o endpoint precisa estar registrado com
+`connect: true` no Stripe para receber os últimos). Tipos como
+`customer.subscription.deleted` existem nos dois mundos e significam coisas diferentes —
+cancelar a doação mensal de um doador, ou tirar a loja do ar. O que decide é o campo
+`account` do evento, presente só quando ele nasce numa conta conectada: os ramos de
+doação exigem `account` presente, os de billing exigem ausente. Cobrança de pedido e
+doação única não entram nessa conta porque são *destination charges*, criadas na conta da
+plataforma — os eventos delas chegam sem `account`, como sempre chegaram.
 
 ### Woovi
 
@@ -505,14 +587,18 @@ Qualquer outra transição é rejeitada com erro 409 `invalid_status_transition`
 - **Outbox** (já implementado neste plano como exemplo): eventos de domínio
   (ex.: "pedido pago" disparando emails) usam tabela outbox + processamento
   assíncrono via worker, não side-effect síncrono dentro do service de escrita.
-- **Reembolso de doação** — análogo a reembolso de pedido: cliente pode pedir
-  reembolso de doação única; subscrição mensal pode ser cancelada (futuras
-  cobranças não acontecem, mas já pagas não são reembolsadas automaticamente).
-  Rota `/donations/:id/refund` fica para Plano 6, junto com fluxo de conformidade
+- **Reembolso de doação por rota da gestão** — o reembolso já funciona pelo webhook
+  (`charge.refunded` devolve os números do sorteio e marca a doação), mas não existe
+  `POST /donations/:id/refund` para a gestão acionar, com o fluxo de conformidade
   (auditoria de doador, prevenção de fraude).
 - **Woovi mensal (Pix recorrente)** — integração com `subscription`-like da Woovi
-  ainda não existe naquele SaaS (status em fevereiro de 2026). Agendado para
-  Plano 6 junto com revisão de risco jurídico em § 11 da spec.
+  ainda não existe naquele SaaS (status em fevereiro de 2026), junto com a revisão de
+  risco jurídico da § 11 da spec.
+- **Assinatura SaaS via Pix** — hoje só cartão (Stripe Billing na conta da plataforma).
+- **Formato da subconta Woovi** — `createSubAccount` posta em `/api/v1/subaccount` e lê a
+  resposta de forma defensiva; falta confirmar contra a conta real.
+- **Ciclo mensal alimenta campanha `finished`** e **`countEntries` materializa um
+  `groupBy` por participante em rota pública** — achados parkados na revisão do plano 5.
 
 ## Testes
 
