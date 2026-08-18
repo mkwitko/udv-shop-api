@@ -5,6 +5,7 @@ import { createEmailGateway } from "../../gateways/email/email.gateway.js";
 import { createGoogleGateway } from "../../gateways/google/google.gateway.js";
 import { createR2Gateway } from "../../gateways/r2/r2.gateway.js";
 import { createStripeGateway } from "../../gateways/stripe/stripe.gateway.js";
+import { createFakeWooviGateway } from "../../gateways/woovi/woovi.fake.js";
 import { createWooviGateway } from "../../gateways/woovi/woovi.gateway.js";
 import type { Gateways } from "../../types/fastify.js";
 
@@ -28,10 +29,13 @@ export function buildDefaultGateways(): Gateways {
       webhookSecret: env.STRIPE_WEBHOOK_SECRET,
       connectCountry: env.STRIPE_CONNECT_COUNTRY,
     }),
-    woovi: createWooviGateway({
-      apiKey: env.WOOVI_API_KEY,
-      webhookHmacSecret: env.WOOVI_WEBHOOK_HMAC_SECRET,
-    }),
+    // demo local sem credenciais: Pix falso que se autoconfirma (proibido em produção)
+    woovi: env.DEV_FAKE_PAYMENTS
+      ? createFakeWooviGateway()
+      : createWooviGateway({
+          apiKey: env.WOOVI_API_KEY,
+          webhookHmacSecret: env.WOOVI_WEBHOOK_HMAC_SECRET,
+        }),
   };
 }
 

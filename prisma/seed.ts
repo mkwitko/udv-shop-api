@@ -34,7 +34,7 @@ export async function seedDatabase(db: PrismaClient): Promise<string> {
 
   const store = await db.store.upsert({
     where: { slug: SEED_STORE_SLUG },
-    update: { status: "active" },
+    update: { status: "active", wooviPixKey: "demo@prospera.fake" },
     create: {
       slug: SEED_STORE_SLUG,
       name: "Núcleo Demonstração",
@@ -46,6 +46,8 @@ export async function seedDatabase(db: PrismaClient): Promise<string> {
       stripeChargesEnabled: true,
       stripePayoutsEnabled: true,
       stripeDetailsSubmitted: true,
+      // chave Pix fictícia: com DEV_FAKE_PAYMENTS=true o checkout Pix funciona inteiro
+      wooviPixKey: "demo@prospera.fake",
     },
   });
 

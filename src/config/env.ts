@@ -40,10 +40,24 @@ const BaseEnvSchema = z.object({
   STRIPE_CONNECT_COUNTRY: z.string().length(2).default("BR"),
   WOOVI_API_KEY: z.string().default(""),
   WOOVI_WEBHOOK_HMAC_SECRET: z.string().default(""),
+  // Liga o gateway Pix falso com autoconfirmação em ~8s — só para demo/desenvolvimento
+  // local sem credenciais reais. Recusado em produção (ver superRefine abaixo).
+  DEV_FAKE_PAYMENTS: z
+    .string()
+    .default("false")
+    .transform((v) => v === "true" || v === "1"),
 });
 
 export const EnvSchema = BaseEnvSchema.superRefine((val, ctx) => {
   if (val.NODE_ENV !== "production") return;
+
+  if (val.DEV_FAKE_PAYMENTS) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["DEV_FAKE_PAYMENTS"],
+      message: "DEV_FAKE_PAYMENTS must be disabled in production",
+    });
+  }
 
   const requiredNonEmpty = [
     "RESEND_API_KEY",
