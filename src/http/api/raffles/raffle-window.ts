@@ -5,14 +5,18 @@ export type ResolvedRaffle = { id: string; status: RaffleStatus; centsPerNumber:
 /**
  * Sorteio a que uma doação paga concorre.
  *
- * 1. o sorteio cuja janela contém `paidAt` — **de qualquer status**;
+ * 1. o sorteio cuja janela contém `paidAt` — `open` ou `drawn`, **não** cancelado;
  * 2. senão, o sorteio `open` com o menor `startsAt` posterior a `paidAt`;
  * 3. senão, nenhum (a doação fica pendente até alguém criar um sorteio que a cubra).
  *
- * O passo 1 ignorar o status é o que impede a doação de agosto — cujo sorteio já foi
+ * O passo 1 aceitar `drawn` é o que impede a doação de agosto — cujo sorteio já foi
  * realizado — de escorregar para o sorteio de setembro e concorrer duas vezes com o
  * mesmo dinheiro. Janela casada é ponto final: quem chama confere `status` e concede
  * zero se o sorteio não estiver mais aberto.
+ *
+ * Cancelado é o oposto: ele não aconteceu, então não pode capturar a doação. Se
+ * casasse aqui, concederia zero por não estar `open` e quem doou nunca chegaria ao
+ * sorteio substituto.
  */
 export async function resolveRaffleForDonation(
   tx: Prisma.TransactionClient,
@@ -22,6 +26,7 @@ export async function resolveRaffleForDonation(
   const containing = await tx.raffle.findFirst({
     where: {
       campaignId,
+      status: { not: "cancelled" },
       startsAt: { lte: paidAt },
       OR: [{ endsAt: null }, { endsAt: { gt: paidAt } }],
     },
@@ -42,6 +47,9 @@ export async function resolveRaffleForDonation(
  * fim colide com qualquer janela futura, e a flag `openEnded` existe para a rota
  * dizer "feche a janela do sorteio corrente antes de criar o próximo" em vez de um
  * "sobreposição" que a pessoa não sabe resolver.
+ *
+ * Cancelado não bloqueia: criar o substituto no mesmo período é exatamente o que a
+ * pessoa faz depois de cancelar.
  */
 export async function findWindowConflict(
   tx: Prisma.TransactionClient,
@@ -55,6 +63,7 @@ export async function findWindowConflict(
   const conflict = await tx.raffle.findFirst({
     where: {
       campaignId: input.campaignId,
+      status: { not: "cancelled" },
       ...(input.exceptRaffleId !== undefined && { id: { not: input.exceptRaffleId } }),
       // existente começa antes do fim do novo
       ...(input.endsAt !== null && { startsAt: { lt: input.endsAt } }),

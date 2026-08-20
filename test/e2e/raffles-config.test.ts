@@ -157,6 +157,101 @@ describe("configuração do sorteio", () => {
     expect(res.json().message).toBe("raffle_not_found");
   });
 
+  it("PATCH cancela e reabre o sorteio; realizado recusa com 409", async () => {
+    const { store, campaign } = await seedCampaign();
+    const { token } = await registerWithRole(app, "admin-cancel@example.org", store.id, "admin");
+    const criado = await app.inject({
+      method: "POST",
+      url: `/stores/nx/campaigns/${campaign.slug}/raffles`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        title: "Agosto",
+        centsPerNumber: 1000,
+        startsAt: "2026-08-01T03:00:00.000Z",
+        endsAt: "2026-09-01T03:00:00.000Z",
+        prizes: [{ position: 1, title: "Cesta" }],
+      },
+    });
+    expect(criado.statusCode).toBe(201);
+
+    const cancelado = await app.inject({
+      method: "PATCH",
+      url: `/stores/nx/campaigns/${campaign.slug}/raffles/1/status`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { status: "cancelled" },
+    });
+    expect(cancelado.statusCode).toBe(200);
+    expect(cancelado.json().status).toBe("cancelled");
+
+    // o substituto pode ocupar a mesma janela do cancelado
+    const substituto = await app.inject({
+      method: "POST",
+      url: `/stores/nx/campaigns/${campaign.slug}/raffles`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        title: "Agosto de novo",
+        centsPerNumber: 1000,
+        startsAt: "2026-08-01T03:00:00.000Z",
+        endsAt: "2026-09-01T03:00:00.000Z",
+        prizes: [{ position: 1, title: "Camiseta" }],
+      },
+    });
+    expect(substituto.statusCode).toBe(201);
+
+    // ...e por isso reabrir o cancelado agora colide
+    const reabrir = await app.inject({
+      method: "PATCH",
+      url: `/stores/nx/campaigns/${campaign.slug}/raffles/1/status`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { status: "open" },
+    });
+    expect(reabrir.statusCode).toBe(409);
+    expect(reabrir.json().message).toBe("raffle_window_overlap");
+
+    // sorteio realizado não transita
+    await db.raffle.update({
+      where: { campaignId_sequence: { campaignId: campaign.id, sequence: 2 } },
+      data: { status: "drawn", drawnAt: new Date() },
+    });
+    const drawn = await app.inject({
+      method: "PATCH",
+      url: `/stores/nx/campaigns/${campaign.slug}/raffles/2/status`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { status: "cancelled" },
+    });
+    expect(drawn.statusCode).toBe(409);
+    expect(drawn.json().message).toBe("invalid_raffle_transition");
+  });
+
+  it("staff não cancela sorteio (403)", async () => {
+    const { store, campaign } = await seedCampaign();
+    const { token: adminToken } = await registerWithRole(
+      app,
+      "admin-cancel2@example.org",
+      store.id,
+      "admin",
+    );
+    await app.inject({
+      method: "POST",
+      url: `/stores/nx/campaigns/${campaign.slug}/raffles`,
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { title: "Agosto", centsPerNumber: 1000, prizes: [{ position: 1, title: "Cesta" }] },
+    });
+    const { token: staffToken } = await registerWithRole(
+      app,
+      "staff-cancel@example.org",
+      store.id,
+      "staff",
+    );
+    const res = await app.inject({
+      method: "PATCH",
+      url: `/stores/nx/campaigns/${campaign.slug}/raffles/1/status`,
+      headers: { authorization: `Bearer ${staffToken}` },
+      payload: { status: "cancelled" },
+    });
+    expect(res.statusCode).toBe(403);
+  });
+
   it("prêmio guarda descrição e fotos; GET público devolve imageUrls", async () => {
     const { store, campaign } = await seedCampaign();
     const { token } = await registerWithRole(app, "admin-media@example.org", store.id, "admin");

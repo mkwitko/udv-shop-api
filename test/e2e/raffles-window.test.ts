@@ -374,6 +374,144 @@ describe("janela do sorteio", () => {
     expect(await db.raffleEntry.count({ where: { raffleId: proximo.id } })).toBe(2);
   });
 
+  it("cancelar apaga os números, devolve as doações e zera a numeração", async () => {
+    const { store, campaign, donor } = await seedCampaign();
+    const corrente = await seedRaffle({
+      campaignId: campaign.id,
+      sequence: 1,
+      startsAt: AGOSTO,
+      endsAt: SETEMBRO,
+    });
+    const donation = await seedPaidDonation({
+      storeId: store.id,
+      campaignId: campaign.id,
+      userId: donor.id,
+      paidAt: new Date("2026-08-10T12:00:00Z"),
+      amountCents: 3000,
+    });
+    const repo = createRafflesRepository(db);
+    expect(await repo.grantNumbersForDonation(donation.id, app.log)).toBe(3);
+
+    const cancelled = await repo.setStatus(corrente.id, "cancelled");
+
+    expect(cancelled.status).toBe("cancelled");
+    expect(cancelled.nextNumber).toBe(1);
+    expect(await db.raffleEntry.count({ where: { raffleId: corrente.id } })).toBe(0);
+    expect(
+      (await db.donation.findUniqueOrThrow({ where: { id: donation.id } })).raffleGranted,
+    ).toBe(false);
+  });
+
+  it("sorteio cancelado não captura doação: ela concorre ao próximo da janela", async () => {
+    const { store, campaign, donor } = await seedCampaign();
+    const cancelado = await seedRaffle({
+      campaignId: campaign.id,
+      sequence: 1,
+      startsAt: AGOSTO,
+      endsAt: SETEMBRO,
+    });
+    const repo = createRafflesRepository(db);
+    await repo.setStatus(cancelado.id, "cancelled");
+    // substituto ocupa a MESMA janela do cancelado
+    const substituto = await repo.create({
+      campaignId: campaign.id,
+      title: "Agosto de novo",
+      centsPerNumber: 1000,
+      startsAt: AGOSTO,
+      endsAt: SETEMBRO,
+      drawAt: null,
+      prizes: [{ position: 1, title: "Cesta" }],
+    });
+    const donation = await seedPaidDonation({
+      storeId: store.id,
+      campaignId: campaign.id,
+      userId: donor.id,
+      paidAt: new Date("2026-08-10T12:00:00Z"),
+      amountCents: 2000,
+    });
+
+    const granted = await repo.grantNumbersForDonation(donation.id, app.log);
+
+    expect(granted).toBe(2);
+    expect(await db.raffleEntry.count({ where: { raffleId: substituto.id } })).toBe(2);
+    expect(await db.raffleEntry.count({ where: { raffleId: cancelado.id } })).toBe(0);
+  });
+
+  it("reabrir devolve os números de quem doou na janela", async () => {
+    const { store, campaign, donor } = await seedCampaign();
+    const raffle = await seedRaffle({
+      campaignId: campaign.id,
+      sequence: 1,
+      startsAt: AGOSTO,
+      endsAt: SETEMBRO,
+    });
+    const donation = await seedPaidDonation({
+      storeId: store.id,
+      campaignId: campaign.id,
+      userId: donor.id,
+      paidAt: new Date("2026-08-10T12:00:00Z"),
+      amountCents: 3000,
+    });
+    const repo = createRafflesRepository(db);
+    await repo.grantNumbersForDonation(donation.id, app.log);
+    await repo.setStatus(raffle.id, "cancelled");
+
+    const reaberto = await repo.setStatus(raffle.id, "open");
+
+    expect(reaberto.status).toBe("open");
+    // backfill: a doação da janela volta a ter números, numerados do 1
+    const numeros = await db.raffleEntry.findMany({
+      where: { raffleId: raffle.id },
+      select: { number: true },
+      orderBy: { number: "asc" },
+    });
+    expect(numeros.map((n) => n.number)).toEqual([1, 2, 3]);
+  });
+
+  it("reabrir com a janela já ocupada por outro sorteio → 409", async () => {
+    const { campaign } = await seedCampaign();
+    const repo = createRafflesRepository(db);
+    const original = await seedRaffle({
+      campaignId: campaign.id,
+      sequence: 1,
+      startsAt: AGOSTO,
+      endsAt: SETEMBRO,
+    });
+    await repo.setStatus(original.id, "cancelled");
+    await repo.create({
+      campaignId: campaign.id,
+      title: "Substituto",
+      centsPerNumber: 1000,
+      startsAt: AGOSTO,
+      endsAt: SETEMBRO,
+      drawAt: null,
+      prizes: [{ position: 1, title: "Cesta" }],
+    });
+
+    await expect(repo.setStatus(original.id, "open")).rejects.toMatchObject({
+      message: "raffle_window_overlap",
+    });
+  });
+
+  it("sorteio realizado não cancela nem reabre", async () => {
+    const { campaign } = await seedCampaign();
+    const drawn = await seedRaffle({
+      campaignId: campaign.id,
+      sequence: 1,
+      startsAt: AGOSTO,
+      endsAt: SETEMBRO,
+      status: "drawn",
+    });
+    const repo = createRafflesRepository(db);
+
+    await expect(repo.setStatus(drawn.id, "cancelled")).rejects.toMatchObject({
+      message: "invalid_raffle_transition",
+    });
+    await expect(repo.setStatus(drawn.id, "open")).rejects.toMatchObject({
+      message: "invalid_raffle_transition",
+    });
+  });
+
   it("doação sem paidAt (histórico) cai na janela pelo createdAt", async () => {
     const { store, campaign, donor } = await seedCampaign();
     const corrente = await seedRaffle({

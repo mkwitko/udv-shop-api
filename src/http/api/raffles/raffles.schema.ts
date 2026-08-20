@@ -61,6 +61,10 @@ export type CreateRaffleBody = z.infer<typeof CreateRaffleBody>;
 export const PutRaffleBody = RaffleConfigInput;
 export type PutRaffleBody = z.infer<typeof PutRaffleBody>;
 
+/** Só `open` e `cancelled`: `drawn` é resultado de sortear, não estado que se escolhe. */
+export const UpdateRaffleStatusBody = z.object({ status: z.enum(["open", "cancelled"]) });
+export type UpdateRaffleStatusBody = z.infer<typeof UpdateRaffleStatusBody>;
+
 export const RaffleSequenceParams = z.object({
   slug: z.string(),
   campaignSlug: z.string(),

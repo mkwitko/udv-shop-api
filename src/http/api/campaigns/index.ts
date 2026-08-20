@@ -6,6 +6,7 @@ import { listRaffleEntriesRoute } from "../raffles/list-raffle-entries/list-raff
 import { listRafflesRoute } from "../raffles/list-raffles/list-raffles.controller.js";
 import { putRaffleRoute } from "../raffles/put-raffle/put-raffle.controller.js";
 import { suggestPrizeDescriptionRoute } from "../raffles/suggest-prize-description/suggest-prize-description.controller.js";
+import { updateRaffleStatusRoute } from "../raffles/update-raffle-status/update-raffle-status.controller.js";
 import { createCampaignRoute } from "./create-campaign/create-campaign.controller.js";
 import { getCampaignRoute } from "./get-campaign/get-campaign.controller.js";
 import { listCampaignsRoute } from "./list-campaigns/list-campaigns.controller.js";
@@ -25,6 +26,7 @@ export const campaignsRoutes: FastifyPluginAsync = async (app) => {
   await app.register(putRaffleRoute);
   await app.register(getRaffleRoute);
   await app.register(drawRaffleRoute);
+  await app.register(updateRaffleStatusRoute);
   await app.register(listRaffleEntriesRoute);
   await app.register(suggestStoryRoute);
   await app.register(suggestPrizeDescriptionRoute);
