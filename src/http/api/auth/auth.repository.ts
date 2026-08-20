@@ -23,6 +23,7 @@ export interface AuthRepository {
     expiresAt: Date;
   }): Promise<RefreshToken>;
   findRefreshTokenByHash(tokenHash: string): Promise<RefreshToken | null>;
+  findRefreshTokenById(id: string): Promise<RefreshToken | null>;
   markReplaced(id: string, replacedById: string): Promise<void>;
   revokeFamily(familyId: string): Promise<void>;
   revokeAllForUser(userId: string): Promise<void>;
@@ -77,6 +78,7 @@ export function createAuthRepository(db: PrismaClient): AuthRepository {
 
     insertRefreshToken: (data) => db.refreshToken.create({ data }),
     findRefreshTokenByHash: (tokenHash) => db.refreshToken.findUnique({ where: { tokenHash } }),
+    findRefreshTokenById: (id) => db.refreshToken.findUnique({ where: { id } }),
     markReplaced: async (id, replacedById) => {
       await db.refreshToken.update({ where: { id }, data: { replacedById } });
     },

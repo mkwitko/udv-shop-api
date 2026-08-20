@@ -12,6 +12,19 @@ export function hashToken(raw: string): string {
 
 export function createTokensService(deps: TokensServiceDeps) {
   const refreshTtlMs = env.REFRESH_TOKEN_TTL_D * 24 * 60 * 60 * 1000;
+  const reuseGraceMs = env.REFRESH_REUSE_GRACE_S * 1000;
+
+  /**
+   * Reapresentar um token já rotacionado é sinal de roubo — mas também é o que acontece
+   * quando duas abas renovam juntas ou um reload pega a troca no meio. Enquanto a
+   * substituição é recente e válida, tratamos como corrida do próprio cliente.
+   */
+  async function isClientRace(replacedById: string): Promise<boolean> {
+    if (reuseGraceMs <= 0) return false;
+    const replacement = await deps.repo.findRefreshTokenById(replacedById);
+    if (!replacement || replacement.revokedAt) return false;
+    return Date.now() - replacement.createdAt.getTime() <= reuseGraceMs;
+  }
 
   async function buildAccess(userId: string): Promise<string> {
     const user = await deps.repo.findUserById(userId);
@@ -41,7 +54,7 @@ export function createTokensService(deps: TokensServiceDeps) {
       const row = await deps.repo.findRefreshTokenByHash(hashToken(rawToken));
       if (!row) throw new UnauthorizedError("invalid_refresh_token");
       if (row.revokedAt) throw new UnauthorizedError("refresh_token_revoked");
-      if (row.replacedById) {
+      if (row.replacedById && !(await isClientRace(row.replacedById))) {
         // reuse detection: token já rotacionado sendo reapresentado → família comprometida
         await deps.repo.revokeFamily(row.familyId);
         throw new UnauthorizedError("refresh_token_reused");
