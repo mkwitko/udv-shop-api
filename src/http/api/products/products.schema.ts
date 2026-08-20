@@ -77,3 +77,13 @@ export const ListProductsQuery = z.object({
     .default(false),
 });
 export type ListProductsQuery = z.infer<typeof ListProductsQuery>;
+
+/** Entrada da sugestão de descrição. `draft` é o que a loja já escreveu (pode ser nota solta). */
+export const SuggestDescriptionBody = z.object({
+  name: z.string().min(2).max(160),
+  draft: z.string().max(2000).optional(),
+  mode: z.enum(["create", "improve"]).default("create"),
+});
+export type SuggestDescriptionBody = z.infer<typeof SuggestDescriptionBody>;
+
+export const SuggestDescriptionResponse = z.object({ text: z.string() });

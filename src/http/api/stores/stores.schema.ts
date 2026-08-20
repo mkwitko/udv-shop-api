@@ -9,6 +9,19 @@ export const CreateStoreBody = z.object({
 });
 export type CreateStoreBody = z.infer<typeof CreateStoreBody>;
 
+/**
+ * Entrada da sugestão de descrição da loja. Não é escopada por loja: o campo aparece no
+ * cadastro, quando a loja ainda não existe — o nome digitado é todo o contexto.
+ */
+export const SuggestStoreDescriptionBody = z.object({
+  name: z.string().min(2).max(120),
+  draft: z.string().max(4000).optional(),
+  mode: z.enum(["create", "improve"]).default("create"),
+});
+export type SuggestStoreDescriptionBody = z.infer<typeof SuggestStoreDescriptionBody>;
+
+export const SuggestStoreDescriptionResponse = z.object({ text: z.string() });
+
 export const StoreResponse = z.object({
   id: z.string(),
   slug: z.string(),

@@ -4,6 +4,7 @@ import { createProductRoute } from "./create-product/create-product.controller.j
 import { getProductRoute } from "./get-product/get-product.controller.js";
 import { listProductsRoute } from "./list-products/list-products.controller.js";
 import { restoreProductRoute } from "./restore-product/restore-product.controller.js";
+import { suggestDescriptionRoute } from "./suggest-description/suggest-description.controller.js";
 import { updateProductRoute } from "./update-product/update-product.controller.js";
 
 export const productsRoutes: FastifyPluginAsync = async (app) => {
@@ -13,4 +14,5 @@ export const productsRoutes: FastifyPluginAsync = async (app) => {
   await app.register(updateProductRoute);
   await app.register(archiveProductRoute);
   await app.register(restoreProductRoute);
+  await app.register(suggestDescriptionRoute);
 };
