@@ -23,6 +23,7 @@ type SubscriptionObject = {
 
 type AccountObject = {
   id?: string;
+  capabilities?: { transfers?: string };
   charges_enabled?: boolean;
   payouts_enabled?: boolean;
   details_submitted?: boolean;
@@ -114,6 +115,7 @@ export async function applyAccountUpdated(
 ): Promise<number> {
   if (!object.id) return 0;
   return createStoresRepository(db).setStripeCapabilities(object.id, {
+    transfersEnabled: object.capabilities?.transfers === "active",
     chargesEnabled: object.charges_enabled === true,
     payoutsEnabled: object.payouts_enabled === true,
     detailsSubmitted: object.details_submitted === true,

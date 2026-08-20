@@ -14,6 +14,7 @@ async function seed() {
       name: "Núcleo R",
       status: "active",
       stripeAccountId: "acct_1",
+      stripeTransfersEnabled: true,
       applicationFeeBps: 500,
     },
   });
@@ -76,7 +77,7 @@ describe("reembolso e órfão de doação", () => {
       type: "payment_intent.succeeded",
       data: { object: { id: payment.providerId, metadata: { paymentId: payment.id } } },
     });
-    await relayOutbox({ db, email: gateways.email, log: logger });
+    await relayOutbox({ db, email: gateways.email, woovi: gateways.woovi, log: logger });
     expect(await db.raffleEntry.count({ where: { donationId } })).toBe(5);
 
     const refundRes = await stripeEvent(app, {

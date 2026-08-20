@@ -103,3 +103,33 @@ export async function refundPaymentByProviderId(deps: {
   if (!payment) return;
   await refundPaymentByPaymentId({ db: deps.db, paymentId: payment.id });
 }
+
+/**
+ * Enfileira o saque da subconta Woovi da loja. Split para subconta é VIRTUAL: o valor
+ * fica reservado dentro da conta da plataforma e só sai no saque, então sem esta chamada
+ * o dinheiro do núcleo nunca chega na conta dele.
+ *
+ * Vai pelo outbox e não direto: a Woovi pode estar fora do ar no instante do webhook, e
+ * perder o saque é perder dinheiro de outra pessoa. O saque leva TODO o saldo, então
+ * reprocessar é inofensivo — no pior caso encontra a subconta zerada.
+ */
+export async function enqueueWooviWithdraw(deps: {
+  db: PrismaClient;
+  paymentId: string;
+}): Promise<void> {
+  const payment = await deps.db.payment.findUnique({
+    where: { id: deps.paymentId },
+    select: {
+      order: { select: { store: { select: { id: true, wooviPixKey: true } } } },
+      donation: { select: { store: { select: { id: true, wooviPixKey: true } } } },
+    },
+  });
+  const store = payment?.order?.store ?? payment?.donation?.store;
+  if (!store?.wooviPixKey) return;
+  await deps.db.outboxEvent.create({
+    data: {
+      type: "woovi.withdraw",
+      payload: { storeId: store.id, pixKey: store.wooviPixKey, paymentId: deps.paymentId },
+    },
+  });
+}

@@ -54,8 +54,11 @@ A aplicação já resolve `Host` → loja e reescreve para `/loja/{slug}` no wor
 (ADR-023). Falta a parte de infraestrutura, que custa dinheiro e não dá para provisionar
 pelo código:
 
-1. Ativar **Cloudflare for SaaS** (custom hostnames) na zona da plataforma. É cobrado por
-   hostname ativo, mais o certificado.
+1. Ativar **Cloudflare for SaaS** (custom hostnames) na zona da plataforma. Verificado em
+   2026-08-19: está disponível **no plano Free**, com **100 custom hostnames incluídos** e
+   US$ 0,10 por hostname adicional (limite de 50.000). Ou seja, até 100 lojas com domínio
+   próprio sai de graça — a nota anterior de que a feature dependia de plano pago estava
+   errada.
 2. Publicar um hostname que sirva de alvo do CNAME — por exemplo `lojas.colheita.app`
    apontando para o worker.
 3. Na API, definir `CUSTOM_DOMAIN_TARGET` com esse alvo. **Vazio desliga a feature**: a

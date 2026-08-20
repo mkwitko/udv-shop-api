@@ -14,6 +14,10 @@ const BaseEnvSchema = z.object({
   JWT_PUBLIC_KEY_B64: z.string().min(1),
   ACCESS_TOKEN_TTL_S: z.coerce.number().default(900),
   REFRESH_TOKEN_TTL_D: z.coerce.number().default(30),
+  // Janela em que reapresentar um refresh token já rotacionado é tratado como corrida do
+  // cliente (duas abas, reload no meio da troca) e não como roubo. Sem ela a corrida
+  // revoga a família e desloga o usuário de todo lugar. Zero = detecção estrita.
+  REFRESH_REUSE_GRACE_S: z.coerce.number().default(30),
   COOKIE_SECRET: z.string().min(16),
   // `true` quando o front roda num site diferente do da API (registrable domain distinto,
   // ex.: web na Vercel e API na Fly). Nesse caso o cookie de refresh precisa de
@@ -34,6 +38,11 @@ const BaseEnvSchema = z.object({
   R2_PUBLIC_BASE_URL: z.string().default(""),
   STRIPE_SECRET_KEY: z.string().default(""),
   STRIPE_WEBHOOK_SECRET: z.string().default(""),
+  // Eventos de conta conectada chegam num endpoint SEPARADO no Dashboard ("Connect
+  // applications"), com signing secret próprio. Com um segredo só, metade dos eventos
+  // — account.updated, o ciclo de vida da doação mensal — falha na assinatura e nunca
+  // é processada.
+  STRIPE_CONNECT_WEBHOOK_SECRET: z.string().default(""),
   // Price recorrente da assinatura SaaS, na conta da PLATAFORMA (não é Connect).
   STRIPE_SAAS_PRICE_ID: z.string().default(""),
   // País da conta conectada criada no onboarding — Connect exige no create.
@@ -41,7 +50,20 @@ const BaseEnvSchema = z.object({
   // Alvo do CNAME que a loja aponta quando usa domínio próprio (ex.: "lojas.colheita.app").
   // Vazio desliga a feature: a API recusa configurar domínio sem ter para onde apontar.
   CUSTOM_DOMAIN_TARGET: z.string().default(""),
+  // Workers AI da Cloudflare escreve/melhora descrição de produto. Vazio desliga a
+  // feature (a rota devolve 503 e a tela esconde o botão). Reaproveita a conta do R2
+  // quando CF_AI_ACCOUNT_ID não é informado — é a mesma conta Cloudflare.
+  CF_AI_ACCOUNT_ID: z.string().default(""),
+  CF_AI_API_TOKEN: z.string().default(""),
+  CF_AI_MODEL: z.string().default("@cf/meta/llama-4-scout-17b-16e-instruct"),
   WOOVI_API_KEY: z.string().default(""),
+  // A Woovi tem dois ambientes com AppIDs SEPARADOS: produção (api.woovi.com) e teste
+  // (api.woovi-sandbox.com, painel app.woovi-sandbox.com). AppID de um responde
+  // "appID inválido" no outro, então a URL precisa acompanhar de onde veio a chave.
+  WOOVI_BASE_URL: z.string().url().default("https://api.woovi.com"),
+  // A Woovi aceita um evento por webhook e a secret do HMAC é por webhook. Como
+  // consumimos três eventos (pago, expirado, estornado), aqui vão os três segredos
+  // separados por vírgula — qualquer um que assine o corpo vale.
   WOOVI_WEBHOOK_HMAC_SECRET: z.string().default(""),
   // Liga o gateway Pix falso com autoconfirmação em ~8s — só para demo/desenvolvimento
   // local sem credenciais reais. Recusado em produção (ver superRefine abaixo).
@@ -74,6 +96,7 @@ export const EnvSchema = BaseEnvSchema.superRefine((val, ctx) => {
     "R2_PUBLIC_BASE_URL",
     "STRIPE_SECRET_KEY",
     "STRIPE_WEBHOOK_SECRET",
+    "STRIPE_CONNECT_WEBHOOK_SECRET",
     "STRIPE_SAAS_PRICE_ID",
     "WOOVI_API_KEY",
     "WOOVI_WEBHOOK_HMAC_SECRET",

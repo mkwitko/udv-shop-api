@@ -22,6 +22,7 @@ async function seedOrder(app: FastifyInstance, provider: "stripe" | "woovi") {
       name: "Núcleo A",
       status: "active",
       stripeAccountId: "acct_1",
+      stripeTransfersEnabled: true,
       wooviPixKey: "pix@nucleo.org",
     },
   });
@@ -179,7 +180,7 @@ describe("webhooks", () => {
     expect(res.statusCode).toBe(401);
   });
 
-  it("woovi OPENPIX:CHARGE_REFUND → payment refunded, order refunded", async () => {
+  it("woovi OPENPIX:TRANSACTION_REFUND_RECEIVED → payment refunded, order refunded", async () => {
     const { orderId, payment } = await seedOrder(app, "woovi");
     await app.inject({
       method: "POST",
@@ -195,7 +196,8 @@ describe("webhooks", () => {
       url: "/webhooks/woovi",
       headers: { "x-openpix-signature": "ok", "content-type": "application/json" },
       payload: JSON.stringify({
-        event: "OPENPIX:CHARGE_REFUND",
+        // nome real do evento no catálogo da Woovi (evento de transação, não de cobrança)
+        event: "OPENPIX:TRANSACTION_REFUND_RECEIVED",
         charge: { correlationID: payment.id, identifier: payment.providerId },
       }),
     });

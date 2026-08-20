@@ -70,6 +70,12 @@ export interface DonationsRepository {
     amountCents: number;
   }): Promise<{ donationId: string; created: boolean } | null>;
   markSubscriptionCancelled(subscriptionRef: string): Promise<boolean>;
+  /**
+   * Assinatura de doação e assinatura SaaS da loja agora vivem as duas na conta da
+   * plataforma e compartilham os mesmos tipos de evento. Este lookup é o que separa uma
+   * da outra no webhook — ver ADR-025.
+   */
+  isDonationSubscription(subscriptionRef: string): Promise<boolean>;
 }
 
 export function createDonationsRepository(db: PrismaClient): DonationsRepository {
@@ -305,6 +311,14 @@ export function createDonationsRepository(db: PrismaClient): DonationsRepository
         }
         throw err;
       }
+    },
+
+    isDonationSubscription: async (subscriptionRef) => {
+      const found = await db.donation.findFirst({
+        where: { subscriptionRef },
+        select: { id: true },
+      });
+      return found !== null;
     },
 
     markSubscriptionCancelled: async (subscriptionRef) => {

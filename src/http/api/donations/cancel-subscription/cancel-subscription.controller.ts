@@ -30,12 +30,9 @@ export const cancelSubscriptionRoute: FastifyPluginAsync = async (app) => {
       if (donation.subscriptionCancelledAt) {
         throw new ConflictError("subscription_already_cancelled");
       }
-      const store = await db.store.findUniqueOrThrow({
-        where: { id: donation.storeId },
-        select: { stripeAccountId: true },
-      });
-      if (!store.stripeAccountId) throw new ConflictError("payments_not_configured");
-      await app.gateways.stripe.cancelSubscription(donation.subscriptionRef, store.stripeAccountId);
+      // A assinatura vive na conta da plataforma (destination charge, ADR-025): cancelar
+      // não depende mais de saber a conta conectada da loja.
+      await app.gateways.stripe.cancelSubscription(donation.subscriptionRef);
       // Marcado depois da confirmação do provedor: marcar antes deixaria a assinatura
       // viva no Stripe com a nossa linha dizendo que acabou (dinheiro saindo do doador
       // sem doação registrada). O webhook customer.subscription.deleted é a rede de

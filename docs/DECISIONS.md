@@ -281,7 +281,7 @@ anterior poderia marcar um payment de doação como pertencendo a um Order se
 IDs coincidissem ou lógica de discovery fosse ambígua — agora o roteamento é
 explícito e cada agregado valida o domínio.
 
-## ADR-016: doação mensal usa direct charge na conta conectada; doação única segue destination charge
+## ADR-016: doação mensal usa direct charge na conta conectada — SUPERSEDED pelo ADR-025
 
 **Contexto:** Stripe Billing (para subscrições) exige que a conta conectada
 receba a cobrança diretamente (`direct charge`), com fee como percentual
@@ -385,7 +385,7 @@ dono; (b) o portal do Stripe pode ser aberto para o núcleo gerir o próprio car
 dar acesso a nada do fluxo de doação; (c) a plataforma precisa de webhook da própria
 conta *e* das conectadas no mesmo endpoint — ver ADR-021.
 
-## ADR-020: Connect standard, não express
+## ADR-020: Connect standard, não express — SUPERSEDED pelo ADR-024
 
 **Contexto:** Connect oferece `standard`, `express` e `custom`. Muda quem é dono da
 relação com o Stripe: obrigações fiscais, disputas, suporte, e quem vê qual dashboard.
@@ -399,6 +399,11 @@ risco já registrado na §11 da spec) e a plataforma não pode preencher os dado
 (b) em compensação, a plataforma não vira responsável solidária por disputa de cartão de
 uma loja; (c) o núcleo pode ver e reembolsar as próprias cobranças pelo dashboard do
 Stripe, fora do nosso sistema — os webhooks nos mantêm em dia quando isso acontece.
+
+**Revisão (2026-08-18):** a consequência (b) estava errada. Na tabela da Stripe, a conta
+Standard responde por fraude e disputa apenas em *direct charge*; em **destination
+charge**, que é o nosso fluxo, quem responde é a plataforma. Standard nunca nos protegeu
+disso — só nos deixou numa configuração que a Stripe lista como a evitar. Ver ADR-024.
 
 ## ADR-021: o campo `account` do evento é o que separa Connect da plataforma
 
@@ -458,3 +463,103 @@ funciona no domínio da loja sem saber disso; (b) `wrangler.jsonc` passou a apon
 domínio da loja depende de **Cloudflare for SaaS** (custom hostnames), que é pago e
 precisa de token de zona — a aplicação está pronta, a conta ainda não; (d) verificação
 por CNAME não é permanente: a próxima verificação desfaz se o registro sair do ar.
+
+## ADR-024: conta conectada com controller properties de Express, não `type` legado
+
+**Contexto:** o ADR-020 escolheu `type: "standard"` acreditando que isso tirava a
+plataforma da linha de frente das disputas. Não tira: em destination charge — o nosso
+fluxo — a cobrança nasce na conta da plataforma, e é o saldo dela que o refund e a
+disputa debitam. A configuração Standard (Stripe dona das perdas, núcleo pagando as
+taxas, dashboard completo) é justamente a que a Stripe lista como "a evitar" para
+destination charge, e a tabela oficial dá Standard como suportando direct charge apenas.
+
+**Decisão:** criar contas sem o parâmetro `type`, com controller properties equivalentes
+a Express: `losses.payments: application`, `fees.payer: application`,
+`requirement_collection: stripe`, `stripe_dashboard.type: express`, pedindo a capability
+`transfers`. `losses.payments: application` obriga `fees.payer: application` — as duas
+andam juntas. Não fomos para Accounts v2 porque, no preview, destination charge exige
+`on_behalf_of`, o que faria do núcleo o *settlement merchant* — exatamente o que a
+orientação de Marketplace proíbe; a própria doc manda usar v1 com controller properties
+quando v2 não cobre o caso.
+
+**Consequências:** (a) a plataforma precisa aceitar a responsabilidade por perdas no
+platform profile do Dashboard antes de criar qualquer conta nova — sem isso a criação é
+recusada; (b) o núcleo perde o dashboard completo do Stripe e passa a entrar por login
+link de uso único (`POST /stores/:slug/connect/stripe/dashboard`), o que também significa
+que ele não reembolsa mais por fora do nosso sistema; (c) a plataforma passa a ser
+formalmente dona do risco, então Radar for Platforms deixa de ser opcional; (d) a Stripe
+não converte o tipo de uma conta existente: migrar é criar conta nova e refazer o
+onboarding, guardando o id antigo em `metadata.migrated_from_account_id`.
+
+## ADR-025: doação mensal também é destination charge na plataforma
+
+**Contexto:** o ADR-016 pôs a assinatura de doação como direct charge dentro da conta do
+núcleo, enquanto pedido e doação única seguiam destination charge na plataforma. A mesma
+loja passava a ter dois merchants of record: relatório e conciliação partidos, disputa
+seguindo regra diferente conforme o tipo de doação, e a elegibilidade de método de
+pagamento (é assim que o Pix entra ou não) decidida pelo país de um MoR diferente. O
+refund do ciclo mensal também não passava pelo caminho de `reverse_transfer`.
+
+**Decisão:** a assinatura de doação nasce na conta da plataforma, com
+`transfer_data.destination` apontando para o núcleo e `application_fee_percent` como
+taxa. Sem `on_behalf_of` — ele faria do núcleo o *settlement merchant*, exatamente o que a
+orientação de Marketplace proíbe; e como plataforma e núcleos estão todos no BR, não
+caímos na exceção cross-border que obrigaria o parâmetro. O `Product` exigido pelo
+`price_data` passa a ser um por loja (`Store.stripeDonationProductId`), reusado, em vez de
+um por doação.
+
+**Consequências:** (a) assinatura de doação e assinatura SaaS da loja passam a viver na
+mesma conta e a compartilhar os mesmos tipos de evento — `payload.account` não separa mais
+nada, e quem separa é o lookup do `subscriptionRef` na tabela de doações
+(`isDonationSubscription`); sem isso o cancelamento de uma doação derrubaria a assinatura
+da loja, e é o primeiro caso coberto por teste; (b) cancelar assinatura deixa de precisar
+saber a conta conectada da loja; (c) a Stripe não move subscription entre contas: as
+assinaturas antigas (nenhuma viva quando isto foi feito) não migram — teriam que ser
+canceladas e refeitas.
+
+## ADR-026: onboarding e avisos da Stripe embutidos no /gestao
+
+**Contexto:** com contas Express (ADR-024) o núcleo perdeu o dashboard completo, e o
+onboarding hospedado tira a pessoa do nosso app no momento mais frágil do cadastro. Pior:
+requisito novo que a Stripe passa a exigir depois do onboarding não aparece em lugar nenhum
+para o núcleo — a conta é desabilitada e a loja para de vender sem explicação.
+
+**Decisão:** Account Sessions (`POST /stores/:slug/connect/stripe/account-session`, só
+owner) e Connect embedded components no front, com `account_onboarding` e
+`notification_banner`. O banner fica sempre montado quando existe conta; o formulário
+aparece quando o núcleo pede. O link hospedado continua como fallback para ambiente sem
+chave publicável configurada.
+
+**Consequências:** (a) o client secret é credencial de curta duração de um núcleo só —
+nunca cacheado no front, e cada renovação passa de novo pela nossa rota, que reavalia
+permissão; (b) a aparência só muda pelos tokens que a Stripe expõe (`colorPrimary`,
+`colorBackground`, `colorText`, `colorDanger`, `fontFamily`, `borderRadius`) e é preciso
+chamar `update({ appearance })` na troca de tema, senão o componente fica claro dentro da
+página escura; (c) a rota cria a conta conectada na primeira chamada, então o componente só
+é montado quando já existe conta ou quando o núcleo pede o cadastro — montar sozinho
+criaria conta para quem nunca pediu; (d) o login link Express segue existindo para o painel
+completo de recebimentos.
+
+## ADR-027: a plataforma cobra mensalidade, não comissão por venda
+
+**Contexto:** o modelo era comissão de 5% (`applicationFeeBps` 500) por venda, mais a
+assinatura SaaS. Com destination charge e `fees.payer: application` (ADR-024), quem paga a
+taxa de processamento do Stripe é a **plataforma**. Fazendo a conta: numa venda de R$ 50 no
+cartão, a comissão de 5% dá R$ 2,50 e o custo do Stripe fica em torno de R$ 2,39 — sobra
+R$ 0,11. A comissão no cartão era praticamente repasse de custo, não receita, e ainda
+custava a explicação de "taxa por venda" para o núcleo.
+
+**Decisão:** comissão zero. `Store.applicationFeeBps` passa a ter default 0, e as lojas
+existentes foram zeradas na migração. A receita da plataforma é a mensalidade da loja
+(Stripe Billing, price de R$ 199/mês por enquanto). Onde a comissão é zero, os campos
+`application_fee_amount` e `application_fee_percent` são **omitidos** da chamada em vez de
+mandados zerados: fee zero explícita cria ApplicationFee de R$ 0 em todo pagamento e suja
+o relatório sem significar nada.
+
+**Consequências:** (a) o campo continua existindo por loja, então voltar a cobrar comissão
+(inclusive para uma loja só) é mudar um número, sem migração; (b) a plataforma passa a
+absorver integralmente o custo de processamento: no cartão, uma loja fica no zero a zero
+por volta de R$ 4.700 de GMV/mês (R$ 199 ÷ ~4,2%); acima disso a mensalidade não cobre mais
+o custo daquela loja, e o modelo precisa ser revisto — Pix, muito mais barato, empurra esse
+limite para muito mais alto; (c) a tela de recebimento diz que não há taxa por venda, em
+vez de exibir "0%".

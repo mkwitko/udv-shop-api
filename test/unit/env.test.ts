@@ -19,6 +19,7 @@ const base = {
   R2_PUBLIC_BASE_URL: "https://cdn.example.org",
   STRIPE_SECRET_KEY: "sk_live_key",
   STRIPE_WEBHOOK_SECRET: "whsec_key",
+  STRIPE_CONNECT_WEBHOOK_SECRET: "whsec_connect_key",
   STRIPE_SAAS_PRICE_ID: "price_live_saas",
   WOOVI_API_KEY: "woovi_key",
   WOOVI_WEBHOOK_HMAC_SECRET: "woovi_hmac_secret",
@@ -64,5 +65,21 @@ describe("env schema — production strictness", () => {
         GOOGLE_CLIENT_ID: "",
       }),
     ).not.toThrow();
+  });
+});
+
+describe("WOOVI_BASE_URL", () => {
+  it("sem valor cai em produção", () => {
+    const env = EnvSchema.parse(base);
+    expect(env.WOOVI_BASE_URL).toBe("https://api.woovi.com");
+  });
+
+  it("aceita o sandbox — o AppID é por ambiente", () => {
+    const env = EnvSchema.parse({ ...base, WOOVI_BASE_URL: "https://api.woovi-sandbox.com" });
+    expect(env.WOOVI_BASE_URL).toBe("https://api.woovi-sandbox.com");
+  });
+
+  it("recusa valor que não é URL — erro de digitação aqui viraria 401 confuso", () => {
+    expect(() => EnvSchema.parse({ ...base, WOOVI_BASE_URL: "api.woovi.com" })).toThrow();
   });
 });

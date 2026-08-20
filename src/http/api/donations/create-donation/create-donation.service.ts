@@ -66,7 +66,7 @@ export function createDonationService(deps: CreateDonationDeps) {
     let instructions: DonationPaymentInstructions;
     try {
       if (input.type === "monthly") {
-        // Direct charge na conta conectada: Billing com Connect exige (ver D3/ADR-016).
+        // Destination charge na plataforma, igual à doação única (ver ADR-025).
         const subscription = await deps.stripe.createDonationSubscription({
           amountCents: input.amountCents,
           currency: donation.currency,
@@ -75,8 +75,12 @@ export function createDonationService(deps: CreateDonationDeps) {
           destinationAccountId: store.stripeAccountId as string,
           customerEmail: input.userEmail,
           productName: `Doação mensal — ${store.name}`.slice(0, 140),
+          productId: store.stripeDonationProductId,
           metadata: { donationId: donation.id, paymentId },
         });
+        if (store.stripeDonationProductId !== subscription.productId) {
+          await deps.stores.attachDonationProduct(store.id, subscription.productId);
+        }
         await deps.donations.attachProviderId(paymentId, subscription.subscriptionId);
         await deps.donations.attachSubscriptionRef(donation.id, subscription.subscriptionId);
         instructions = {
@@ -120,6 +124,11 @@ export function createDonationService(deps: CreateDonationDeps) {
 }
 
 function assertProviderConfigured(store: Store, provider: "stripe" | "woovi"): void {
-  const configured = provider === "stripe" ? store.stripeAccountId : store.wooviPixKey;
+  // Mesmo gate do checkout: conta conectada sem capability `transfers` ativa não recebe
+  // destination charge, e a doação nasceria pendente sem nunca poder ser paga.
+  const configured =
+    provider === "stripe"
+      ? store.stripeAccountId && store.stripeTransfersEnabled
+      : store.wooviPixKey;
   if (!configured) throw new ValidationError("payments_not_configured");
 }

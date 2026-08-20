@@ -9,6 +9,7 @@ import {
 } from "./billing-webhook.js";
 import {
   cancelPaymentAggregate,
+  enqueueWooviWithdraw,
   markPaymentPaid,
   refundPaymentByPaymentId,
   refundPaymentByProviderId,
@@ -16,7 +17,14 @@ import {
 
 const WOOVI_COMPLETED = "OPENPIX:CHARGE_COMPLETED";
 const WOOVI_EXPIRED = "OPENPIX:CHARGE_EXPIRED";
-const WOOVI_REFUNDED = "OPENPIX:CHARGE_REFUND";
+/**
+ * O evento de estorno da Woovi é `OPENPIX:TRANSACTION_REFUND_RECEIVED` (evento de
+ * transação, não de cobrança). `OPENPIX:CHARGE_REFUND`, que estava aqui antes, não existe
+ * no catálogo deles: o webhook de reembolso chegava, era gravado, marcado como processado
+ * e o pagamento seguia "succeeded" para sempre. O nome antigo fica aceito porque não custa
+ * nada e evita quebrar quem já tenha um webhook configurado assim.
+ */
+const WOOVI_REFUNDED = ["OPENPIX:TRANSACTION_REFUND_RECEIVED", "OPENPIX:CHARGE_REFUND"];
 
 const uuidSchema = z.string().uuid();
 
@@ -44,9 +52,9 @@ type StripeObject = {
   details_submitted?: boolean;
 };
 type StripePayload = {
-  // Só eventos nascidos numa conta conectada trazem `account`. Assinatura de doação
-  // (direct charge no núcleo) e assinatura SaaS (conta da plataforma) compartilham os
-  // mesmos tipos de evento, e é este campo que decide qual agregado é o dono — ver ADR-021.
+  // Só eventos nascidos numa conta conectada trazem `account` — hoje isso é o onboarding
+  // (account.updated). Assinaturas, tanto de doação quanto SaaS, nascem na plataforma e
+  // são separadas pelo lookup de subscriptionRef, não por este campo — ver ADR-021/025.
   account?: string;
   data?: { object?: StripeObject };
 };
@@ -94,6 +102,19 @@ export async function processWebhookEvents(deps: {
         const fromConnectedAccount = typeof payload.account === "string";
         const paymentId = object.metadata?.paymentId;
         const subscriptionRef = subscriptionRefOf(object);
+        // Desde que a doação mensal virou destination charge (ADR-025), assinatura de
+        // doação e assinatura SaaS da loja nascem as duas na conta da plataforma e
+        // compartilham os mesmos tipos de evento. `payload.account` não separa mais nada
+        // aqui: quem separa é saber se aquele subscriptionRef é de uma doação. Sem isso,
+        // um cancelamento de doação derrubaria a assinatura da loja.
+        const subscriptionId =
+          subscriptionRef ??
+          (event.type.startsWith("customer.subscription.") && typeof object.id === "string"
+            ? object.id
+            : null);
+        const isDonationSubscription =
+          subscriptionId !== null &&
+          (await createDonationsRepository(deps.db).isDonationSubscription(subscriptionId));
         const invoice =
           typeof object.id === "string" &&
           subscriptionRef !== null &&
@@ -126,7 +147,11 @@ export async function processWebhookEvents(deps: {
               (id): id is string => typeof id === "string",
             ),
           });
-        } else if (event.type === "invoice.paid" && invoice?.subscription && fromConnectedAccount) {
+        } else if (
+          event.type === "invoice.paid" &&
+          invoice?.subscription &&
+          isDonationSubscription
+        ) {
           await createDonationsRepository(deps.db).markSubscriptionInvoicePaid({
             subscriptionRef: invoice.subscription,
             invoiceId: invoice.id,
@@ -135,7 +160,7 @@ export async function processWebhookEvents(deps: {
         } else if (
           event.type === "customer.subscription.deleted" &&
           object.id &&
-          fromConnectedAccount
+          isDonationSubscription
         ) {
           await createDonationsRepository(deps.db).markSubscriptionCancelled(object.id);
         } else if (event.type === "account.updated") {
@@ -150,6 +175,7 @@ export async function processWebhookEvents(deps: {
           await applyCheckoutCompleted(deps.db, object);
         } else if (
           !fromConnectedAccount &&
+          !isDonationSubscription &&
           (event.type === "customer.subscription.created" ||
             event.type === "customer.subscription.updated" ||
             event.type === "customer.subscription.deleted")
@@ -169,9 +195,12 @@ export async function processWebhookEvents(deps: {
         if (paymentId) {
           if (event.type === WOOVI_COMPLETED) {
             await markPaymentPaid({ db: deps.db, log: deps.log, paymentId, providerId: null });
+            // O split já creditou a subconta, mas subconta é saldo virtual dentro da conta
+            // da plataforma: sem o saque o dinheiro do núcleo não sai daqui.
+            await enqueueWooviWithdraw({ db: deps.db, paymentId });
           } else if (event.type === WOOVI_EXPIRED) {
             await cancelPaymentAggregate({ db: deps.db, paymentId, reason: "expired" });
-          } else if (event.type === WOOVI_REFUNDED) {
+          } else if (WOOVI_REFUNDED.includes(event.type)) {
             await refundPaymentByPaymentId({ db: deps.db, paymentId });
           }
         }

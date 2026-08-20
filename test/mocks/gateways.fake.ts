@@ -1,3 +1,9 @@
+import type {
+  WriteDescriptionInput,
+  WritePrizeInput,
+  WriteStoreInput,
+  WriteStoryInput,
+} from "../../src/gateways/ai/ai.gateway.js";
 import type { GoogleProfile } from "../../src/gateways/google/google.gateway.js";
 import type {
   ConnectedAccountStatus,
@@ -20,14 +26,30 @@ export type FakeGateways = Gateways & {
   stripeCancelledSubscriptions: string[];
   stripeConnectedAccounts: Array<{ email: string; storeName: string }>;
   stripeAccountLinks: Array<{ accountId: string; refreshUrl: string; returnUrl: string }>;
+  stripeDashboardLinks: string[];
+  stripeAccountSessions: string[];
   stripeAccountStatus: ConnectedAccountStatus;
   stripeSaasCheckouts: CreateSaasCheckoutInput[];
   stripePortalSessions: Array<{ customerId: string; returnUrl: string }>;
   wooviSubAccounts: CreateSubAccountInput[];
   wooviCharges: CreateChargeInput[];
   wooviRefunds: Array<{ chargeCorrelationID: string; refundCorrelationID: string }>;
+  /** Saques Woovi pedidos, na ordem. */
+  wooviWithdrawals: string[];
+  /** Saldo que a subconta falsa devolve, por chave Pix. O teste escreve aqui. */
+  wooviBalances: Map<string, number>;
+  /** Chaves cujo saque a Woovi falsa recusa. */
+  wooviWithdrawBlocked: Set<string>;
   /** CNAMEs que o DNS falso devolve, por host. O teste escreve aqui. */
   dnsCnames: Map<string, string[]>;
+  /** Pedidos de descrição que chegaram na IA falsa. */
+  aiDescriptionCalls: WriteDescriptionInput[];
+  /** Pedidos de história de campanha que chegaram na IA falsa. */
+  aiStoryCalls: WriteStoryInput[];
+  /** Pedidos de descrição de prêmio que chegaram na IA falsa. */
+  aiPrizeCalls: WritePrizeInput[];
+  /** Pedidos de descrição de loja que chegaram na IA falsa. */
+  aiStoreCalls: WriteStoreInput[];
 };
 
 export function buildFakeGateways(overrides: Partial<Gateways> = {}): FakeGateways {
@@ -45,7 +67,10 @@ export function buildFakeGateways(overrides: Partial<Gateways> = {}): FakeGatewa
   const stripeCancelledSubscriptions: string[] = [];
   const stripeConnectedAccounts: FakeGateways["stripeConnectedAccounts"] = [];
   const stripeAccountLinks: FakeGateways["stripeAccountLinks"] = [];
+  const stripeDashboardLinks: string[] = [];
+  const stripeAccountSessions: string[] = [];
   const stripeAccountStatus: ConnectedAccountStatus = {
+    transfersEnabled: false,
     chargesEnabled: false,
     payoutsEnabled: false,
     detailsSubmitted: false,
@@ -55,8 +80,19 @@ export function buildFakeGateways(overrides: Partial<Gateways> = {}): FakeGatewa
   const wooviSubAccounts: FakeGateways["wooviSubAccounts"] = [];
   const wooviCharges: FakeGateways["wooviCharges"] = [];
   const wooviRefunds: FakeGateways["wooviRefunds"] = [];
+  const wooviWithdrawals: string[] = [];
+  const wooviBalances: FakeGateways["wooviBalances"] = new Map();
+  const wooviWithdrawBlocked: FakeGateways["wooviWithdrawBlocked"] = new Set();
+  const aiDescriptionCalls: FakeGateways["aiDescriptionCalls"] = [];
+  const aiStoryCalls: FakeGateways["aiStoryCalls"] = [];
+  const aiPrizeCalls: FakeGateways["aiPrizeCalls"] = [];
+  const aiStoreCalls: FakeGateways["aiStoreCalls"] = [];
   return {
     sentEmails,
+    aiDescriptionCalls,
+    aiStoryCalls,
+    aiPrizeCalls,
+    aiStoreCalls,
     dnsCnames,
     googleProfile,
     stripeIntents,
@@ -65,12 +101,36 @@ export function buildFakeGateways(overrides: Partial<Gateways> = {}): FakeGatewa
     stripeCancelledSubscriptions,
     stripeConnectedAccounts,
     stripeAccountLinks,
+    stripeDashboardLinks,
+    stripeAccountSessions,
     stripeAccountStatus,
     stripeSaasCheckouts,
     stripePortalSessions,
     wooviSubAccounts,
     wooviCharges,
     wooviRefunds,
+    wooviWithdrawals,
+    wooviBalances,
+    wooviWithdrawBlocked,
+    ai: overrides.ai ?? {
+      configured: true,
+      async writeProductDescription(input) {
+        aiDescriptionCalls.push(input);
+        return `Texto da IA para ${input.productName} (${input.mode}).`;
+      },
+      async writeCampaignStory(input) {
+        aiStoryCalls.push(input);
+        return `História da IA para ${input.campaignTitle} (${input.mode}).`;
+      },
+      async writePrizeDescription(input) {
+        aiPrizeCalls.push(input);
+        return `Prêmio da IA para ${input.prizeTitle} (${input.mode}).`;
+      },
+      async writeStoreDescription(input) {
+        aiStoreCalls.push(input);
+        return `Loja da IA para ${input.storeName} (${input.mode}).`;
+      },
+    },
     dns: overrides.dns ?? {
       resolveCname: async (host) => dnsCnames.get(host) ?? [],
     },
@@ -103,9 +163,11 @@ export function buildFakeGateways(overrides: Partial<Gateways> = {}): FakeGatewa
         return {
           subscriptionId: `sub_fake_${stripeSubscriptions.length}`,
           clientSecret: "cs_sub_fake",
+          // Product da loja é reusado quando já existe, como no gateway real.
+          productId: input.productId ?? `prod_fake_${stripeSubscriptions.length}`,
         };
       },
-      async cancelSubscription(subscriptionId, _connectedAccountId) {
+      async cancelSubscription(subscriptionId) {
         stripeCancelledSubscriptions.push(subscriptionId);
       },
       async createConnectedAccount(input) {
@@ -117,6 +179,15 @@ export function buildFakeGateways(overrides: Partial<Gateways> = {}): FakeGatewa
         // A URL real do onboarding hospedado não carrega o id da conta — mantê-la sem ele
         // aqui é o que dá poder ao teste de vazamento na resposta da rota.
         return { url: `https://connect.fake/onboard/${stripeAccountLinks.length}` };
+      },
+      async createAccountSession(accountId) {
+        stripeAccountSessions.push(accountId);
+        return { clientSecret: `acct_sess_fake_${stripeAccountSessions.length}` };
+      },
+      async createExpressDashboardLink(accountId) {
+        stripeDashboardLinks.push(accountId);
+        // Login link real também não expõe o id da conta na URL.
+        return { url: `https://connect.fake/dashboard/${stripeDashboardLinks.length}` };
       },
       async retrieveAccountStatus(_accountId) {
         return stripeAccountStatus;
@@ -141,6 +212,26 @@ export function buildFakeGateways(overrides: Partial<Gateways> = {}): FakeGatewa
       async createSubAccount(input) {
         wooviSubAccounts.push(input);
         return { subAccountId: `woovi_sub_${wooviSubAccounts.length}` };
+      },
+      async getSubAccount(pixKey) {
+        if (!wooviBalances.has(pixKey)) return null;
+        return {
+          name: "Subconta",
+          pixKey,
+          balanceCents: wooviBalances.get(pixKey) ?? 0,
+          withdrawBlocked: wooviWithdrawBlocked.has(pixKey),
+        };
+      },
+      async withdrawSubAccount(pixKey) {
+        wooviWithdrawals.push(pixKey);
+        if (wooviWithdrawBlocked.has(pixKey)) {
+          return { status: "blocked" as const, message: "saque bloqueado" };
+        }
+        const saldo = wooviBalances.get(pixKey) ?? 0;
+        if (saldo <= 0) return { status: "empty" as const };
+        // saque leva TODO o saldo: é a semântica da Woovi
+        wooviBalances.set(pixKey, 0);
+        return { status: "requested" as const };
       },
       async createCharge(input) {
         wooviCharges.push(input);

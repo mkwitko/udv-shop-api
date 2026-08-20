@@ -21,6 +21,7 @@ async function seedStore(overrides: Record<string, unknown> = {}) {
       name: "Núcleo A",
       status: "active",
       stripeAccountId: "acct_1",
+      stripeTransfersEnabled: true,
       wooviPixKey: "pix@nucleo.org",
       applicationFeeBps: 500,
       ...overrides,

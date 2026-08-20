@@ -32,7 +32,13 @@ async function seed(orderStatus: "pending_payment" | "paid" = "paid") {
     data: { email: "buyer@example.org", name: "Cliente", passwordHash: "x" },
   });
   const store = await db.store.create({
-    data: { slug: "nucleo-a", name: "Núcleo A", status: "active", stripeAccountId: "acct_1" },
+    data: {
+      slug: "nucleo-a",
+      name: "Núcleo A",
+      status: "active",
+      stripeAccountId: "acct_1",
+      stripeTransfersEnabled: true,
+    },
   });
   const product = await db.product.create({
     data: { storeId: store.id, slug: "mel", name: "Mel", priceCents: 2500, stock: 8 },

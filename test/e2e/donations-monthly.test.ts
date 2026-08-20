@@ -21,6 +21,7 @@ async function seedStore(overrides: Record<string, unknown> = {}) {
       name: "Núcleo A",
       status: "active",
       stripeAccountId: "acct_1",
+      stripeTransfersEnabled: true,
       wooviPixKey: "pix@nucleo.org",
       applicationFeeBps: 500,
       ...overrides,
@@ -44,16 +45,17 @@ function donateMonthly(app: FastifyInstance, token: string, payload: Record<stri
 }
 
 /**
- * Todo evento deste arquivo é de assinatura de doação, que é direct charge na conta do
- * núcleo — por isso vai sempre com `account`. É esse campo que separa esses eventos da
- * assinatura SaaS da plataforma, que compartilha os mesmos tipos.
+ * Assinatura de doação é destination charge: nasce na conta da PLATAFORMA, então o evento
+ * chega sem `account` — igual ao da assinatura SaaS da loja, com os mesmos tipos. Quem
+ * separa os dois é o lookup do subscriptionRef no webhook (ADR-025), e é justamente isso
+ * que estes testes exercitam ao não mandar `account`.
  */
 function stripeEvent(app: FastifyInstance, event: Record<string, unknown>, signature = "ok") {
   return app.inject({
     method: "POST",
     url: "/webhooks/stripe",
     headers: { "stripe-signature": signature, "content-type": "application/json" },
-    payload: JSON.stringify({ account: "acct_1", ...event }),
+    payload: JSON.stringify(event),
   });
 }
 
@@ -91,6 +93,81 @@ describe("doação mensal — assinatura Stripe", () => {
 
     const subscription = gateways.stripeSubscriptions.at(-1);
     expect(subscription?.applicationFeePercent).toBe(store.applicationFeeBps / 100);
+  });
+
+  it("destination charge: manda a conta do núcleo em destinationAccountId e reusa o Product da loja entre doações", async () => {
+    const store = await seedStore();
+    const token = await customerToken(app, "m1b@example.org");
+
+    const first = await donateMonthly(app, token);
+    expect(first.statusCode).toBe(201);
+    expect(gateways.stripeSubscriptions.at(-1)?.destinationAccountId).toBe("acct_1");
+    // primeira assinatura não tem Product ainda; o id volta do gateway e fica na loja
+    expect(gateways.stripeSubscriptions.at(-1)?.productId).toBeNull();
+    const afterFirst = await db.store.findUniqueOrThrow({ where: { id: store.id } });
+    const productId = afterFirst.stripeDonationProductId;
+    expect(productId).toMatch(/^prod_fake_/);
+
+    const second = await donateMonthly(app, token);
+    expect(second.statusCode).toBe(201);
+    // segunda reusa: um Product por doação encheria a conta da plataforma de lixo
+    expect(gateways.stripeSubscriptions.at(-1)?.productId).toBe(productId);
+    const afterSecond = await db.store.findUniqueOrThrow({ where: { id: store.id } });
+    expect(afterSecond.stripeDonationProductId).toBe(productId);
+  });
+
+  it("evento de assinatura de doação não mexe na assinatura SaaS da loja", async () => {
+    const store = await seedStore();
+    const token = await customerToken(app, "m1c@example.org");
+    const res = await donateMonthly(app, token);
+    const subscriptionId = res.json().payment.subscriptionId as string;
+    // a loja tem a própria assinatura SaaS, viva, na mesma conta da plataforma
+    await db.storeSubscription.create({
+      data: {
+        storeId: store.id,
+        stripeCustomerId: "cus_saas",
+        stripeSubscriptionId: "sub_saas",
+        status: "active",
+      },
+    });
+
+    const webhookRes = await stripeEvent(app, {
+      id: "evt_don_deleted",
+      type: "customer.subscription.deleted",
+      data: { object: { id: subscriptionId, customer: "cus_doador", status: "canceled" } },
+    });
+    expect(webhookRes.statusCode).toBe(200);
+
+    const saas = await db.storeSubscription.findFirstOrThrow({ where: { storeId: store.id } });
+    expect(saas.status).toBe("active");
+    const donation = await db.donation.findUniqueOrThrow({ where: { id: res.json().donation.id } });
+    expect(donation.subscriptionCancelledAt).not.toBeNull();
+  });
+
+  it("evento da assinatura SaaS não vira doação mesmo com doação mensal viva na plataforma", async () => {
+    const store = await seedStore();
+    const token = await customerToken(app, "m1d@example.org");
+    const res = await donateMonthly(app, token);
+    await db.storeSubscription.create({
+      data: {
+        storeId: store.id,
+        stripeCustomerId: "cus_saas",
+        stripeSubscriptionId: "sub_saas",
+        status: "active",
+      },
+    });
+
+    const webhookRes = await stripeEvent(app, {
+      id: "evt_saas_deleted",
+      type: "customer.subscription.deleted",
+      data: { object: { id: "sub_saas", customer: "cus_saas", status: "canceled" } },
+    });
+    expect(webhookRes.statusCode).toBe(200);
+
+    const saas = await db.storeSubscription.findFirstOrThrow({ where: { storeId: store.id } });
+    expect(saas.status).toBe("canceled");
+    const donation = await db.donation.findUniqueOrThrow({ where: { id: res.json().donation.id } });
+    expect(donation.subscriptionCancelledAt).toBeNull();
   });
 
   it("invoice.paid subscription_create: doação âncora vira paid, ganha providerInvoiceId, pagamento succeeded, um outbox donation.received", async () => {

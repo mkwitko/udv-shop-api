@@ -40,9 +40,11 @@ export async function seedDatabase(db: PrismaClient): Promise<string> {
       name: "Núcleo Demonstração",
       description: "Loja de exemplo para desenvolvimento do front.",
       status: "active",
-      applicationFeeBps: 500,
+      // sem comissão por venda: a plataforma vive da mensalidade (ADR-027)
+      applicationFeeBps: 0,
       // conta conectada fictícia: suficiente para as rotas de checkout aceitarem a loja
       stripeAccountId: "acct_seed_demo",
+      stripeTransfersEnabled: true,
       stripeChargesEnabled: true,
       stripePayoutsEnabled: true,
       stripeDetailsSubmitted: true,

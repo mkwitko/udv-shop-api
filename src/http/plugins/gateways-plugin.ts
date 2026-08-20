@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import fp from "fastify-plugin";
 import { env } from "../../config/env.js";
+import { createAiGateway } from "../../gateways/ai/ai.gateway.js";
 import { createDnsGateway } from "../../gateways/dns/dns.gateway.js";
 import { createEmailGateway } from "../../gateways/email/email.gateway.js";
 import { createGoogleGateway } from "../../gateways/google/google.gateway.js";
@@ -12,6 +13,11 @@ import type { Gateways } from "../../types/fastify.js";
 
 export function buildDefaultGateways(): Gateways {
   return {
+    ai: createAiGateway({
+      accountId: env.CF_AI_ACCOUNT_ID || env.R2_ACCOUNT_ID,
+      apiToken: env.CF_AI_API_TOKEN,
+      model: env.CF_AI_MODEL,
+    }),
     dns: createDnsGateway(),
     email: createEmailGateway({ apiKey: env.RESEND_API_KEY, from: env.EMAIL_FROM }),
     google: createGoogleGateway({
@@ -29,6 +35,7 @@ export function buildDefaultGateways(): Gateways {
     stripe: createStripeGateway({
       secretKey: env.STRIPE_SECRET_KEY,
       webhookSecret: env.STRIPE_WEBHOOK_SECRET,
+      connectWebhookSecret: env.STRIPE_CONNECT_WEBHOOK_SECRET,
       connectCountry: env.STRIPE_CONNECT_COUNTRY,
     }),
     // demo local sem credenciais: Pix falso que se autoconfirma (proibido em produção)
@@ -37,6 +44,7 @@ export function buildDefaultGateways(): Gateways {
       : createWooviGateway({
           apiKey: env.WOOVI_API_KEY,
           webhookHmacSecret: env.WOOVI_WEBHOOK_HMAC_SECRET,
+          baseUrl: env.WOOVI_BASE_URL,
         }),
   };
 }

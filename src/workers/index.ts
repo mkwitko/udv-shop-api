@@ -29,7 +29,12 @@ export function startWorkers(deps: {
   const timers = [
     setInterval(
       guarded("outbox", () =>
-        relayOutbox({ db: deps.db, email: deps.gateways.email, log: deps.log }),
+        relayOutbox({
+          db: deps.db,
+          email: deps.gateways.email,
+          woovi: deps.gateways.woovi,
+          log: deps.log,
+        }),
       ),
       10_000,
     ),

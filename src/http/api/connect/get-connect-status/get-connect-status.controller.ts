@@ -31,6 +31,7 @@ export const getConnectStatusRoute: FastifyPluginAsync = async (app) => {
         await createStoresRepository(db).setStripeCapabilities(store.stripeAccountId, caps);
         return toConnectStatusResponse({
           ...store,
+          stripeTransfersEnabled: caps.transfersEnabled,
           stripeChargesEnabled: caps.chargesEnabled,
           stripePayoutsEnabled: caps.payoutsEnabled,
           stripeDetailsSubmitted: caps.detailsSubmitted,

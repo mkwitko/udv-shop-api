@@ -55,6 +55,8 @@ describe("connect — onboarding Stripe e subconta Woovi", () => {
     await resetDb();
     gateways.stripeConnectedAccounts.length = 0;
     gateways.stripeAccountLinks.length = 0;
+    gateways.stripeDashboardLinks.length = 0;
+    gateways.stripeAccountSessions.length = 0;
     gateways.wooviSubAccounts.length = 0;
     gateways.stripeAccountStatus.chargesEnabled = false;
     gateways.stripeAccountStatus.payoutsEnabled = false;
@@ -88,6 +90,82 @@ describe("connect — onboarding Stripe e subconta Woovi", () => {
     expect(persisted.stripeAccountId).toBe("acct_fake_1");
   });
 
+  it("POST account-session cria a conta na primeira chamada e devolve client secret", async () => {
+    const store = await seedStore();
+    const { token } = await registerWithRole(app, "owner-sess@example.org", store.id, "owner");
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/stores/nx/connect/stripe/account-session",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(res.json().clientSecret).toBe("acct_sess_fake_1");
+    expect(gateways.stripeConnectedAccounts).toHaveLength(1);
+    const persisted = await db.store.findUniqueOrThrow({ where: { id: store.id } });
+    expect(persisted.stripeAccountId).toBe("acct_fake_1");
+
+    // segunda chamada reusa a conta: sessão nova, conta a mesma
+    const again = await app.inject({
+      method: "POST",
+      url: "/stores/nx/connect/stripe/account-session",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(again.statusCode).toBe(201);
+    expect(gateways.stripeConnectedAccounts).toHaveLength(1);
+    expect(gateways.stripeAccountSessions).toEqual(["acct_fake_1", "acct_fake_1"]);
+  });
+
+  it("admin não abre account-session (a sessão dá acesso ao onboarding da conta; só owner)", async () => {
+    const store = await seedStore();
+    const { token } = await registerWithRole(app, "admin-sess@example.org", store.id, "admin");
+    const res = await app.inject({
+      method: "POST",
+      url: "/stores/nx/connect/stripe/account-session",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(gateways.stripeAccountSessions).toHaveLength(0);
+  });
+
+  it("POST dashboard devolve login link Express e não vaza o id da conta", async () => {
+    const store = await seedStore();
+    await db.store.update({
+      where: { id: store.id },
+      // conta Express só recebe login link depois do onboarding submetido
+      data: { stripeAccountId: "acct_express", stripeDetailsSubmitted: true },
+    });
+    const { token } = await registerWithRole(app, "owner-dash@example.org", store.id, "owner");
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/stores/nx/connect/stripe/dashboard",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(res.json().url).toContain("connect.fake/dashboard");
+    expect(JSON.stringify(res.json())).not.toContain("acct_");
+    expect(gateways.stripeDashboardLinks).toEqual(["acct_express"]);
+  });
+
+  it("POST dashboard antes de terminar o onboarding: 409 e nada de gateway", async () => {
+    const store = await seedStore();
+    await db.store.update({
+      where: { id: store.id },
+      data: { stripeAccountId: "acct_express" },
+    });
+    const { token } = await registerWithRole(app, "owner-dash2@example.org", store.id, "owner");
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/stores/nx/connect/stripe/dashboard",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().message).toBe("stripe_onboarding_incomplete");
+    expect(gateways.stripeDashboardLinks).toHaveLength(0);
+  });
+
   it("admin e staff não iniciam o onboarding (só owner)", async () => {
     const store = await seedStore();
     const { token: adminToken } = await registerWithRole(
@@ -108,6 +186,7 @@ describe("connect — onboarding Stripe e subconta Woovi", () => {
     const store = await seedStore();
     await db.store.update({ where: { id: store.id }, data: { stripeAccountId: "acct_x" } });
     const { token } = await registerWithRole(app, "owner2@example.org", store.id, "owner");
+    gateways.stripeAccountStatus.transfersEnabled = true;
     gateways.stripeAccountStatus.chargesEnabled = true;
     gateways.stripeAccountStatus.detailsSubmitted = true;
 
@@ -120,15 +199,17 @@ describe("connect — onboarding Stripe e subconta Woovi", () => {
     expect(res.json()).toEqual({
       stripe: {
         connected: true,
+        transfersEnabled: true,
         chargesEnabled: true,
         payoutsEnabled: false,
         detailsSubmitted: true,
       },
-      woovi: { connected: false },
-      // taxa real da loja vai para a tela de recebimento (§27: nada de "100% grátis")
-      applicationFeeBps: 500,
+      woovi: { connected: false, pixKeyMasked: null },
+      // zero é o default desde o ADR-027: plataforma vive da mensalidade, não de comissão
+      applicationFeeBps: 0,
     });
     const persisted = await db.store.findUniqueOrThrow({ where: { id: store.id } });
+    expect(persisted.stripeTransfersEnabled).toBe(true);
     expect(persisted.stripeChargesEnabled).toBe(true);
     expect(persisted.stripeDetailsSubmitted).toBe(true);
   });
@@ -144,6 +225,7 @@ describe("connect — onboarding Stripe e subconta Woovi", () => {
       data: {
         object: {
           id: "acct_hook",
+          capabilities: { transfers: "active" },
           charges_enabled: true,
           payouts_enabled: true,
           details_submitted: true,
@@ -153,6 +235,8 @@ describe("connect — onboarding Stripe e subconta Woovi", () => {
     expect(res.statusCode).toBe(200);
 
     const persisted = await db.store.findUniqueOrThrow({ where: { id: store.id } });
+    // transfers é a capacidade que libera a loja a vender por destination charge
+    expect(persisted.stripeTransfersEnabled).toBe(true);
     expect(persisted.stripeChargesEnabled).toBe(true);
     expect(persisted.stripePayoutsEnabled).toBe(true);
     expect(persisted.stripeDetailsSubmitted).toBe(true);
@@ -181,7 +265,8 @@ describe("connect — onboarding Stripe e subconta Woovi", () => {
       payload: { pixKey: "pix@nucleo.org" },
     });
     expect(res.statusCode).toBe(200);
-    expect(res.json().woovi).toEqual({ connected: true });
+    // a chave volta mascarada: a loja reconhece qual salvou, a chave inteira não trafega
+    expect(res.json().woovi).toEqual({ connected: true, pixKeyMasked: "pi***@nucleo.org" });
     expect(JSON.stringify(res.json())).not.toContain("pix@nucleo.org");
 
     expect(gateways.wooviSubAccounts).toEqual([{ name: "Núcleo X", pixKey: "pix@nucleo.org" }]);

@@ -21,6 +21,7 @@ async function seedStore(overrides: Record<string, unknown> = {}) {
       name: "Núcleo A",
       status: "active",
       stripeAccountId: "acct_1",
+      stripeTransfersEnabled: true,
       wooviPixKey: "pix@nucleo.org",
       applicationFeeBps: 500,
       ...overrides,
@@ -122,6 +123,16 @@ describe("POST /orders", () => {
   it("loja sem provider configurado → 400 payments_not_configured", async () => {
     await seedStore({ stripeAccountId: null });
     const token = await customerToken(app, "c5@example.org");
+    const res = await checkout(app, token, {});
+    expect(res.statusCode).toBe(400);
+    expect(res.json().message).toBe("payments_not_configured");
+  });
+
+  it("loja conectada mas sem capability transfers → 400 payments_not_configured", async () => {
+    // Onboarding começado não é onboarding concluído: sem `transfers` ativa a destination
+    // charge seria recusada pelo Stripe com o pedido já criado no banco.
+    await seedStore({ stripeTransfersEnabled: false });
+    const token = await customerToken(app, "c5b@example.org");
     const res = await checkout(app, token, {});
     expect(res.statusCode).toBe(400);
     expect(res.json().message).toBe("payments_not_configured");

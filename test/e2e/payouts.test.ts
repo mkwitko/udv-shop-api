@@ -33,6 +33,7 @@ async function seedStore() {
       name: "Núcleo A",
       status: "active",
       stripeAccountId: "acct_1",
+      stripeTransfersEnabled: true,
       wooviPixKey: "pix@nucleo.org",
       applicationFeeBps: 500,
     },

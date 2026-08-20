@@ -110,7 +110,10 @@ model Store {
   branding          Json?
   status            StoreStatus @default(pending)
   isPlatformOwner   Boolean     @default(false) @map("is_platform_owner")
-  applicationFeeBps Int         @default(500) @map("application_fee_bps")
+  /// Taxa por venda em basis points. Zero desde 2026-08-19: a plataforma se sustenta pela
+  /// mensalidade da loja, não por comissão (ADR-027). O campo continua existindo por loja
+  /// para o caso de a decisão comercial voltar atrás sem migração de dados.
+  applicationFeeBps Int         @default(0) @map("application_fee_bps")
   /// Domínio próprio da loja (ex.: "loja.comunidade.org"), único na plataforma. Só
   /// resolve para a loja depois de verificado — antes disso é intenção, não endereço.
   customDomain           String?   @unique @map("custom_domain")
@@ -122,7 +125,14 @@ model Store {
   updatedAt         DateTime    @updatedAt @map("updated_at")
 
   // Capacidades da conta conectada, espelhadas do webhook account.updated. Onboarding
-  // iniciado não é onboarding concluído: só com chargesEnabled a loja pode cobrar.
+  // iniciado não é onboarding concluído: só com stripeTransfersEnabled a loja pode vender.
+  // Em destination charge quem cobra é a PLATAFORMA — chargesEnabled fala da conta do
+  // núcleo cobrar direto, que não é o nosso fluxo. O que precisa estar ativo para o
+  // dinheiro chegar no núcleo é a capability `transfers`.
+  stripeTransfersEnabled Boolean @default(false) @map("stripe_transfers_enabled")
+  /// Product da plataforma que representa "doação mensal desta loja". Nasce na primeira
+  /// assinatura e é reusado nas seguintes — um Product por doação enchia a conta de lixo.
+  stripeDonationProductId String? @map("stripe_donation_product_id")
   stripeChargesEnabled   Boolean @default(false) @map("stripe_charges_enabled")
   stripePayoutsEnabled   Boolean @default(false) @map("stripe_payouts_enabled")
   stripeDetailsSubmitted Boolean @default(false) @map("stripe_details_submitted")
@@ -528,7 +538,11 @@ model RafflePrize {
   raffleId      String  @map("raffle_id") @db.Uuid
   position      Int
   title         String
-  winnerEntryId String? @unique @map("winner_entry_id") @db.Uuid
+  /// Prêmio é texto livre, não aponta para Product: sorteio costuma rifar coisa doada
+  /// que nunca esteve no catálogo da loja.
+  description   String?
+  images        String[] @default([])
+  winnerEntryId String?  @unique @map("winner_entry_id") @db.Uuid
 
   raffle      Raffle       @relation(fields: [raffleId], references: [id], onDelete: Cascade)
   winnerEntry RaffleEntry? @relation(fields: [winnerEntryId], references: [id])

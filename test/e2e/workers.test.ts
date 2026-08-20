@@ -56,7 +56,7 @@ describe("workers", () => {
     await db.order.update({ where: { id: order.id }, data: { status: "paid" } });
     await db.outboxEvent.create({ data: { type: "order.paid", payload: { orderId: order.id } } });
     const gateways = buildFakeGateways();
-    const n = await relayOutbox({ db, email: gateways.email, log: logger });
+    const n = await relayOutbox({ db, email: gateways.email, woovi: gateways.woovi, log: logger });
     expect(n).toBe(1);
     expect(gateways.sentEmails).toHaveLength(1);
     expect(gateways.sentEmails[0]?.to).toBe(user.email);
@@ -77,7 +77,7 @@ describe("workers", () => {
         },
       },
     });
-    await relayOutbox({ db, email: gateways.email, log: logger });
+    await relayOutbox({ db, email: gateways.email, woovi: gateways.woovi, log: logger });
     const event = await db.outboxEvent.findFirstOrThrow();
     expect(event.attempts).toBe(5);
     expect(event.status).toBe("failed");
@@ -96,7 +96,7 @@ describe("workers", () => {
       },
     });
     const gateways = buildFakeGateways();
-    const n = await relayOutbox({ db, email: gateways.email, log: logger });
+    const n = await relayOutbox({ db, email: gateways.email, woovi: gateways.woovi, log: logger });
     expect(n).toBe(1);
     expect(gateways.sentEmails).toHaveLength(1);
     expect(gateways.sentEmails[0]?.to).toBe(user.email);
@@ -118,7 +118,7 @@ describe("workers", () => {
       },
     });
     const gateways = buildFakeGateways();
-    const n = await relayOutbox({ db, email: gateways.email, log: logger });
+    const n = await relayOutbox({ db, email: gateways.email, woovi: gateways.woovi, log: logger });
     expect(n).toBe(0);
     expect(gateways.sentEmails).toHaveLength(0);
     const fresh = await db.outboxEvent.findUniqueOrThrow({ where: { id: event.id } });
@@ -156,7 +156,12 @@ describe("workers", () => {
     });
 
     const gateways = buildFakeGateways();
-    const processed = await relayOutbox({ db, email: gateways.email, log: logger });
+    const processed = await relayOutbox({
+      db,
+      email: gateways.email,
+      woovi: gateways.woovi,
+      log: logger,
+    });
 
     expect(processed).toBe(1);
     expect(gateways.sentEmails).toHaveLength(1);
@@ -196,7 +201,12 @@ describe("workers", () => {
     });
 
     const gateways = buildFakeGateways();
-    const processed = await relayOutbox({ db, email: gateways.email, log: logger });
+    const processed = await relayOutbox({
+      db,
+      email: gateways.email,
+      woovi: gateways.woovi,
+      log: logger,
+    });
 
     expect(processed).toBe(1);
     expect(gateways.sentEmails).toHaveLength(0);
@@ -262,7 +272,7 @@ describe("workers", () => {
     await db.outboxEvent.create({ data: { type: "order.paid", payload: { orderId: order.id } } });
 
     const gateways = buildFakeGateways();
-    await relayOutbox({ db, email: gateways.email, log: logger });
+    await relayOutbox({ db, email: gateways.email, woovi: gateways.woovi, log: logger });
 
     expect((await db.productInterest.findUniqueOrThrow({ where: { id: mine.id } })).status).toBe(
       "converted",
@@ -312,7 +322,7 @@ describe("workers", () => {
     await db.outboxEvent.create({ data: { type: "order.paid", payload: { orderId: order.id } } });
 
     const gateways = buildFakeGateways();
-    await relayOutbox({ db, email: gateways.email, log: logger });
+    await relayOutbox({ db, email: gateways.email, woovi: gateways.woovi, log: logger });
 
     expect(
       (await db.productInterest.findUniqueOrThrow({ where: { id: cancelled.id } })).status,
@@ -374,7 +384,7 @@ describe("relayOutbox: doação", () => {
       data: { type: "donation.received", payload: { donationId: donation.id } },
     });
     const gateways = buildFakeGateways();
-    const n = await relayOutbox({ db, email: gateways.email, log: logger });
+    const n = await relayOutbox({ db, email: gateways.email, woovi: gateways.woovi, log: logger });
     expect(n).toBe(1);
     expect(gateways.sentEmails).toHaveLength(1);
     expect(gateways.sentEmails[0]?.to).toBe(user.email);
@@ -389,7 +399,7 @@ describe("relayOutbox: doação", () => {
       data: { type: "donation.received", payload: { donationId: donation.id } },
     });
     const gateways = buildFakeGateways();
-    const n = await relayOutbox({ db, email: gateways.email, log: logger });
+    const n = await relayOutbox({ db, email: gateways.email, woovi: gateways.woovi, log: logger });
     expect(n).toBe(1);
     expect(gateways.sentEmails).toHaveLength(0);
     const event = await db.outboxEvent.findFirstOrThrow();
@@ -435,7 +445,7 @@ describe("relayOutbox: concessão de números do sorteio", () => {
       data: { type: "donation.received", payload: { donationId: donation.id } },
     });
     const gateways = buildFakeGateways();
-    await relayOutbox({ db, email: gateways.email, log: logger });
+    await relayOutbox({ db, email: gateways.email, woovi: gateways.woovi, log: logger });
 
     const entries = await db.raffleEntry.findMany({
       where: { donationId: donation.id },
@@ -452,13 +462,13 @@ describe("relayOutbox: concessão de números do sorteio", () => {
       data: { type: "donation.received", payload: { donationId: donation.id } },
     });
     const gateways = buildFakeGateways();
-    await relayOutbox({ db, email: gateways.email, log: logger });
+    await relayOutbox({ db, email: gateways.email, woovi: gateways.woovi, log: logger });
 
     // Reenfileira o mesmo evento à mão e roda o relay de novo.
     await db.outboxEvent.create({
       data: { type: "donation.received", payload: { donationId: donation.id } },
     });
-    await relayOutbox({ db, email: gateways.email, log: logger });
+    await relayOutbox({ db, email: gateways.email, woovi: gateways.woovi, log: logger });
 
     const entries = await db.raffleEntry.findMany({ where: { donationId: donation.id } });
     expect(entries).toHaveLength(2);
@@ -485,7 +495,7 @@ describe("relayOutbox: concessão de números do sorteio", () => {
       data: { type: "donation.received", payload: { donationId: donation2.id } },
     });
     const gateways = buildFakeGateways();
-    await relayOutbox({ db, email: gateways.email, log: logger });
+    await relayOutbox({ db, email: gateways.email, woovi: gateways.woovi, log: logger });
 
     const entries1 = await db.raffleEntry.findMany({
       where: { donationId: donation1.id },
@@ -509,7 +519,7 @@ describe("relayOutbox: concessão de números do sorteio", () => {
       data: { type: "donation.received", payload: { donationId: comSorteio.id } },
     });
     const gateways = buildFakeGateways();
-    await relayOutbox({ db, email: gateways.email, log: logger });
+    await relayOutbox({ db, email: gateways.email, woovi: gateways.woovi, log: logger });
 
     expect(await db.raffleEntry.count()).toBe(0);
   });
@@ -520,7 +530,7 @@ describe("relayOutbox: concessão de números do sorteio", () => {
       data: { type: "donation.received", payload: { donationId: donation.id } },
     });
     const gateways = buildFakeGateways();
-    await relayOutbox({ db, email: gateways.email, log: logger });
+    await relayOutbox({ db, email: gateways.email, woovi: gateways.woovi, log: logger });
 
     expect(await db.raffleEntry.count({ where: { donationId: donation.id } })).toBe(0);
     expect(gateways.sentEmails).toHaveLength(1);

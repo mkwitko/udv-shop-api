@@ -102,6 +102,12 @@ export function createCheckoutService(deps: CheckoutDeps) {
 }
 
 function assertProviderConfigured(store: Store, provider: "stripe" | "woovi"): void {
-  const configured = provider === "stripe" ? store.stripeAccountId : store.wooviPixKey;
+  // Ter conta conectada não é o mesmo que poder receber: até a capability `transfers`
+  // ficar ativa, a destination charge é recusada pelo Stripe já com o pedido criado no
+  // banco e o comprador na tela de pagamento. Barrar antes evita o pedido órfão.
+  const configured =
+    provider === "stripe"
+      ? store.stripeAccountId && store.stripeTransfersEnabled
+      : store.wooviPixKey;
   if (!configured) throw new ValidationError("payments_not_configured");
 }

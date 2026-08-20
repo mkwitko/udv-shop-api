@@ -753,6 +753,72 @@
         }
       }
     },
+    "/store-description-suggestion": {
+      "post": {
+        "operationId": "suggestStoreDescription",
+        "tags": [
+          "stores"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 120
+                  },
+                  "draft": {
+                    "type": "string",
+                    "maxLength": 4000
+                  },
+                  "mode": {
+                    "default": "create",
+                    "type": "string",
+                    "enum": [
+                      "create",
+                      "improve"
+                    ]
+                  }
+                },
+                "required": [
+                  "name"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "text": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "text"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/admin/stores": {
       "get": {
         "operationId": "adminListStores",
@@ -1261,6 +1327,94 @@
         }
       }
     },
+    "/stores/{slug}/connect/stripe/account-session": {
+      "post": {
+        "operationId": "createStripeAccountSession",
+        "tags": [
+          "connect"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "slug",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "clientSecret": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "clientSecret"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/stores/{slug}/connect/stripe/dashboard": {
+      "post": {
+        "operationId": "createStripeDashboardLink",
+        "tags": [
+          "connect"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "slug",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "url": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "url"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/stores/{slug}/connect": {
       "get": {
         "operationId": "getConnectStatus",
@@ -1296,6 +1450,9 @@
                         "connected": {
                           "type": "boolean"
                         },
+                        "transfersEnabled": {
+                          "type": "boolean"
+                        },
                         "chargesEnabled": {
                           "type": "boolean"
                         },
@@ -1308,6 +1465,7 @@
                       },
                       "required": [
                         "connected",
+                        "transfersEnabled",
                         "chargesEnabled",
                         "payoutsEnabled",
                         "detailsSubmitted"
@@ -1319,10 +1477,15 @@
                       "properties": {
                         "connected": {
                           "type": "boolean"
+                        },
+                        "pixKeyMasked": {
+                          "nullable": true,
+                          "type": "string"
                         }
                       },
                       "required": [
-                        "connected"
+                        "connected",
+                        "pixKeyMasked"
                       ],
                       "additionalProperties": false
                     },
@@ -1400,6 +1563,9 @@
                         "connected": {
                           "type": "boolean"
                         },
+                        "transfersEnabled": {
+                          "type": "boolean"
+                        },
                         "chargesEnabled": {
                           "type": "boolean"
                         },
@@ -1412,6 +1578,7 @@
                       },
                       "required": [
                         "connected",
+                        "transfersEnabled",
                         "chargesEnabled",
                         "payoutsEnabled",
                         "detailsSubmitted"
@@ -1423,10 +1590,15 @@
                       "properties": {
                         "connected": {
                           "type": "boolean"
+                        },
+                        "pixKeyMasked": {
+                          "nullable": true,
+                          "type": "string"
                         }
                       },
                       "required": [
-                        "connected"
+                        "connected",
+                        "pixKeyMasked"
                       ],
                       "additionalProperties": false
                     },
@@ -1440,6 +1612,115 @@
                     "stripe",
                     "woovi",
                     "applicationFeeBps"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/stores/{slug}/connect/woovi/balance": {
+      "get": {
+        "operationId": "getWooviBalance",
+        "tags": [
+          "connect"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "slug",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "available": {
+                      "type": "boolean"
+                    },
+                    "balanceCents": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "withdrawBlocked": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "available",
+                    "balanceCents",
+                    "withdrawBlocked"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/stores/{slug}/connect/woovi/withdraw": {
+      "post": {
+        "operationId": "withdrawWoovi",
+        "tags": [
+          "connect"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "slug",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "requested",
+                        "empty",
+                        "blocked"
+                      ]
+                    },
+                    "balanceCents": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "balanceCents"
                   ],
                   "additionalProperties": false
                 }
@@ -2555,6 +2836,82 @@
         }
       }
     },
+    "/stores/{slug}/products/description-suggestion": {
+      "post": {
+        "operationId": "suggestProductDescription",
+        "tags": [
+          "products"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 160
+                  },
+                  "draft": {
+                    "type": "string",
+                    "maxLength": 2000
+                  },
+                  "mode": {
+                    "default": "create",
+                    "type": "string",
+                    "enum": [
+                      "create",
+                      "improve"
+                    ]
+                  }
+                },
+                "required": [
+                  "name"
+                ]
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "slug",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "text": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "text"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/stores/{slug}/campaigns": {
       "post": {
         "operationId": "createCampaign",
@@ -2607,6 +2964,63 @@
                     "type": "string",
                     "format": "date-time",
                     "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                  },
+                  "raffle": {
+                    "type": "object",
+                    "properties": {
+                      "centsPerNumber": {
+                        "type": "integer",
+                        "minimum": 100,
+                        "maximum": 10000000
+                      },
+                      "drawAt": {
+                        "nullable": true,
+                        "type": "string",
+                        "format": "date-time",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                      },
+                      "prizes": {
+                        "minItems": 1,
+                        "maxItems": 20,
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "position": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 9007199254740991
+                            },
+                            "title": {
+                              "type": "string",
+                              "minLength": 2,
+                              "maxLength": 200
+                            },
+                            "description": {
+                              "type": "string",
+                              "maxLength": 2000
+                            },
+                            "images": {
+                              "maxItems": 6,
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "maxLength": 300,
+                                "pattern": "^stores\\/.*"
+                              }
+                            }
+                          },
+                          "required": [
+                            "position",
+                            "title"
+                          ]
+                        }
+                      }
+                    },
+                    "required": [
+                      "centsPerNumber",
+                      "prizes"
+                    ]
                   }
                 },
                 "required": [
@@ -3437,6 +3851,19 @@
                           "type": "string",
                           "minLength": 2,
                           "maxLength": 200
+                        },
+                        "description": {
+                          "type": "string",
+                          "maxLength": 2000
+                        },
+                        "images": {
+                          "maxItems": 6,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "maxLength": 300,
+                            "pattern": "^stores\\/.*"
+                          }
                         }
                       },
                       "required": [
@@ -3539,6 +3966,22 @@
                           "title": {
                             "type": "string"
                           },
+                          "description": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "images": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "imageUrls": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
                           "winner": {
                             "nullable": true,
                             "type": "object",
@@ -3562,6 +4005,9 @@
                         "required": [
                           "position",
                           "title",
+                          "description",
+                          "images",
+                          "imageUrls",
                           "winner"
                         ],
                         "additionalProperties": false
@@ -3672,6 +4118,22 @@
                           "title": {
                             "type": "string"
                           },
+                          "description": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "images": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "imageUrls": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
                           "winner": {
                             "nullable": true,
                             "type": "object",
@@ -3695,6 +4157,9 @@
                         "required": [
                           "position",
                           "title",
+                          "description",
+                          "images",
+                          "imageUrls",
                           "winner"
                         ],
                         "additionalProperties": false
@@ -3780,6 +4245,22 @@
                           "title": {
                             "type": "string"
                           },
+                          "description": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "images": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "imageUrls": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
                           "winner": {
                             "nullable": true,
                             "type": "object",
@@ -3803,6 +4284,9 @@
                         "required": [
                           "position",
                           "title",
+                          "description",
+                          "images",
+                          "imageUrls",
                           "winner"
                         ],
                         "additionalProperties": false
@@ -3903,6 +4387,162 @@
                   "required": [
                     "items",
                     "nextCursor"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/stores/{slug}/campaigns/story-suggestion": {
+      "post": {
+        "operationId": "suggestCampaignStory",
+        "tags": [
+          "campaigns"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 160
+                  },
+                  "draft": {
+                    "type": "string",
+                    "maxLength": 4000
+                  },
+                  "mode": {
+                    "default": "create",
+                    "type": "string",
+                    "enum": [
+                      "create",
+                      "improve"
+                    ]
+                  }
+                },
+                "required": [
+                  "title"
+                ]
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "slug",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "text": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "text"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/stores/{slug}/campaigns/prize-description-suggestion": {
+      "post": {
+        "operationId": "suggestPrizeDescription",
+        "tags": [
+          "raffles"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "prizeTitle": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 200
+                  },
+                  "campaignTitle": {
+                    "type": "string",
+                    "maxLength": 160
+                  },
+                  "draft": {
+                    "type": "string",
+                    "maxLength": 4000
+                  },
+                  "mode": {
+                    "default": "create",
+                    "type": "string",
+                    "enum": [
+                      "create",
+                      "improve"
+                    ]
+                  }
+                },
+                "required": [
+                  "prizeTitle"
+                ]
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "slug",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "text": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "text"
                   ],
                   "additionalProperties": false
                 }

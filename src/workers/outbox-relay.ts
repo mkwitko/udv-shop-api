@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { PrismaClient } from "@prisma/client";
 import type { FastifyBaseLogger } from "fastify";
 import type { EmailGateway } from "../gateways/email/email.gateway.js";
+import type { WooviGateway } from "../gateways/woovi/woovi.gateway.js";
 import { createInterestsRepository } from "../http/api/interests/interests.repository.js";
 import { createRafflesRepository } from "../http/api/raffles/raffles.repository.js";
 import { escapeHtml } from "../lib/html.js";
@@ -16,6 +17,7 @@ const STALE_CLAIM_MS = 5 * 60_000;
 export async function relayOutbox(deps: {
   db: PrismaClient;
   email: EmailGateway;
+  woovi: WooviGateway;
   log: FastifyBaseLogger;
 }): Promise<number> {
   // Reap stale claims before doing anything else so an abandoned row is eligible for
@@ -140,6 +142,22 @@ export async function relayOutbox(deps: {
           { orderId, donationId, paymentId },
           "pagamento órfão: pagamento capturado para agregado não pendente, reembolso manual necessário",
         );
+      } else if (event.type === "woovi.withdraw") {
+        // Tira o saldo virtual da subconta e manda para a chave Pix do núcleo. É o passo
+        // que faz a promessa "o dinheiro vai direto para quem organiza" ser verdade no
+        // Pix: sem ele o valor fica parado na conta da plataforma.
+        const { pixKey, storeId } = event.payload as { pixKey: string; storeId: string };
+        const result = await deps.woovi.withdrawSubAccount(pixKey);
+        if (result.status === "blocked") {
+          // Não é falha nossa e retry não resolve: a Woovi bloqueou a subconta. Fica
+          // registrado para quem opera resolver com o núcleo.
+          deps.log.error(
+            { storeId, motivo: result.message },
+            "saque Woovi bloqueado: dinheiro do núcleo retido na conta da plataforma",
+          );
+        } else if (result.status === "requested") {
+          deps.log.info({ storeId }, "saque Woovi pedido");
+        }
       } else if (event.type === "raffle.drawn") {
         const { raffleId } = event.payload as { raffleId: string };
         const prizes = await deps.db.rafflePrize.findMany({

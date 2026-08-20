@@ -34,6 +34,15 @@ export function createFakeWooviGateway(): WooviGateway {
     async createSubAccount(input) {
       return { subAccountId: `fake_sub_${input.pixKey}` };
     },
+    // Saldo de mentira que acompanha o Pix falso: sempre algo a sacar, para a tela de
+    // Recebimento poder ser exercitada sem Woovi de verdade.
+    async getSubAccount(pixKey) {
+      return { name: "Subconta demo", pixKey, balanceCents: 12_345, withdrawBlocked: false };
+    },
+    async withdrawSubAccount(pixKey) {
+      logger.info({ pixKey }, "saque Pix falso (DEV_FAKE_PAYMENTS)");
+      return { status: "requested" as const };
+    },
 
     async createCharge(input) {
       const providerId = `fake_pix_${input.correlationID}`;
