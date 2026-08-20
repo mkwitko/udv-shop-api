@@ -43,7 +43,14 @@ async function seedRaffleWithEntries(
     data: { storeId: store.id, slug: "reforma", title: "Reforma", status: "active" },
   });
   const raffle = await db.raffle.create({
-    data: { campaignId: campaign.id, centsPerNumber: 1000, nextNumber: entryCount + 1 },
+    data: {
+      campaignId: campaign.id,
+      sequence: 1,
+      title: "Sorteio",
+      startsAt: new Date("2026-01-01T00:00:00Z"),
+      centsPerNumber: 1000,
+      nextNumber: entryCount + 1,
+    },
   });
   for (let i = 1; i <= prizeCount; i++) {
     await db.rafflePrize.create({
@@ -87,7 +94,7 @@ describe("sorteio: draw determinístico e listagem pública", () => {
     const { token } = await registerWithRole(app, "admin@example.org", store.id, "admin");
     const res = await app.inject({
       method: "POST",
-      url: `/stores/nx/campaigns/${campaign.slug}/raffle/draw`,
+      url: `/stores/nx/campaigns/${campaign.slug}/raffles/1/draw`,
       headers: { authorization: `Bearer ${token}` },
     });
     expect(res.statusCode).toBe(202);
@@ -109,12 +116,12 @@ describe("sorteio: draw determinístico e listagem pública", () => {
     const { token } = await registerWithRole(app, "admin2@example.org", store.id, "admin");
     await app.inject({
       method: "POST",
-      url: `/stores/nx/campaigns/${campaign.slug}/raffle/draw`,
+      url: `/stores/nx/campaigns/${campaign.slug}/raffles/1/draw`,
       headers: { authorization: `Bearer ${token}` },
     });
     const again = await app.inject({
       method: "POST",
-      url: `/stores/nx/campaigns/${campaign.slug}/raffle/draw`,
+      url: `/stores/nx/campaigns/${campaign.slug}/raffles/1/draw`,
       headers: { authorization: `Bearer ${token}` },
     });
     expect(again.statusCode).toBe(409);
@@ -126,12 +133,14 @@ describe("sorteio: draw determinístico e listagem pública", () => {
     const { token } = await registerWithRole(app, "admin3@example.org", store.id, "admin");
     const res = await app.inject({
       method: "POST",
-      url: `/stores/nx/campaigns/${campaign.slug}/raffle/draw`,
+      url: `/stores/nx/campaigns/${campaign.slug}/raffles/1/draw`,
       headers: { authorization: `Bearer ${token}` },
     });
     expect(res.statusCode).toBe(409);
     expect(res.json().message).toBe("raffle_has_no_entries");
-    const fresh = await db.raffle.findUniqueOrThrow({ where: { campaignId: campaign.id } });
+    const fresh = await db.raffle.findUniqueOrThrow({
+      where: { campaignId_sequence: { campaignId: campaign.id, sequence: 1 } },
+    });
     expect(fresh.status).toBe("open");
     expect(fresh.seed).toBeNull();
   });
@@ -141,12 +150,12 @@ describe("sorteio: draw determinístico e listagem pública", () => {
     const { token } = await registerWithRole(app, "admin4@example.org", store.id, "admin");
     await app.inject({
       method: "POST",
-      url: `/stores/nx/campaigns/${campaign.slug}/raffle/draw`,
+      url: `/stores/nx/campaigns/${campaign.slug}/raffles/1/draw`,
       headers: { authorization: `Bearer ${token}` },
     });
     const res = await app.inject({
       method: "GET",
-      url: `/stores/nx/campaigns/${campaign.slug}/raffle`,
+      url: `/stores/nx/campaigns/${campaign.slug}/raffles/1`,
     });
     expect(res.statusCode).toBe(200);
     const body = res.json();
@@ -163,7 +172,7 @@ describe("sorteio: draw determinístico e listagem pública", () => {
     const { campaign } = await seedRaffleWithEntries(2, 1, { anonymous: true });
     const res = await app.inject({
       method: "GET",
-      url: `/stores/nx/campaigns/${campaign.slug}/raffle/entries`,
+      url: `/stores/nx/campaigns/${campaign.slug}/raffles/1/entries`,
     });
     expect(res.statusCode).toBe(200);
     expect(
@@ -181,7 +190,7 @@ describe("sorteio: draw determinístico e listagem pública", () => {
     );
     const staffRes = await app.inject({
       method: "POST",
-      url: `/stores/nx/campaigns/${campaign.slug}/raffle/draw`,
+      url: `/stores/nx/campaigns/${campaign.slug}/raffles/1/draw`,
       headers: { authorization: `Bearer ${staffToken}` },
     });
     expect(staffRes.statusCode).toBe(403);
@@ -192,7 +201,15 @@ describe("sorteio: draw determinístico e listagem pública", () => {
     const suspendedCampaign = await db.campaign.create({
       data: { storeId: suspendedStore.id, slug: "c", title: "Campanha", status: "active" },
     });
-    await db.raffle.create({ data: { campaignId: suspendedCampaign.id, centsPerNumber: 1000 } });
+    await db.raffle.create({
+      data: {
+        campaignId: suspendedCampaign.id,
+        sequence: 1,
+        title: "Sorteio",
+        startsAt: new Date("2026-01-01T00:00:00Z"),
+        centsPerNumber: 1000,
+      },
+    });
     const { token: adminToken } = await registerWithRole(
       app,
       "admin5@example.org",
@@ -201,7 +218,7 @@ describe("sorteio: draw determinístico e listagem pública", () => {
     );
     const suspRes = await app.inject({
       method: "POST",
-      url: `/stores/susp/campaigns/${suspendedCampaign.slug}/raffle/draw`,
+      url: `/stores/susp/campaigns/${suspendedCampaign.slug}/raffles/1/draw`,
       headers: { authorization: `Bearer ${adminToken}` },
     });
     expect(suspRes.statusCode).toBe(403);
@@ -213,7 +230,7 @@ describe("sorteio: draw determinístico e listagem pública", () => {
     const { token } = await registerWithRole(app, "admin6@example.org", store.id, "admin");
     await app.inject({
       method: "POST",
-      url: `/stores/nx/campaigns/${campaign.slug}/raffle/draw`,
+      url: `/stores/nx/campaigns/${campaign.slug}/raffles/1/draw`,
       headers: { authorization: `Bearer ${token}` },
     });
     const outboxEvent = await db.outboxEvent.findFirstOrThrow({

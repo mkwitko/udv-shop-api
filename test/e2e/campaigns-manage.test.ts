@@ -82,7 +82,10 @@ describe("gestão de campanhas", () => {
         title: "Reforma do salão",
         coverImage: "stores/nx/campaigns/capa.jpg",
         raffle: {
+          title: "Sorteio de agosto",
           centsPerNumber: 1000,
+          startsAt: "2026-08-01T03:00:00.000Z",
+          endsAt: "2026-09-01T03:00:00.000Z",
           prizes: [
             {
               position: 1,
@@ -104,11 +107,18 @@ describe("gestão de campanhas", () => {
 
     const raffle = await app.inject({
       method: "GET",
-      url: "/stores/nx/campaigns/reforma/raffle",
+      url: "/stores/nx/campaigns/reforma/raffles/1",
       headers: { authorization: `Bearer ${token}` },
     });
     expect(raffle.statusCode).toBe(200);
-    expect(raffle.json()).toMatchObject({ status: "open", centsPerNumber: 1000 });
+    expect(raffle.json()).toMatchObject({
+      sequence: 1,
+      title: "Sorteio de agosto",
+      status: "open",
+      centsPerNumber: 1000,
+      startsAt: "2026-08-01T03:00:00.000Z",
+      endsAt: "2026-09-01T03:00:00.000Z",
+    });
     expect(raffle.json().prizes).toMatchObject([
       {
         position: 1,
@@ -131,7 +141,10 @@ describe("gestão de campanhas", () => {
         slug: "reforma",
         title: "Reforma do salão",
         raffle: {
+          title: "Sorteio de agosto",
           centsPerNumber: 1000,
+          startsAt: "2026-08-01T03:00:00.000Z",
+          endsAt: "2026-09-01T03:00:00.000Z",
           prizes: [
             { position: 1, title: "Aa" },
             { position: 1, title: "Bb" },
@@ -142,6 +155,34 @@ describe("gestão de campanhas", () => {
     expect(res.statusCode).toBe(400);
     expect(res.json().message).toBe("duplicate_prize_position");
     expect(await db.campaign.count({ where: { storeId: store.id } })).toBe(0);
+  });
+
+  it("campanha com sorteio sem janela informada abre o sorteio corrente", async () => {
+    const store = await db.store.create({ data: { slug: "nx", name: "NX", status: "active" } });
+    const { token } = await registerWithRole(
+      app,
+      "admin-sem-janela@example.org",
+      store.id,
+      "admin",
+    );
+    const res = await app.inject({
+      method: "POST",
+      url: "/stores/nx/campaigns",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        slug: "reforma",
+        title: "Reforma do salão",
+        raffle: {
+          title: "Sorteio",
+          centsPerNumber: 1000,
+          prizes: [{ position: 1, title: "Cesta" }],
+        },
+      },
+    });
+    expect(res.statusCode).toBe(201);
+    const raffle = await db.raffle.findFirstOrThrow({ where: { campaign: { slug: "reforma" } } });
+    expect(raffle.sequence).toBe(1);
+    expect(raffle.endsAt).toBeNull();
   });
 
   it("staff não cria campanha (403)", async () => {

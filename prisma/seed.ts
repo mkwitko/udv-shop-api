@@ -150,9 +150,16 @@ export async function seedDatabase(db: PrismaClient): Promise<string> {
   });
 
   const raffle = await db.raffle.upsert({
-    where: { campaignId: campaign.id },
+    where: { campaignId_sequence: { campaignId: campaign.id, sequence: 1 } },
     update: {},
-    create: { campaignId: campaign.id, centsPerNumber: 1000, status: "open" },
+    create: {
+      campaignId: campaign.id,
+      sequence: 1,
+      title: "Sorteio da reforma",
+      startsAt: new Date("2026-01-01T00:00:00Z"),
+      centsPerNumber: 1000,
+      status: "open",
+    },
   });
 
   for (const [position, title] of [
@@ -215,6 +222,7 @@ export async function seedDatabase(db: PrismaClient): Promise<string> {
         status: "paid",
         message: "Que a obra ande bem.",
         raffleGranted: true,
+        paidAt: new Date("2026-02-01T00:00:00Z"),
       },
     });
     await db.payment.create({

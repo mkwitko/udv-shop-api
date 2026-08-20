@@ -47,14 +47,15 @@ describe("configuração do sorteio", () => {
   afterAll(() => app.close());
   beforeEach(resetDb);
 
-  it("PUT cria o sorteio com 3 prêmios (200, open, seed null, totalEntries 0)", async () => {
+  it("POST cria o sorteio com 3 prêmios (201, sequence 1, open, seed null)", async () => {
     const { store, campaign } = await seedCampaign();
     const { token } = await registerWithRole(app, "admin@example.org", store.id, "admin");
     const res = await app.inject({
-      method: "PUT",
-      url: `/stores/nx/campaigns/${campaign.slug}/raffle`,
+      method: "POST",
+      url: `/stores/nx/campaigns/${campaign.slug}/raffles`,
       headers: { authorization: `Bearer ${token}` },
       payload: {
+        title: "Sorteio",
         centsPerNumber: 1000,
         prizes: [
           { position: 1, title: "Prêmio 1" },
@@ -63,19 +64,108 @@ describe("configuração do sorteio", () => {
         ],
       },
     });
-    expect(res.statusCode).toBe(200);
-    expect(res.json()).toMatchObject({ status: "open", seed: null, totalEntries: 0 });
+    expect(res.statusCode).toBe(201);
+    expect(res.json()).toMatchObject({ sequence: 1, status: "open", seed: null, totalEntries: 0 });
     expect(res.json().prizes).toHaveLength(3);
+  });
+
+  it("GET lista os sorteios da campanha por sequência", async () => {
+    const { store, campaign } = await seedCampaign();
+    const { token } = await registerWithRole(app, "admin-list@example.org", store.id, "admin");
+    const janelas: Array<[string, string | null]> = [
+      ["2026-08-01T03:00:00.000Z", "2026-09-01T03:00:00.000Z"],
+      ["2026-09-01T03:00:00.000Z", null],
+    ];
+    for (const [i, [startsAt, endsAt]] of janelas.entries()) {
+      const criado = await app.inject({
+        method: "POST",
+        url: `/stores/nx/campaigns/${campaign.slug}/raffles`,
+        headers: { authorization: `Bearer ${token}` },
+        payload: {
+          title: `Sorteio ${i + 1}`,
+          centsPerNumber: 1000,
+          startsAt,
+          endsAt,
+          prizes: [{ position: 1, title: "Cesta" }],
+        },
+      });
+      expect(criado.statusCode).toBe(201);
+    }
+
+    const res = await app.inject({
+      method: "GET",
+      url: `/stores/nx/campaigns/${campaign.slug}/raffles`,
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().items.map((r: { sequence: number }) => r.sequence)).toEqual([1, 2]);
+    expect(res.json().items[1]).toMatchObject({ title: "Sorteio 2", endsAt: null });
+  });
+
+  it("janela sobreposta → 409 raffle_window_overlap", async () => {
+    const { store, campaign } = await seedCampaign();
+    const { token } = await registerWithRole(app, "admin-ovl@example.org", store.id, "admin");
+    const payload = {
+      title: "Agosto",
+      centsPerNumber: 1000,
+      startsAt: "2026-08-01T03:00:00.000Z",
+      endsAt: "2026-09-01T03:00:00.000Z",
+      prizes: [{ position: 1, title: "Cesta" }],
+    };
+    await app.inject({
+      method: "POST",
+      url: `/stores/nx/campaigns/${campaign.slug}/raffles`,
+      headers: { authorization: `Bearer ${token}` },
+      payload,
+    });
+    const res = await app.inject({
+      method: "POST",
+      url: `/stores/nx/campaigns/${campaign.slug}/raffles`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { ...payload, title: "Sobreposto", startsAt: "2026-08-15T03:00:00.000Z" },
+    });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().message).toBe("raffle_window_overlap");
+  });
+
+  it("fim antes do início → 400", async () => {
+    const { store, campaign } = await seedCampaign();
+    const { token } = await registerWithRole(app, "admin-inv@example.org", store.id, "admin");
+    const res = await app.inject({
+      method: "POST",
+      url: `/stores/nx/campaigns/${campaign.slug}/raffles`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        title: "Invertido",
+        centsPerNumber: 1000,
+        startsAt: "2026-09-01T03:00:00.000Z",
+        endsAt: "2026-08-01T03:00:00.000Z",
+        prizes: [{ position: 1, title: "Cesta" }],
+      },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("sequência inexistente → 404 raffle_not_found", async () => {
+    const { store, campaign } = await seedCampaign();
+    const { token } = await registerWithRole(app, "admin-404@example.org", store.id, "admin");
+    const res = await app.inject({
+      method: "GET",
+      url: `/stores/nx/campaigns/${campaign.slug}/raffles/7`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(404);
+    expect(res.json().message).toBe("raffle_not_found");
   });
 
   it("prêmio guarda descrição e fotos; GET público devolve imageUrls", async () => {
     const { store, campaign } = await seedCampaign();
     const { token } = await registerWithRole(app, "admin-media@example.org", store.id, "admin");
     const res = await app.inject({
-      method: "PUT",
-      url: `/stores/nx/campaigns/${campaign.slug}/raffle`,
+      method: "POST",
+      url: `/stores/nx/campaigns/${campaign.slug}/raffles`,
       headers: { authorization: `Bearer ${token}` },
       payload: {
+        title: "Sorteio",
         centsPerNumber: 1000,
         prizes: [
           {
@@ -88,7 +178,7 @@ describe("configuração do sorteio", () => {
         ],
       },
     });
-    expect(res.statusCode).toBe(200);
+    expect(res.statusCode).toBe(201);
     expect(res.json().prizes).toMatchObject([
       {
         position: 1,
@@ -101,7 +191,7 @@ describe("configuração do sorteio", () => {
 
     const publico = await app.inject({
       method: "GET",
-      url: `/stores/nx/campaigns/${campaign.slug}/raffle`,
+      url: `/stores/nx/campaigns/${campaign.slug}/raffles/1`,
     });
     expect(publico.statusCode).toBe(200);
     expect(publico.json().prizes[0]).toMatchObject({
@@ -114,10 +204,11 @@ describe("configuração do sorteio", () => {
     const { store, campaign } = await seedCampaign();
     const { token } = await registerWithRole(app, "admin-key@example.org", store.id, "admin");
     const res = await app.inject({
-      method: "PUT",
-      url: `/stores/nx/campaigns/${campaign.slug}/raffle`,
+      method: "POST",
+      url: `/stores/nx/campaigns/${campaign.slug}/raffles`,
       headers: { authorization: `Bearer ${token}` },
       payload: {
+        title: "Sorteio",
         centsPerNumber: 1000,
         prizes: [{ position: 1, title: "Cesta", images: ["https://evil.example.org/foto.jpg"] }],
       },
@@ -129,10 +220,11 @@ describe("configuração do sorteio", () => {
     const { store, campaign } = await seedCampaign();
     const { token } = await registerWithRole(app, "admin2@example.org", store.id, "admin");
     await app.inject({
-      method: "PUT",
-      url: `/stores/nx/campaigns/${campaign.slug}/raffle`,
+      method: "POST",
+      url: `/stores/nx/campaigns/${campaign.slug}/raffles`,
       headers: { authorization: `Bearer ${token}` },
       payload: {
+        title: "Sorteio",
         centsPerNumber: 1000,
         prizes: [
           { position: 1, title: "Aa" },
@@ -143,9 +235,10 @@ describe("configuração do sorteio", () => {
     });
     const res = await app.inject({
       method: "PUT",
-      url: `/stores/nx/campaigns/${campaign.slug}/raffle`,
+      url: `/stores/nx/campaigns/${campaign.slug}/raffles/1`,
       headers: { authorization: `Bearer ${token}` },
       payload: {
+        title: "Sorteio",
         centsPerNumber: 1000,
         prizes: [
           { position: 1, title: "Xx" },
@@ -161,10 +254,11 @@ describe("configuração do sorteio", () => {
     const { store, campaign } = await seedCampaign();
     const { token } = await registerWithRole(app, "admin3@example.org", store.id, "admin");
     const res = await app.inject({
-      method: "PUT",
-      url: `/stores/nx/campaigns/${campaign.slug}/raffle`,
+      method: "POST",
+      url: `/stores/nx/campaigns/${campaign.slug}/raffles`,
       headers: { authorization: `Bearer ${token}` },
       payload: {
+        title: "Sorteio",
         centsPerNumber: 1000,
         prizes: [
           { position: 1, title: "Aa" },
@@ -180,12 +274,14 @@ describe("configuração do sorteio", () => {
     const { store, campaign } = await seedCampaign();
     const { token } = await registerWithRole(app, "admin4@example.org", store.id, "admin");
     await app.inject({
-      method: "PUT",
-      url: `/stores/nx/campaigns/${campaign.slug}/raffle`,
+      method: "POST",
+      url: `/stores/nx/campaigns/${campaign.slug}/raffles`,
       headers: { authorization: `Bearer ${token}` },
-      payload: { centsPerNumber: 1000, prizes: [{ position: 1, title: "Aa" }] },
+      payload: { title: "Sorteio", centsPerNumber: 1000, prizes: [{ position: 1, title: "Aa" }] },
     });
-    const raffle = await db.raffle.findUniqueOrThrow({ where: { campaignId: campaign.id } });
+    const raffle = await db.raffle.findUniqueOrThrow({
+      where: { campaignId_sequence: { campaignId: campaign.id, sequence: 1 } },
+    });
     const donor = await db.user.create({
       data: { email: "donor@example.org", name: "Doadora", passwordHash: "x" },
     });
@@ -204,18 +300,22 @@ describe("configuração do sorteio", () => {
 
     const changeAmount = await app.inject({
       method: "PUT",
-      url: `/stores/nx/campaigns/${campaign.slug}/raffle`,
+      url: `/stores/nx/campaigns/${campaign.slug}/raffles/1`,
       headers: { authorization: `Bearer ${token}` },
-      payload: { centsPerNumber: 2000, prizes: [{ position: 1, title: "Aa" }] },
+      payload: { title: "Sorteio", centsPerNumber: 2000, prizes: [{ position: 1, title: "Aa" }] },
     });
     expect(changeAmount.statusCode).toBe(409);
     expect(changeAmount.json().message).toBe("raffle_has_entries");
 
     const changePrizesOnly = await app.inject({
       method: "PUT",
-      url: `/stores/nx/campaigns/${campaign.slug}/raffle`,
+      url: `/stores/nx/campaigns/${campaign.slug}/raffles/1`,
       headers: { authorization: `Bearer ${token}` },
-      payload: { centsPerNumber: 1000, prizes: [{ position: 1, title: "Novo título" }] },
+      payload: {
+        title: "Sorteio",
+        centsPerNumber: 1000,
+        prizes: [{ position: 1, title: "Novo título" }],
+      },
     });
     expect(changePrizesOnly.statusCode).toBe(200);
     expect(changePrizesOnly.json().prizes[0].title).toBe("Novo título");
@@ -230,10 +330,10 @@ describe("configuração do sorteio", () => {
       "staff",
     );
     const staffRes = await app.inject({
-      method: "PUT",
-      url: `/stores/nx/campaigns/${campaign.slug}/raffle`,
+      method: "POST",
+      url: `/stores/nx/campaigns/${campaign.slug}/raffles`,
       headers: { authorization: `Bearer ${staffToken}` },
-      payload: { centsPerNumber: 1000, prizes: [{ position: 1, title: "Aa" }] },
+      payload: { title: "Sorteio", centsPerNumber: 1000, prizes: [{ position: 1, title: "Aa" }] },
     });
     expect(staffRes.statusCode).toBe(403);
 
@@ -250,10 +350,10 @@ describe("configuração do sorteio", () => {
       "admin",
     );
     const suspRes = await app.inject({
-      method: "PUT",
-      url: `/stores/susp/campaigns/${suspendedCampaign.slug}/raffle`,
+      method: "POST",
+      url: `/stores/susp/campaigns/${suspendedCampaign.slug}/raffles`,
       headers: { authorization: `Bearer ${adminToken}` },
-      payload: { centsPerNumber: 1000, prizes: [{ position: 1, title: "Aa" }] },
+      payload: { title: "Sorteio", centsPerNumber: 1000, prizes: [{ position: 1, title: "Aa" }] },
     });
     expect(suspRes.statusCode).toBe(403);
     expect(suspRes.json().message).toBe("store_suspended");
@@ -263,14 +363,14 @@ describe("configuração do sorteio", () => {
     const { store, campaign } = await seedCampaign();
     const { token } = await registerWithRole(app, "admin6@example.org", store.id, "admin");
     await app.inject({
-      method: "PUT",
-      url: `/stores/nx/campaigns/${campaign.slug}/raffle`,
+      method: "POST",
+      url: `/stores/nx/campaigns/${campaign.slug}/raffles`,
       headers: { authorization: `Bearer ${token}` },
-      payload: { centsPerNumber: 1000, prizes: [{ position: 1, title: "Aa" }] },
+      payload: { title: "Sorteio", centsPerNumber: 1000, prizes: [{ position: 1, title: "Aa" }] },
     });
     const res = await app.inject({
       method: "GET",
-      url: `/stores/nx/campaigns/${campaign.slug}/raffle`,
+      url: `/stores/nx/campaigns/${campaign.slug}/raffles/1`,
     });
     expect(res.statusCode).toBe(200);
     expect(res.json().seed).toBeNull();
@@ -280,13 +380,13 @@ describe("configuração do sorteio", () => {
     });
     const draftRes = await app.inject({
       method: "GET",
-      url: `/stores/nx/campaigns/${draftCampaign.slug}/raffle`,
+      url: `/stores/nx/campaigns/${draftCampaign.slug}/raffles/1`,
     });
     expect(draftRes.statusCode).toBe(404);
     expect(draftRes.json().message).toBe("campaign_not_found");
   });
 
-  it("PUT depois de a campanha já ter doações pagas: backfill concede os números de quem doou antes da configuração", async () => {
+  it("criar sorteio depois de a campanha já ter doações pagas: backfill concede os números de quem doou antes da configuração", async () => {
     const { store, campaign } = await seedCampaign();
     const { token } = await registerWithRole(app, "admin7@example.org", store.id, "admin");
     const { user: doador } = await registerWithRole(app, "doador7@example.org", null, null);
@@ -302,12 +402,16 @@ describe("configuração do sorteio", () => {
     });
 
     const res = await app.inject({
-      method: "PUT",
-      url: `/stores/nx/campaigns/${campaign.slug}/raffle`,
+      method: "POST",
+      url: `/stores/nx/campaigns/${campaign.slug}/raffles`,
       headers: { authorization: `Bearer ${token}` },
-      payload: { centsPerNumber: 1000, prizes: [{ position: 1, title: "Prêmio" }] },
+      payload: {
+        title: "Sorteio",
+        centsPerNumber: 1000,
+        prizes: [{ position: 1, title: "Prêmio" }],
+      },
     });
-    expect(res.statusCode).toBe(200);
+    expect(res.statusCode).toBe(201);
     expect(res.json().totalEntries).toBe(5);
 
     expect(

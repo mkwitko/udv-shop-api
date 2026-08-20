@@ -22,12 +22,26 @@ export const RafflePrizeInput = z.object({
 });
 export type RafflePrizeInput = z.infer<typeof RafflePrizeInput>;
 
-/** Configuração do sorteio, reusada no PUT e na criação da campanha. */
-export const RaffleConfigInput = z.object({
-  centsPerNumber: z.number().int().min(RAFFLE_MIN_CENTS_PER_NUMBER).max(10_000_000),
-  drawAt: z.string().datetime().nullable().optional(),
-  prizes: z.array(RafflePrizeInput).min(1).max(RAFFLE_MAX_PRIZES),
-});
+/**
+ * Configuração do sorteio, reusada no POST, no PUT e na criação da campanha.
+ *
+ * `startsAt` ausente significa "a partir de agora" (o controller resolve), e `endsAt`
+ * ausente ou nulo significa sem fim — é o sorteio corrente. A janela é semiaberta
+ * `[startsAt, endsAt)`: assim "até 30/09" e "a partir de 01/10" não se sobrepõem.
+ */
+export const RaffleConfigInput = z
+  .object({
+    title: z.string().min(2).max(160),
+    centsPerNumber: z.number().int().min(RAFFLE_MIN_CENTS_PER_NUMBER).max(10_000_000),
+    startsAt: z.string().datetime().optional(),
+    endsAt: z.string().datetime().nullable().optional(),
+    drawAt: z.string().datetime().nullable().optional(),
+    prizes: z.array(RafflePrizeInput).min(1).max(RAFFLE_MAX_PRIZES),
+  })
+  .refine((value) => !value.endsAt || !value.startsAt || value.endsAt > value.startsAt, {
+    message: "endsAt deve ser depois de startsAt",
+    path: ["endsAt"],
+  });
 export type RaffleConfigInput = z.infer<typeof RaffleConfigInput>;
 
 /**
@@ -41,8 +55,17 @@ export function assertUniquePrizePositions(prizes: RafflePrizeInput[]): void {
   }
 }
 
+export const CreateRaffleBody = RaffleConfigInput;
+export type CreateRaffleBody = z.infer<typeof CreateRaffleBody>;
+
 export const PutRaffleBody = RaffleConfigInput;
 export type PutRaffleBody = z.infer<typeof PutRaffleBody>;
+
+export const RaffleSequenceParams = z.object({
+  slug: z.string(),
+  campaignSlug: z.string(),
+  sequence: z.coerce.number().int().min(1),
+});
 
 export const RafflePrizeResponse = z.object({
   position: z.number().int(),
@@ -55,6 +78,10 @@ export const RafflePrizeResponse = z.object({
 
 export const RaffleResponse = z.object({
   campaignSlug: z.string(),
+  sequence: z.number().int(),
+  title: z.string(),
+  startsAt: z.string(),
+  endsAt: z.string().nullable(),
   centsPerNumber: z.number().int(),
   drawAt: z.string().nullable(),
   status: z.enum(["open", "drawn", "cancelled"]),
@@ -67,6 +94,8 @@ export const RaffleResponse = z.object({
   totalParticipants: z.number().int(),
   prizes: z.array(RafflePrizeResponse),
 });
+
+export const RafflesListResponse = z.object({ items: z.array(RaffleResponse) });
 
 export const RaffleEntryResponse = z.object({
   number: z.number().int(),

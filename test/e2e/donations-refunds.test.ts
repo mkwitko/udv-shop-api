@@ -22,7 +22,13 @@ async function seed() {
     data: { storeId: store.id, slug: "reforma", title: "Reforma", status: "active" },
   });
   const raffle = await db.raffle.create({
-    data: { campaignId: campaign.id, centsPerNumber: 1000 },
+    data: {
+      campaignId: campaign.id,
+      sequence: 1,
+      title: "Sorteio",
+      startsAt: new Date("2026-01-01T00:00:00Z"),
+      centsPerNumber: 1000,
+    },
   });
   return { store, campaign, raffle };
 }

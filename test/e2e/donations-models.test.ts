@@ -97,17 +97,20 @@ describe("modelos de doação", () => {
     ).rejects.toThrow();
   });
 
-  it("sorteio é 1:1 com campanha e número é único dentro do sorteio", async () => {
+  it("número é único dentro do sorteio", async () => {
     const { store, user, campaign } = await seed();
     const raffle = await db.raffle.create({
-      data: { campaignId: campaign.id, centsPerNumber: 5000 },
+      data: {
+        campaignId: campaign.id,
+        sequence: 1,
+        title: "Sorteio",
+        startsAt: new Date("2026-01-01T00:00:00Z"),
+        centsPerNumber: 5000,
+      },
     });
     expect(raffle.status).toBe("open");
     expect(raffle.nextNumber).toBe(1);
     expect(raffle.algorithm).toBe("sha256-counter-v1");
-    await expect(
-      db.raffle.create({ data: { campaignId: campaign.id, centsPerNumber: 1000 } }),
-    ).rejects.toThrow();
 
     const donation = await db.donation.create({
       data: {
@@ -131,7 +134,13 @@ describe("modelos de doação", () => {
   it("prêmio é único por posição e aponta para a entrada vencedora", async () => {
     const { store, user, campaign } = await seed();
     const raffle = await db.raffle.create({
-      data: { campaignId: campaign.id, centsPerNumber: 5000 },
+      data: {
+        campaignId: campaign.id,
+        sequence: 1,
+        title: "Sorteio",
+        startsAt: new Date("2026-01-01T00:00:00Z"),
+        centsPerNumber: 5000,
+      },
     });
     const donation = await db.donation.create({
       data: {
@@ -156,5 +165,64 @@ describe("modelos de doação", () => {
       include: { winnerEntry: true },
     });
     expect(loaded.winnerEntry?.number).toBe(7);
+  });
+
+  it("campanha aceita dois sorteios com janelas diferentes", async () => {
+    const { store } = await seed();
+    const campaign = await db.campaign.create({
+      data: { storeId: store.id, slug: "reforma-2", title: "Reforma", status: "active" },
+    });
+    const agosto = await db.raffle.create({
+      data: {
+        campaignId: campaign.id,
+        sequence: 1,
+        title: "Sorteio de agosto",
+        centsPerNumber: 1000,
+        startsAt: new Date("2026-08-01T03:00:00Z"),
+        endsAt: new Date("2026-09-01T03:00:00Z"),
+      },
+    });
+    const setembro = await db.raffle.create({
+      data: {
+        campaignId: campaign.id,
+        sequence: 2,
+        title: "Sorteio de setembro",
+        centsPerNumber: 1000,
+        startsAt: new Date("2026-09-01T03:00:00Z"),
+        endsAt: null,
+      },
+    });
+    expect(agosto.campaignId).toBe(setembro.campaignId);
+    expect(setembro.nextNumber).toBe(1);
+  });
+
+  it("sequência é única por campanha", async () => {
+    const { store } = await seed();
+    const campaign = await db.campaign.create({
+      data: { storeId: store.id, slug: "reforma-3", title: "Reforma", status: "active" },
+    });
+    const data = {
+      campaignId: campaign.id,
+      sequence: 1,
+      title: "Sorteio",
+      centsPerNumber: 1000,
+      startsAt: new Date("2026-08-01T03:00:00Z"),
+    };
+    await db.raffle.create({ data });
+    await expect(db.raffle.create({ data })).rejects.toThrow();
+  });
+
+  it("doação nasce sem paidAt", async () => {
+    const { store, user, campaign } = await seed();
+    const donation = await db.donation.create({
+      data: {
+        storeId: store.id,
+        campaignId: campaign.id,
+        userId: user.id,
+        type: "one_time",
+        amountCents: 5000,
+      },
+    });
+    expect(donation.paidAt).toBeNull();
   });
 });

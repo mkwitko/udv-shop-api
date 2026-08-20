@@ -1,41 +1,28 @@
 import type { FastifyPluginAsync } from "fastify";
-import { z } from "zod";
+import type { z } from "zod";
 import { db } from "../../../../infra/db/client.js";
 import { NotFoundError } from "../../../../shared/errors.js";
-import { optionalUser } from "../../../hooks/optional-user.js";
-import { createCampaignsRepository } from "../../campaigns/campaigns.repository.js";
-import { assertStoreReadable, isStoreMember } from "../../stores/store-visibility.js";
-import { createStoresRepository } from "../../stores/stores.repository.js";
+import { resolveCampaignForRaffle } from "../manage.helpers.js";
 import { createRafflesRepository, toRaffleResponse } from "../raffles.repository.js";
-import { RaffleResponse } from "../raffles.schema.js";
-
-const Params = z.object({ slug: z.string(), campaignSlug: z.string() });
+import { RaffleResponse, RaffleSequenceParams } from "../raffles.schema.js";
 
 export const getRaffleRoute: FastifyPluginAsync = async (app) => {
   const repo = createRafflesRepository(db);
   app.get(
-    "/stores/:slug/campaigns/:campaignSlug/raffle",
+    "/stores/:slug/campaigns/:campaignSlug/raffles/:sequence",
     {
       config: { public: true },
       schema: {
         operationId: "getRaffle",
         tags: ["raffles"],
-        params: Params,
+        params: RaffleSequenceParams,
         response: { 200: RaffleResponse },
       },
     },
     async (req) => {
-      const { slug, campaignSlug } = req.params as z.infer<typeof Params>;
-      const store = await createStoresRepository(db).findBySlug(slug);
-      const user = await optionalUser(req);
-      assertStoreReadable(store, user);
-      const member = isStoreMember(user, store.id);
-      const campaign = await createCampaignsRepository(db).findBySlug(store.id, campaignSlug);
-      // Rascunho é 404 para quem não é da loja — não vaza nem a existência.
-      if (!campaign || (campaign.status === "draft" && !member)) {
-        throw new NotFoundError("campaign_not_found");
-      }
-      const raffle = await repo.findByCampaignId(campaign.id);
+      const { sequence } = req.params as z.infer<typeof RaffleSequenceParams>;
+      const { campaign } = await resolveCampaignForRaffle(req, "public");
+      const raffle = await repo.findBySequence(campaign.id, sequence);
       if (!raffle) throw new NotFoundError("raffle_not_found");
       const counts = await repo.countEntries(raffle.id);
       return toRaffleResponse(raffle, counts, app.gateways.r2.publicUrl);

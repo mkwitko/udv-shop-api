@@ -1,43 +1,34 @@
 import type { FastifyPluginAsync } from "fastify";
-import { z } from "zod";
+import type { z } from "zod";
 import { db } from "../../../../infra/db/client.js";
 import { NotFoundError } from "../../../../shared/errors.js";
-import { optionalUser } from "../../../hooks/optional-user.js";
-import { createCampaignsRepository } from "../../campaigns/campaigns.repository.js";
-import { assertStoreReadable, isStoreMember } from "../../stores/store-visibility.js";
-import { createStoresRepository } from "../../stores/stores.repository.js";
+import { resolveCampaignForRaffle } from "../manage.helpers.js";
 import { createRafflesRepository, maskName } from "../raffles.repository.js";
-import { RaffleEntriesPageResponse, RaffleEntriesQuery } from "../raffles.schema.js";
-
-const Params = z.object({ slug: z.string(), campaignSlug: z.string() });
+import {
+  RaffleEntriesPageResponse,
+  RaffleEntriesQuery,
+  RaffleSequenceParams,
+} from "../raffles.schema.js";
 
 export const listRaffleEntriesRoute: FastifyPluginAsync = async (app) => {
   const repo = createRafflesRepository(db);
   app.get(
-    "/stores/:slug/campaigns/:campaignSlug/raffle/entries",
+    "/stores/:slug/campaigns/:campaignSlug/raffles/:sequence/entries",
     {
       config: { public: true },
       schema: {
         operationId: "listRaffleEntries",
         tags: ["raffles"],
-        params: Params,
+        params: RaffleSequenceParams,
         querystring: RaffleEntriesQuery,
         response: { 200: RaffleEntriesPageResponse },
       },
     },
     async (req) => {
-      const { slug, campaignSlug } = req.params as z.infer<typeof Params>;
+      const { sequence } = req.params as z.infer<typeof RaffleSequenceParams>;
       const { limit, cursor } = req.query as z.infer<typeof RaffleEntriesQuery>;
-      const store = await createStoresRepository(db).findBySlug(slug);
-      const user = await optionalUser(req);
-      assertStoreReadable(store, user);
-      const member = isStoreMember(user, store.id);
-      const campaign = await createCampaignsRepository(db).findBySlug(store.id, campaignSlug);
-      // Rascunho é 404 para quem não é da loja — não vaza nem a existência.
-      if (!campaign || (campaign.status === "draft" && !member)) {
-        throw new NotFoundError("campaign_not_found");
-      }
-      const raffle = await repo.findByCampaignId(campaign.id);
+      const { campaign } = await resolveCampaignForRaffle(req, "public");
+      const raffle = await repo.findBySequence(campaign.id, sequence);
       if (!raffle) throw new NotFoundError("raffle_not_found");
       const page = await repo.listEntriesCursor({
         raffleId: raffle.id,

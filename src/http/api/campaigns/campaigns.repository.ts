@@ -55,12 +55,17 @@ export function createCampaignsRepository(db: PrismaClient): CampaignsRepository
           const raffle = await tx.raffle.create({
             data: {
               campaignId: campaign.id,
+              // Primeiro sorteio da campanha: a sequência começa em 1.
+              sequence: 1,
+              title: data.raffle.title,
               centsPerNumber: data.raffle.centsPerNumber,
+              startsAt: data.raffle.startsAt ? new Date(data.raffle.startsAt) : new Date(),
+              endsAt: data.raffle.endsAt ? new Date(data.raffle.endsAt) : null,
               drawAt: data.raffle.drawAt ? new Date(data.raffle.drawAt) : null,
             },
           });
           // Sem backfill de números: campanha nasce agora, não existe doação paga
-          // anterior para conceder (ao contrário do PUT de configuração).
+          // anterior para conceder (ao contrário da criação de sorteio avulso).
           await tx.rafflePrize.createMany({ data: prizeCreateData(raffle.id, data.raffle.prizes) });
         }
         return campaign;

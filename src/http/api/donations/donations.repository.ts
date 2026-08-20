@@ -137,7 +137,7 @@ export function createDonationsRepository(db: PrismaClient): DonationsRepository
         if (!payment.donationId) return null;
         const transitioned = await tx.donation.updateMany({
           where: { id: payment.donationId, status: "pending_payment" },
-          data: { status: "paid" },
+          data: { status: "paid", paidAt: new Date() },
         });
         const donationWasPending = transitioned.count === 1;
         await tx.outboxEvent.create({
@@ -253,7 +253,7 @@ export function createDonationsRepository(db: PrismaClient): DonationsRepository
         return db.$transaction(async (tx) => {
           const claimed = await tx.donation.updateMany({
             where: { id: anchor.id, status: "pending_payment" },
-            data: { status: "paid", providerInvoiceId: invoiceId },
+            data: { status: "paid", providerInvoiceId: invoiceId, paidAt: new Date() },
           });
           if (claimed.count !== 1) return null;
           await tx.payment.updateMany({
@@ -284,6 +284,7 @@ export function createDonationsRepository(db: PrismaClient): DonationsRepository
               type: "monthly",
               amountCents,
               status: "paid",
+              paidAt: new Date(),
               anonymous: anchor.anonymous,
               message: anchor.message,
               subscriptionRef,

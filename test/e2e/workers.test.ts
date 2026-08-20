@@ -422,7 +422,15 @@ async function seedCampaignDonation(amountCents: number, opts?: { withRaffle?: b
     data: { storeId: store.id, slug: "reforma", title: "Reforma", status: "active" },
   });
   if (opts?.withRaffle ?? true) {
-    await db.raffle.create({ data: { campaignId: campaign.id, centsPerNumber: 5000 } });
+    await db.raffle.create({
+      data: {
+        campaignId: campaign.id,
+        sequence: 1,
+        title: "Sorteio",
+        startsAt: new Date("2026-01-01T00:00:00Z"),
+        centsPerNumber: 5000,
+      },
+    });
   }
   const donation = await db.donation.create({
     data: {

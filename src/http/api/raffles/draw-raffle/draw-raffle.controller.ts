@@ -1,36 +1,31 @@
 import { randomBytes } from "node:crypto";
 import type { FastifyPluginAsync } from "fastify";
-import { z } from "zod";
+import type { z } from "zod";
 import { db } from "../../../../infra/db/client.js";
 import { NotFoundError } from "../../../../shared/errors.js";
 import { requireWritableStore } from "../../../hooks/store-role.js";
-import { createCampaignsRepository } from "../../campaigns/campaigns.repository.js";
-import { resolveStoreForRole } from "../../campaigns/manage.helpers.js";
+import { resolveCampaignForRaffle } from "../manage.helpers.js";
 import { createRafflesRepository, toRaffleResponse } from "../raffles.repository.js";
-import { DrawRaffleResponse } from "../raffles.schema.js";
-
-const Params = z.object({ slug: z.string(), campaignSlug: z.string() });
+import { DrawRaffleResponse, RaffleSequenceParams } from "../raffles.schema.js";
 
 export const drawRaffleRoute: FastifyPluginAsync = async (app) => {
   const repo = createRafflesRepository(db);
   app.post(
-    "/stores/:slug/campaigns/:campaignSlug/raffle/draw",
+    "/stores/:slug/campaigns/:campaignSlug/raffles/:sequence/draw",
     {
       config: { permissions: { any: ["store_owner", "store_admin"] } },
       schema: {
         operationId: "drawRaffle",
         tags: ["raffles"],
-        params: Params,
+        params: RaffleSequenceParams,
         response: { 202: DrawRaffleResponse },
       },
     },
     async (req, reply) => {
-      const store = await resolveStoreForRole(req, "admin");
+      const { sequence } = req.params as z.infer<typeof RaffleSequenceParams>;
+      const { store, campaign } = await resolveCampaignForRaffle(req, "admin");
       requireWritableStore(req, store);
-      const { campaignSlug } = req.params as { campaignSlug: string };
-      const campaign = await createCampaignsRepository(db).findBySlug(store.id, campaignSlug);
-      if (!campaign) throw new NotFoundError("campaign_not_found");
-      const current = await repo.findByCampaignId(campaign.id);
+      const current = await repo.findBySequence(campaign.id, sequence);
       if (!current) throw new NotFoundError("raffle_not_found");
       // Seed nasce agora, não na configuração: publicá-la antes permitiria calcular
       // quanto doar para cair no número vencedor (ver D7).

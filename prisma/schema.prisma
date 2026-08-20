@@ -472,7 +472,7 @@ model Campaign {
 
   store     Store      @relation(fields: [storeId], references: [id], onDelete: Cascade)
   donations Donation[]
-  raffle    Raffle?
+  raffles   Raffle[]
 
   @@unique([storeId, slug])
   @@index([storeId, status, createdAt(sort: Desc), id(sort: Desc)])
@@ -495,6 +495,10 @@ model Donation {
   providerInvoiceId      String?        @unique @map("provider_invoice_id")
   subscriptionCancelledAt DateTime?     @map("subscription_cancelled_at")
   raffleGranted          Boolean        @default(false) @map("raffle_granted")
+  /// Momento em que a doação virou `paid`. É o que decide a janela do sorteio —
+  /// `createdAt` é quando o checkout abriu, e um Pix pago horas depois cairia na
+  /// janela errada.
+  paidAt                 DateTime?      @map("paid_at")
   expiresAt              DateTime?      @map("expires_at")
   createdAt              DateTime       @default(now()) @map("created_at")
   updatedAt              DateTime       @updatedAt @map("updated_at")
@@ -514,8 +518,16 @@ model Donation {
 }
 
 model Raffle {
-  id             String       @id @default(uuid()) @db.Uuid
-  campaignId     String       @unique @map("campaign_id") @db.Uuid
+  id         String @id @default(uuid()) @db.Uuid
+  campaignId String @map("campaign_id") @db.Uuid
+  /// Ordem dentro da campanha e identidade na URL. Atribuída pelo servidor.
+  sequence   Int
+  title      String
+  /// Janela de validade: a doação concorre ao sorteio cuja janela contém o pagamento.
+  /// `endsAt` nulo é o sorteio corrente — só o de maior `startsAt` pode ficar sem fim.
+  startsAt   DateTime  @map("starts_at")
+  endsAt     DateTime? @map("ends_at")
+
   centsPerNumber Int          @map("cents_per_number")
   drawAt         DateTime?    @map("draw_at")
   status         RaffleStatus @default(open)
@@ -530,6 +542,8 @@ model Raffle {
   prizes   RafflePrize[]
   entries  RaffleEntry[]
 
+  @@unique([campaignId, sequence])
+  @@index([campaignId, startsAt])
   @@map("raffles")
 }
 

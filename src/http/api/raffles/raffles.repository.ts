@@ -9,6 +9,7 @@ import {
 } from "../../../lib/cursor.js";
 import { ConflictError } from "../../../shared/errors.js";
 import { drawWinners, RAFFLE_ALGORITHM } from "./draw.js";
+import { findWindowConflict, resolveRaffleForDonation } from "./raffle-window.js";
 import { RAFFLE_MAX_NUMBERS_PER_DONATION, type RafflePrizeInput } from "./raffles.schema.js";
 
 const RAFFLE_INCLUDE = {
@@ -29,14 +30,20 @@ export type EntryWithUser = Prisma.RaffleEntryGetPayload<{
   include: { user: { select: { name: true } }; donation: { select: { anonymous: true } } };
 }>;
 
+export type RaffleConfigData = {
+  title: string;
+  centsPerNumber: number;
+  startsAt: Date;
+  endsAt: Date | null;
+  drawAt: Date | null;
+  prizes: RafflePrizeInput[];
+};
+
 export interface RafflesRepository {
-  upsertConfig(input: {
-    campaignId: string;
-    centsPerNumber: number;
-    drawAt: Date | null;
-    prizes: RafflePrizeInput[];
-  }): Promise<RaffleWithPrizes>;
-  findByCampaignId(campaignId: string): Promise<RaffleWithPrizes | null>;
+  create(input: RaffleConfigData & { campaignId: string }): Promise<RaffleWithPrizes>;
+  updateConfig(raffleId: string, input: RaffleConfigData): Promise<RaffleWithPrizes>;
+  listByCampaignId(campaignId: string): Promise<RaffleWithPrizes[]>;
+  findBySequence(campaignId: string, sequence: number): Promise<RaffleWithPrizes | null>;
   countEntries(raffleId: string): Promise<{ entries: number; participants: number }>;
   grantNumbersForDonation(donationId: string, log: FastifyBaseLogger): Promise<number>;
   listEntriesCursor(args: {
@@ -117,43 +124,127 @@ export function prizeCreateData(
   }));
 }
 
+/**
+ * Recusa janela que colide com a de outro sorteio da mesma campanha. Duas janelas
+ * sobrepostas deixariam a mesma doação elegível a dois sorteios, e a resolução teria
+ * de escolher por critério arbitrário.
+ */
+async function assertWindowFree(
+  tx: Prisma.TransactionClient,
+  input: {
+    campaignId: string;
+    startsAt: Date;
+    endsAt: Date | null;
+    exceptRaffleId?: string | undefined;
+  },
+): Promise<void> {
+  const conflict = await findWindowConflict(tx, input);
+  if (!conflict) return;
+  // Mensagem específica quando o estorvo é o sorteio sem fim: "sobreposição" não diz
+  // à pessoa o que fazer, e o que ela precisa fazer é dar um fim à janela do corrente.
+  throw new ConflictError(
+    conflict.openEnded && input.endsAt === null
+      ? "raffle_open_ended_conflict"
+      : "raffle_window_overlap",
+  );
+}
+
 export function createRafflesRepository(db: PrismaClient): RafflesRepository {
   return {
-    upsertConfig: ({ campaignId, centsPerNumber, drawAt, prizes }) =>
+    create: (input) =>
       db.$transaction(async (tx) => {
-        const existing = await tx.raffle.findUnique({
-          where: { campaignId },
-          select: { id: true },
+        await assertWindowFree(tx, {
+          campaignId: input.campaignId,
+          startsAt: input.startsAt,
+          endsAt: input.endsAt,
         });
-        const raffle = await tx.raffle.upsert({
-          where: { campaignId },
-          create: { campaignId, centsPerNumber, drawAt },
-          update: { centsPerNumber, drawAt },
+        // A sequência é do servidor: dentro da transação, max+1. Duas criações
+        // simultâneas colidem no @@unique([campaignId, sequence]) e a segunda repete.
+        const last = await tx.raffle.findFirst({
+          where: { campaignId: input.campaignId },
+          orderBy: { sequence: "desc" },
+          select: { sequence: true },
         });
-        // Prêmios são substituídos por inteiro: o PUT é a configuração completa.
-        // Só é chamado com o sorteio "open" (o controller garante), então nenhum
-        // winnerEntryId é destruído aqui.
-        await tx.rafflePrize.deleteMany({ where: { raffleId: raffle.id } });
-        await tx.rafflePrize.createMany({ data: prizeCreateData(raffle.id, prizes) });
-        // Backfill só na criação: sorteio configurado depois de a campanha já ter
-        // recebido doações. Essas doações não vão gerar outro donation.received, então
-        // sem isto quem doou antes do PUT ficaria com zero números para sempre. Num PUT
-        // de reconfiguração não há o que preencher — dali em diante o outbox concede.
-        if (!existing) {
-          const ungranted = await tx.donation.findMany({
-            where: { campaignId, status: "paid", raffleGranted: false },
-            select: { id: true, userId: true, amountCents: true },
-            orderBy: { createdAt: "asc" },
-          });
-          for (const donation of ungranted) {
-            await grantWithinTx(tx, raffle, donation);
-          }
+        const raffle = await tx.raffle.create({
+          data: {
+            campaignId: input.campaignId,
+            sequence: (last?.sequence ?? 0) + 1,
+            title: input.title,
+            centsPerNumber: input.centsPerNumber,
+            startsAt: input.startsAt,
+            endsAt: input.endsAt,
+            drawAt: input.drawAt,
+          },
+        });
+        await tx.rafflePrize.createMany({ data: prizeCreateData(raffle.id, input.prizes) });
+        // Backfill: doação já paga que resolve para este sorteio ganha os números agora.
+        // Sem isso, "doação num vão vai para o próximo sorteio" só valeria para quem
+        // doasse depois de o sorteio existir.
+        const pending = await tx.donation.findMany({
+          where: { campaignId: input.campaignId, status: "paid", raffleGranted: false },
+          select: {
+            id: true,
+            userId: true,
+            amountCents: true,
+            paidAt: true,
+            createdAt: true,
+          },
+          orderBy: { createdAt: "asc" },
+        });
+        for (const donation of pending) {
+          const target = await resolveRaffleForDonation(
+            tx,
+            input.campaignId,
+            donation.paidAt ?? donation.createdAt,
+          );
+          if (target?.id !== raffle.id) continue;
+          await grantWithinTx(tx, raffle, donation);
         }
         return tx.raffle.findUniqueOrThrow({ where: { id: raffle.id }, include: RAFFLE_INCLUDE });
       }),
 
-    findByCampaignId: (campaignId) =>
-      db.raffle.findUnique({ where: { campaignId }, include: RAFFLE_INCLUDE }),
+    updateConfig: (raffleId, input) =>
+      db.$transaction(async (tx) => {
+        const current = await tx.raffle.findUniqueOrThrow({
+          where: { id: raffleId },
+          select: { campaignId: true },
+        });
+        await assertWindowFree(tx, {
+          campaignId: current.campaignId,
+          startsAt: input.startsAt,
+          endsAt: input.endsAt,
+          exceptRaffleId: raffleId,
+        });
+        await tx.raffle.update({
+          where: { id: raffleId },
+          data: {
+            title: input.title,
+            centsPerNumber: input.centsPerNumber,
+            startsAt: input.startsAt,
+            endsAt: input.endsAt,
+            drawAt: input.drawAt,
+          },
+        });
+        // Prêmios são substituídos por inteiro: o PUT é a configuração completa.
+        // Só é chamado com o sorteio "open" (o controller garante), então nenhum
+        // winnerEntryId é destruído aqui.
+        await tx.rafflePrize.deleteMany({ where: { raffleId } });
+        await tx.rafflePrize.createMany({ data: prizeCreateData(raffleId, input.prizes) });
+        return tx.raffle.findUniqueOrThrow({ where: { id: raffleId }, include: RAFFLE_INCLUDE });
+      }),
+
+    listByCampaignId: (campaignId) =>
+      db.raffle.findMany({
+        where: { campaignId },
+        include: RAFFLE_INCLUDE,
+        orderBy: { sequence: "asc" },
+      }),
+
+    findBySequence: (campaignId, sequence) =>
+      db.raffle.findUnique({
+        where: { campaignId_sequence: { campaignId, sequence } },
+        include: RAFFLE_INCLUDE,
+      }),
 
     countEntries: async (raffleId) => {
       const [entries, participants] = await Promise.all([
@@ -173,10 +264,18 @@ export function createRafflesRepository(db: PrismaClient): RafflesRepository {
             campaignId: true,
             amountCents: true,
             status: true,
+            paidAt: true,
+            createdAt: true,
           },
         });
         if (!donation || donation.status !== "paid" || !donation.campaignId) return 0;
-        const raffle = await tx.raffle.findUnique({ where: { campaignId: donation.campaignId } });
+        // paidAt nulo é doação do histórico, anterior à coluna: createdAt é a melhor
+        // aproximação e nenhuma delas está em campanha com dois sorteios.
+        const raffle = await resolveRaffleForDonation(
+          tx,
+          donation.campaignId,
+          donation.paidAt ?? donation.createdAt,
+        );
         if (!raffle || raffle.status !== "open") return 0;
         return grantWithinTx(tx, raffle, donation, log);
       }),
@@ -262,6 +361,10 @@ export function toRaffleResponse(
 ) {
   return {
     campaignSlug: raffle.campaign.slug,
+    sequence: raffle.sequence,
+    title: raffle.title,
+    startsAt: raffle.startsAt.toISOString(),
+    endsAt: raffle.endsAt?.toISOString() ?? null,
     centsPerNumber: raffle.centsPerNumber,
     drawAt: raffle.drawAt?.toISOString() ?? null,
     status: raffle.status,
