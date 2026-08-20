@@ -394,57 +394,78 @@ em ADR-017 (veja também § 11 da spec).
 
 ## Sorteio
 
-Um **sorteio** (`Raffle`) é uma chance de ganhar um prêmio (ou múltiplos, até
-200) anexado a uma campanha. Participantes são doadores da campanha que pagaram
-(status `paid`), que automaticamente recebem **números de sorteio** concedidos no
-relay (worker `relayOutbox`) quando a doação é `paid`.
+Um **sorteio** (`Raffle`) pertence a uma campanha e vale para um **período**. Uma
+campanha pode ter vários: campanha longa (reforma que dura um ano) tem tipicamente
+um sorteio por mês, com prêmios próprios, sem fragmentar a meta em várias
+campanhas.
 
-Dois campos garantem idempotência e atomicidade:
-- `raffleGranted` (`Boolean`, default `false`) — marca que os números da doação
-  já foram gerados e inseridos em `RaffleEntry`.
-- `nextNumber` (global, tipo `Int`, default `1`, **nunca descresce**) — contador
-  de números já alocados; sempre incrementa, mesmo se uma geração falha e precisa
-  retry (garante sem gaps).
+Identidade e janela:
+- `sequence` (`Int`) — ordem dentro da campanha, atribuída pelo servidor (`max+1`
+  dentro da transação) e usada na URL. `@@unique([campaignId, sequence])`.
+- `startsAt` / `endsAt` — a janela, semiaberta `[startsAt, endsAt)`. `endsAt` nulo
+  é o sorteio corrente; sortear fecha a janela (`endsAt = drawnAt`), porque
+  sorteio realizado não recebe mais doação — sem isso ele valeria até o infinito e
+  bloquearia qualquer sorteio novo, sem saída, já que reconfigurar exige `open`.
+- Janelas de sorteios da mesma campanha não podem se sobrepor (409
+  `raffle_window_overlap`, ou `raffle_open_ended_conflict` quando o estorvo é o
+  corrente sem fim).
 
-Quando doação é marcada `paid` no relay:
-1. Carrega a doação; se `raffleGranted = true`, retorna (idempotência).
-2. Lê o campo global `nextNumber` da campanha via `SELECT ... FOR UPDATE`.
-3. Calcula `count = sum(qty)` de todos os prêmios da campanha.
-4. Para cada número `[nextNumber, nextNumber + count - 1]`, cria um `RaffleEntry`
-   vinculando `(donationId, raffleId, numberGranted)`.
-5. Atualiza `nextNumber += count` e seta `raffleGranted = true` na mesma transação.
+**Resolução doação → sorteio** (`raffle-window.ts`), a partir de
+`Donation.paidAt` (`createdAt` é quando o checkout abriu; um Pix pago horas
+depois cairia na janela errada):
+1. o sorteio cuja janela contém `paidAt` — **de qualquer status**; concede números
+   só se ele estiver `open`;
+2. senão, o sorteio `open` com o menor `startsAt` posterior a `paidAt` — o próximo
+   que começar;
+3. senão, nenhum: a doação fica pendente até alguém criar um sorteio que a cubra.
 
-**Algoritmo de sorteio:** `sha256-counter-v1` é um gerador de números
-determinístico e auditável. Seeded uma única vez na execução do `draw` (não
-antes):
-1. Admin da campanha chama `POST /campaigns/:id/raffles/:raffleId/draw`.
-2. Sorteia um `seed` (UUID gerado in-loco, nunca pré-persistido) — este é o
-   ponto de confiança.
-3. Calcula `sha256(seed + ":" + counter)` para cada número do sorteio,
-   ordena ascendente de hash, escolhe o primeiro (número vencedor).
-4. Persiste o resultado em `RaffleResult` com `seed` gravado, `algorithm:
-   "sha256-counter-v1"` e `drawnAt`.
+O passo 1 ignorar o status é o que impede a doação de agosto — cujo sorteio já foi
+realizado — de escorregar para setembro pelo passo 2 e concorrer duas vezes com o
+mesmo dinheiro.
 
-Auditor externo consegue:
-- Ler `RaffleResult.seed`.
-- Coletar participantes válidos (doações `paid`, com `raffleGranted = true`).
-- Recalcular `sha256(seed + ":" + [cada número])`, reordenar, confirmar vencedor.
+Criar um sorteio **reavalia** as doações `paid` da campanha com
+`raffleGranted = false` e concede as que resolvem para ele (backfill). Sem isso a
+regra do passo 2 só valeria para quem doasse depois de o sorteio existir.
 
-Semelhante a loterias públicas em blockchain — o operador publica a seed *depois*
-de a transação estar selada (neste caso, API persiste).
+Concessão de números (worker `relayOutbox`, evento `donation.received`):
+- `Donation.raffleGranted` reivindica a doação (`updateMany` guardado) — uma doação
+  concede em no máximo um sorteio, então o booleano basta.
+- `Raffle.nextNumber` é **por sorteio**: cada sorteio numera a partir de 1. A faixa
+  é reservada por `UPDATE ... RETURNING` guardado por `status = 'open'`, que trava
+  a linha e recusa número emitido depois do draw.
+- Doação abaixo de `centsPerNumber` gera zero números e **não** marca
+  `raffleGranted`: o passo 1 a resolve sempre para a mesma janela, então conceder
+  zero é idempotente.
+- Estorno apaga as entradas do sorteio ainda `open` e devolve
+  `raffleGranted = false`.
 
-A seed não pode existir antes do draw (D7) porque:
-1. Permitir pré-geração deixaria brechas (admin sorteia, não gosta, sorteia
-   novamente com seed diferente — fraude).
-2. Usuário não consegue "adivinhar" seed antes da transação ser confirmada
-   (criptograficamente infeasível em 256 bits).
+**Algoritmo de sorteio:** `sha256-counter-v1`, determinístico e auditável. A seed
+(16 bytes aleatórios) nasce no `draw`, nunca antes: publicá-la de véspera deixaria
+o doador calcular quanto doar para cair no número vencedor (D7/ADR-017). Para o
+prêmio de posição `p`: `sha256(seed + ":" + p)` → primeiros 8 bytes como inteiro →
+`mod` do tamanho do pool restante → índice no pool ordenado por número asc; o
+vencedor sai do pool, então ninguém ganha dois prêmios. Sorteio sem participante é
+recusado (`raffle_has_no_entries`) e continua `open`.
 
-**Mascaramento de identidade (D11):** rotas públicas de visualização
-(`GET /raffles/:id/participants`) devolvem `toRaffleResponse()`, que mascara
-nome do doador: `"João da Silva"` vira `"J. Silva"` (inicial do primeiro + sobrenome
-completo, sem números de CPF ou dados financeiros). Vencedor também é mascarado
-mesmo em doação nomeada (mostro `"J. Silva"` ganhou, não `"João Felipe da Silva"`)
-— risco jurídico de doador ter identidade exposição. Anônimo continua anônimo.
+Rotas (todas sob a campanha, registradas em `campaigns/index.ts`):
+
+| Método | Rota | Auth |
+|---|---|---|
+| POST | `/stores/:slug/campaigns/:campaignSlug/raffles` | owner/admin |
+| GET | `/stores/:slug/campaigns/:campaignSlug/raffles` | público |
+| GET | `/stores/:slug/campaigns/:campaignSlug/raffles/:sequence` | público |
+| PUT | `/stores/:slug/campaigns/:campaignSlug/raffles/:sequence` | owner/admin |
+| POST | `/stores/:slug/campaigns/:campaignSlug/raffles/:sequence/draw` | owner/admin |
+| GET | `/stores/:slug/campaigns/:campaignSlug/raffles/:sequence/entries` | público |
+
+`CreateCampaignBody.raffle` cria o sorteio de `sequence 1` na mesma transação da
+campanha: com duas chamadas, falha no sorteio deixaria a campanha nascida pela
+metade sem ninguém saber.
+
+**Mascaramento de identidade (D11):** rota pública de participantes devolve
+`maskName()` — `"Maria Silva"` vira `"Maria S."`, doação anônima vira
+`"Doador anônimo"`. Vale também para o vencedor: entregar o prêmio é da gestão,
+que vê identidade completa. Email, telefone e id jamais saem daqui.
 
 ## Onboarding do núcleo (Connect)
 

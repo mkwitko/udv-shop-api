@@ -303,6 +303,77 @@ describe("janela do sorteio", () => {
     ).rejects.toMatchObject({ message: "raffle_open_ended_conflict" });
   });
 
+  it("sortear fecha a janela do sorteio sem fim, liberando o próximo", async () => {
+    const { store, campaign, donor } = await seedCampaign();
+    const corrente = await seedRaffle({
+      campaignId: campaign.id,
+      sequence: 1,
+      startsAt: AGOSTO,
+      endsAt: null,
+    });
+    await db.rafflePrize.create({
+      data: { raffleId: corrente.id, position: 1, title: "Cesta" },
+    });
+    const donation = await seedPaidDonation({
+      storeId: store.id,
+      campaignId: campaign.id,
+      userId: donor.id,
+      paidAt: new Date("2026-08-10T12:00:00Z"),
+    });
+    const repo = createRafflesRepository(db);
+    await repo.grantNumbersForDonation(donation.id, app.log);
+
+    const drawn = await repo.draw(corrente.id, "seed-de-teste");
+    // Sorteio realizado não recebe mais doação: a janela aberta virou fechada no draw.
+    expect(drawn.endsAt).not.toBeNull();
+
+    // ...e por isso o sorteio seguinte não colide mais.
+    const proximo = await repo.create({
+      campaignId: campaign.id,
+      title: "Setembro",
+      centsPerNumber: 1000,
+      startsAt: SETEMBRO,
+      endsAt: null,
+      drawAt: null,
+      prizes: [{ position: 1, title: "Camiseta" }],
+    });
+    expect(proximo.sequence).toBe(2);
+  });
+
+  it("doação paga depois do sorteio realizado concorre ao seguinte", async () => {
+    const { store, campaign, donor } = await seedCampaign();
+    const corrente = await seedRaffle({
+      campaignId: campaign.id,
+      sequence: 1,
+      startsAt: AGOSTO,
+      endsAt: null,
+      status: "drawn",
+    });
+    // Janela fechada no momento do sorteio, como o draw passa a gravar.
+    await db.raffle.update({
+      where: { id: corrente.id },
+      data: { drawnAt: SETEMBRO, endsAt: SETEMBRO },
+    });
+    const proximo = await seedRaffle({
+      campaignId: campaign.id,
+      sequence: 2,
+      startsAt: SETEMBRO,
+      endsAt: null,
+    });
+    const donation = await seedPaidDonation({
+      storeId: store.id,
+      campaignId: campaign.id,
+      userId: donor.id,
+      paidAt: new Date("2026-09-05T12:00:00Z"),
+      amountCents: 2000,
+    });
+
+    const granted = await createRafflesRepository(db).grantNumbersForDonation(donation.id, app.log);
+
+    expect(granted).toBe(2);
+    expect(await db.raffleEntry.count({ where: { raffleId: proximo.id } })).toBe(2);
+  });
+
   it("doação sem paidAt (histórico) cai na janela pelo createdAt", async () => {
     const { store, campaign, donor } = await seedCampaign();
     const corrente = await seedRaffle({

@@ -303,11 +303,21 @@ export function createRafflesRepository(db: PrismaClient): RafflesRepository {
       db.$transaction(async (tx) => {
         // Reivindicação atômica: dois cliques no botão de sortear não podem produzir
         // dois sorteios. O segundo perde a claim e recebe 409.
+        const drawnAt = new Date();
         const claimed = await tx.raffle.updateMany({
           where: { id: raffleId, status: "open" },
-          data: { status: "drawn", seed, drawnAt: new Date(), algorithm: RAFFLE_ALGORITHM },
+          data: { status: "drawn", seed, drawnAt, algorithm: RAFFLE_ALGORITHM },
         });
         if (claimed.count !== 1) throw new ConflictError("raffle_not_open");
+
+        // Sorteio realizado não recebe mais doação: a janela aberta termina aqui. Sem
+        // isto o sorteio corrente valeria até o infinito mesmo depois de sorteado, e
+        // qualquer sorteio novo colidiria com ele — sem saída, porque reconfigurar
+        // exige `open`. Doação paga depois do draw passa a cair no próximo sorteio.
+        await tx.raffle.updateMany({
+          where: { id: raffleId, endsAt: null },
+          data: { endsAt: drawnAt },
+        });
 
         const entries = await tx.raffleEntry.findMany({
           where: { raffleId },
