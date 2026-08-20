@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { RaffleConfigInput } from "../raffles/raffles.schema.js";
 import { SLUG_REGEX } from "../stores/stores.schema.js";
 
 export const CAMPAIGN_STATUSES = ["draft", "active", "paused", "finished"] as const;
@@ -12,6 +13,11 @@ export const CreateCampaignBody = z.object({
   goalCents: z.number().int().positive().max(1_000_000_000).optional(),
   acceptedTypes: z.enum(CAMPAIGN_ACCEPTED_TYPES).default("both"),
   endsAt: z.string().datetime().optional(),
+  /**
+   * Sorteio junto da campanha. Criado na mesma transação: com duas chamadas, uma
+   * falha no sorteio deixaria a campanha nascida pela metade sem ninguém saber.
+   */
+  raffle: RaffleConfigInput.optional(),
 });
 export type CreateCampaignBody = z.infer<typeof CreateCampaignBody>;
 
@@ -59,3 +65,13 @@ export const ListCampaignsQuery = z.object({
     .default(false),
 });
 export type ListCampaignsQuery = z.infer<typeof ListCampaignsQuery>;
+
+/** Entrada da sugestão de história. `draft` é o que a comunidade já escreveu. */
+export const SuggestStoryBody = z.object({
+  title: z.string().min(2).max(160),
+  draft: z.string().max(4000).optional(),
+  mode: z.enum(["create", "improve"]).default("create"),
+});
+export type SuggestStoryBody = z.infer<typeof SuggestStoryBody>;
+
+export const SuggestStoryResponse = z.object({ text: z.string() });

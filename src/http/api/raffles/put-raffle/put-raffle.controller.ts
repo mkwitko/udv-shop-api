@@ -1,12 +1,12 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { db } from "../../../../infra/db/client.js";
-import { ConflictError, NotFoundError, ValidationError } from "../../../../shared/errors.js";
+import { ConflictError, NotFoundError } from "../../../../shared/errors.js";
 import { requireWritableStore } from "../../../hooks/store-role.js";
 import { createCampaignsRepository } from "../../campaigns/campaigns.repository.js";
 import { resolveStoreForRole } from "../../campaigns/manage.helpers.js";
 import { createRafflesRepository, toRaffleResponse } from "../raffles.repository.js";
-import { PutRaffleBody, RaffleResponse } from "../raffles.schema.js";
+import { assertUniquePrizePositions, PutRaffleBody, RaffleResponse } from "../raffles.schema.js";
 
 const Params = z.object({ slug: z.string(), campaignSlug: z.string() });
 
@@ -31,10 +31,7 @@ export const putRaffleRoute: FastifyPluginAsync = async (app) => {
       const campaign = await createCampaignsRepository(db).findBySlug(store.id, campaignSlug);
       if (!campaign) throw new NotFoundError("campaign_not_found");
       const body = req.body as PutRaffleBody;
-      const positions = body.prizes.map((p) => p.position);
-      if (new Set(positions).size !== positions.length) {
-        throw new ValidationError("duplicate_prize_position");
-      }
+      assertUniquePrizePositions(body.prizes);
       const current = await repo.findByCampaignId(campaign.id);
       if (current && current.status !== "open") throw new ConflictError("raffle_not_open");
       if (current) {
@@ -52,7 +49,7 @@ export const putRaffleRoute: FastifyPluginAsync = async (app) => {
         prizes: body.prizes,
       });
       const counts = await repo.countEntries(raffle.id);
-      return toRaffleResponse(raffle, counts);
+      return toRaffleResponse(raffle, counts, app.gateways.r2.publicUrl);
     },
   );
 };

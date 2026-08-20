@@ -37,7 +37,7 @@ export const drawRaffleRoute: FastifyPluginAsync = async (app) => {
       const seed = randomBytes(16).toString("hex");
       const raffle = await repo.draw(current.id, seed);
       const counts = await repo.countEntries(raffle.id);
-      const response = toRaffleResponse(raffle, counts);
+      const response = toRaffleResponse(raffle, counts, app.gateways.r2.publicUrl);
       void reply.code(202).send({
         seed: raffle.seed as string,
         algorithm: raffle.algorithm,

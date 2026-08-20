@@ -70,6 +70,80 @@ describe("gestão de campanhas", () => {
     expect(dup.json().message).toBe("campaign_slug_taken");
   });
 
+  it("cria campanha com sorteio e prêmios na mesma chamada", async () => {
+    const store = await db.store.create({ data: { slug: "nx", name: "NX", status: "active" } });
+    const { token } = await registerWithRole(app, "admin-raffle@example.org", store.id, "admin");
+    const res = await app.inject({
+      method: "POST",
+      url: "/stores/nx/campaigns",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        slug: "reforma",
+        title: "Reforma do salão",
+        coverImage: "stores/nx/campaigns/capa.jpg",
+        raffle: {
+          centsPerNumber: 1000,
+          prizes: [
+            {
+              position: 1,
+              title: "Cesta de produtos",
+              description: "Café, mel e pão caseiro.",
+              images: ["stores/nx/prizes/cesta.jpg"],
+            },
+            { position: 2, title: "Camiseta bordada" },
+          ],
+        },
+      },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(res.json()).toMatchObject({
+      status: "draft",
+      coverImage: "stores/nx/campaigns/capa.jpg",
+      coverImageUrl: "https://cdn.fake/stores/nx/campaigns/capa.jpg",
+    });
+
+    const raffle = await app.inject({
+      method: "GET",
+      url: "/stores/nx/campaigns/reforma/raffle",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(raffle.statusCode).toBe(200);
+    expect(raffle.json()).toMatchObject({ status: "open", centsPerNumber: 1000 });
+    expect(raffle.json().prizes).toMatchObject([
+      {
+        position: 1,
+        title: "Cesta de produtos",
+        description: "Café, mel e pão caseiro.",
+        imageUrls: ["https://cdn.fake/stores/nx/prizes/cesta.jpg"],
+      },
+      { position: 2, title: "Camiseta bordada", description: null, images: [] },
+    ]);
+  });
+
+  it("sorteio inválido na criação não deixa campanha órfã", async () => {
+    const store = await db.store.create({ data: { slug: "nx", name: "NX", status: "active" } });
+    const { token } = await registerWithRole(app, "admin-dup@example.org", store.id, "admin");
+    const res = await app.inject({
+      method: "POST",
+      url: "/stores/nx/campaigns",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        slug: "reforma",
+        title: "Reforma do salão",
+        raffle: {
+          centsPerNumber: 1000,
+          prizes: [
+            { position: 1, title: "Aa" },
+            { position: 1, title: "Bb" },
+          ],
+        },
+      },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().message).toBe("duplicate_prize_position");
+    expect(await db.campaign.count({ where: { storeId: store.id } })).toBe(0);
+  });
+
   it("staff não cria campanha (403)", async () => {
     const store = await db.store.create({ data: { slug: "nx", name: "NX", status: "active" } });
     const { token } = await registerWithRole(app, "staff@example.org", store.id, "staff");
@@ -177,5 +251,59 @@ describe("gestão de campanhas", () => {
     });
     expect(res.statusCode).toBe(404);
     expect(res.json().message).toBe("campaign_not_found");
+  });
+});
+
+describe("sugestão de história por IA", () => {
+  let app: FastifyInstance;
+  let gateways: ReturnType<typeof buildFakeGateways>;
+
+  beforeAll(async () => {
+    gateways = buildFakeGateways();
+    app = await buildApp({ gateways });
+    await app.ready();
+  });
+  afterAll(() => app.close());
+  beforeEach(async () => {
+    await resetDb();
+    gateways.aiStoryCalls.length = 0;
+  });
+
+  it("admin recebe sugestão com o contexto que mandou", async () => {
+    const store = await db.store.create({ data: { slug: "nx", name: "NX", status: "active" } });
+    const { token } = await registerWithRole(app, "adm@example.org", store.id, "admin");
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/stores/nx/campaigns/story-suggestion",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { title: "Troca do telhado", mode: "improve", draft: "o telhado ta furado" },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().text).toContain("Troca do telhado");
+    expect(gateways.aiStoryCalls[0]).toMatchObject({
+      campaignTitle: "Troca do telhado",
+      mode: "improve",
+      draft: "o telhado ta furado",
+      storeName: "NX",
+    });
+    // sugestão não cria campanha nenhuma
+    expect(await db.campaign.count()).toBe(0);
+  });
+
+  it("staff não gasta cota: a rota é de owner/admin", async () => {
+    const store = await db.store.create({ data: { slug: "nx", name: "NX", status: "active" } });
+    const { token } = await registerWithRole(app, "st@example.org", store.id, "staff");
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/stores/nx/campaigns/story-suggestion",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { title: "Troca do telhado", mode: "create" },
+    });
+
+    expect(res.statusCode).toBe(403);
+    expect(gateways.aiStoryCalls).toHaveLength(0);
   });
 });

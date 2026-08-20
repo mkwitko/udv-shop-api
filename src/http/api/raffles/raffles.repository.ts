@@ -9,7 +9,7 @@ import {
 } from "../../../lib/cursor.js";
 import { ConflictError } from "../../../shared/errors.js";
 import { drawWinners, RAFFLE_ALGORITHM } from "./draw.js";
-import { RAFFLE_MAX_NUMBERS_PER_DONATION } from "./raffles.schema.js";
+import { RAFFLE_MAX_NUMBERS_PER_DONATION, type RafflePrizeInput } from "./raffles.schema.js";
 
 const RAFFLE_INCLUDE = {
   campaign: { select: { slug: true, storeId: true } },
@@ -34,7 +34,7 @@ export interface RafflesRepository {
     campaignId: string;
     centsPerNumber: number;
     drawAt: Date | null;
-    prizes: Array<{ position: number; title: string }>;
+    prizes: RafflePrizeInput[];
   }): Promise<RaffleWithPrizes>;
   findByCampaignId(campaignId: string): Promise<RaffleWithPrizes | null>;
   countEntries(raffleId: string): Promise<{ entries: number; participants: number }>;
@@ -100,6 +100,23 @@ async function grantWithinTx(
   return count;
 }
 
+/**
+ * Linhas de prêmio para `createMany`. Vive aqui porque a criação de campanha com
+ * sorteio grava os prêmios na mesma transação, sem passar pelo upsert.
+ */
+export function prizeCreateData(
+  raffleId: string,
+  prizes: RafflePrizeInput[],
+): Prisma.RafflePrizeCreateManyInput[] {
+  return prizes.map((p) => ({
+    raffleId,
+    position: p.position,
+    title: p.title,
+    description: p.description ?? null,
+    images: p.images ?? [],
+  }));
+}
+
 export function createRafflesRepository(db: PrismaClient): RafflesRepository {
   return {
     upsertConfig: ({ campaignId, centsPerNumber, drawAt, prizes }) =>
@@ -117,9 +134,7 @@ export function createRafflesRepository(db: PrismaClient): RafflesRepository {
         // Só é chamado com o sorteio "open" (o controller garante), então nenhum
         // winnerEntryId é destruído aqui.
         await tx.rafflePrize.deleteMany({ where: { raffleId: raffle.id } });
-        await tx.rafflePrize.createMany({
-          data: prizes.map((p) => ({ raffleId: raffle.id, position: p.position, title: p.title })),
-        });
+        await tx.rafflePrize.createMany({ data: prizeCreateData(raffle.id, prizes) });
         // Backfill só na criação: sorteio configurado depois de a campanha já ter
         // recebido doações. Essas doações não vão gerar outro donation.received, então
         // sem isto quem doou antes do PUT ficaria com zero números para sempre. Num PUT
@@ -243,6 +258,7 @@ export function maskName(name: string, anonymous: boolean): string {
 export function toRaffleResponse(
   raffle: RaffleWithPrizes,
   counts: { entries: number; participants: number },
+  publicUrl: (key: string) => string,
 ) {
   return {
     campaignSlug: raffle.campaign.slug,
@@ -257,6 +273,9 @@ export function toRaffleResponse(
     prizes: raffle.prizes.map((p) => ({
       position: p.position,
       title: p.title,
+      description: p.description,
+      images: p.images,
+      imageUrls: p.images.map(publicUrl),
       winner: p.winnerEntry
         ? {
             number: p.winnerEntry.number,

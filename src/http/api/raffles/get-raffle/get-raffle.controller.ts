@@ -38,7 +38,7 @@ export const getRaffleRoute: FastifyPluginAsync = async (app) => {
       const raffle = await repo.findByCampaignId(campaign.id);
       if (!raffle) throw new NotFoundError("raffle_not_found");
       const counts = await repo.countEntries(raffle.id);
-      return toRaffleResponse(raffle, counts);
+      return toRaffleResponse(raffle, counts, app.gateways.r2.publicUrl);
     },
   );
 };

@@ -6,6 +6,7 @@ import {
   KEYSET_ORDER_BY,
   toPage,
 } from "../../../lib/cursor.js";
+import { prizeCreateData } from "../raffles/raffles.repository.js";
 import type { CreateCampaignBody, UpdateCampaignBody } from "./campaigns.schema.js";
 
 const CAMPAIGN_INCLUDE = {
@@ -36,18 +37,33 @@ export interface CampaignsRepository {
 export function createCampaignsRepository(db: PrismaClient): CampaignsRepository {
   return {
     create: (storeId, data) =>
-      db.campaign.create({
-        data: {
-          storeId,
-          slug: data.slug,
-          title: data.title,
-          story: data.story ?? null,
-          coverImage: data.coverImage ?? null,
-          goalCents: data.goalCents ?? null,
-          acceptedTypes: data.acceptedTypes,
-          endsAt: data.endsAt ? new Date(data.endsAt) : null,
-        },
-        include: CAMPAIGN_INCLUDE,
+      db.$transaction(async (tx) => {
+        const campaign = await tx.campaign.create({
+          data: {
+            storeId,
+            slug: data.slug,
+            title: data.title,
+            story: data.story ?? null,
+            coverImage: data.coverImage ?? null,
+            goalCents: data.goalCents ?? null,
+            acceptedTypes: data.acceptedTypes,
+            endsAt: data.endsAt ? new Date(data.endsAt) : null,
+          },
+          include: CAMPAIGN_INCLUDE,
+        });
+        if (data.raffle) {
+          const raffle = await tx.raffle.create({
+            data: {
+              campaignId: campaign.id,
+              centsPerNumber: data.raffle.centsPerNumber,
+              drawAt: data.raffle.drawAt ? new Date(data.raffle.drawAt) : null,
+            },
+          });
+          // Sem backfill de números: campanha nasce agora, não existe doação paga
+          // anterior para conceder (ao contrário do PUT de configuração).
+          await tx.rafflePrize.createMany({ data: prizeCreateData(raffle.id, data.raffle.prizes) });
+        }
+        return campaign;
       }),
 
     update: (id, data) =>

@@ -222,7 +222,7 @@ describe("sorteio: draw determinístico e listagem pública", () => {
     expect((outboxEvent.payload as { raffleId: string }).raffleId).toBe(raffle.id);
 
     const gateways = buildFakeGateways();
-    const n = await relayOutbox({ db, email: gateways.email, log: logger });
+    const n = await relayOutbox({ db, email: gateways.email, woovi: gateways.woovi, log: logger });
     expect(n).toBe(1);
     expect(gateways.sentEmails).toHaveLength(2);
     for (const email of gateways.sentEmails) {

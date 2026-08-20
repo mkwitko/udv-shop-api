@@ -68,6 +68,63 @@ describe("configuração do sorteio", () => {
     expect(res.json().prizes).toHaveLength(3);
   });
 
+  it("prêmio guarda descrição e fotos; GET público devolve imageUrls", async () => {
+    const { store, campaign } = await seedCampaign();
+    const { token } = await registerWithRole(app, "admin-media@example.org", store.id, "admin");
+    const res = await app.inject({
+      method: "PUT",
+      url: `/stores/nx/campaigns/${campaign.slug}/raffle`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        centsPerNumber: 1000,
+        prizes: [
+          {
+            position: 1,
+            title: "Cesta de produtos",
+            description: "Cesta com café, mel e pão caseiro.",
+            images: ["stores/nx/prizes/cesta.jpg"],
+          },
+          { position: 2, title: "Camiseta bordada" },
+        ],
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().prizes).toMatchObject([
+      {
+        position: 1,
+        description: "Cesta com café, mel e pão caseiro.",
+        images: ["stores/nx/prizes/cesta.jpg"],
+        imageUrls: ["https://cdn.fake/stores/nx/prizes/cesta.jpg"],
+      },
+      { position: 2, description: null, images: [], imageUrls: [] },
+    ]);
+
+    const publico = await app.inject({
+      method: "GET",
+      url: `/stores/nx/campaigns/${campaign.slug}/raffle`,
+    });
+    expect(publico.statusCode).toBe(200);
+    expect(publico.json().prizes[0]).toMatchObject({
+      description: "Cesta com café, mel e pão caseiro.",
+      imageUrls: ["https://cdn.fake/stores/nx/prizes/cesta.jpg"],
+    });
+  });
+
+  it("foto de prêmio fora de stores/ → 400", async () => {
+    const { store, campaign } = await seedCampaign();
+    const { token } = await registerWithRole(app, "admin-key@example.org", store.id, "admin");
+    const res = await app.inject({
+      method: "PUT",
+      url: `/stores/nx/campaigns/${campaign.slug}/raffle`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        centsPerNumber: 1000,
+        prizes: [{ position: 1, title: "Cesta", images: ["https://evil.example.org/foto.jpg"] }],
+      },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
   it("PUT de novo substitui os prêmios por inteiro", async () => {
     const { store, campaign } = await seedCampaign();
     const { token } = await registerWithRole(app, "admin2@example.org", store.id, "admin");
