@@ -456,11 +456,20 @@ Rotas (todas sob a campanha, registradas em `campaigns/index.ts`):
 | GET | `/stores/:slug/campaigns/:campaignSlug/raffles/:sequence` | público |
 | PUT | `/stores/:slug/campaigns/:campaignSlug/raffles/:sequence` | owner/admin |
 | POST | `/stores/:slug/campaigns/:campaignSlug/raffles/:sequence/draw` | owner/admin |
+| PATCH | `/stores/:slug/campaigns/:campaignSlug/raffles/:sequence/status` | owner/admin |
 | GET | `/stores/:slug/campaigns/:campaignSlug/raffles/:sequence/entries` | público |
 
 `CreateCampaignBody.raffle` cria o sorteio de `sequence 1` na mesma transação da
 campanha: com duas chamadas, falha no sorteio deixaria a campanha nascida pela
 metade sem ninguém saber.
+
+**Cancelar e reabrir** (`PATCH .../status`, `open` ↔ `cancelled`): cancelar apaga as
+entradas, devolve `raffleGranted = false` e zera `nextNumber`; reabrir revalida a
+janela (outro sorteio pode tê-la ocupado) e refaz o backfill. Cancelado é ignorado na
+resolução e na sobreposição — ele não aconteceu, então não captura doação nem bloqueia
+o substituto no mesmo período. Sorteio `drawn` não transita
+(`invalid_raffle_transition`): desfazer um resultado publicado destrói a
+auditabilidade que é o ponto do sorteio.
 
 **Mascaramento de identidade (D11):** rota pública de participantes devolve
 `maskName()` — `"Maria Silva"` vira `"Maria S."`, doação anônima vira
