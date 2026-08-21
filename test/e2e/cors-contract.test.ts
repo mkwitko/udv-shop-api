@@ -57,6 +57,12 @@ describe("CORS e contrato OpenAPI", () => {
     };
     expect(Object.keys(spec.paths).length).toBeGreaterThan(20);
     expect(spec.paths["/stores/{slug}"]?.get?.security).toBeUndefined();
-    expect(spec.paths["/orders"]?.post?.security).toEqual([{ bearerAuth: [] }]);
+    expect(spec.paths["/orders/{id}"]?.get?.security).toEqual([{ bearerAuth: [] }]);
+    // Fluxo sem conta: bearer OU nada. O mesmo endpoint atende quem está logado e quem manda
+    // só nome e telefone.
+    expect(spec.paths["/orders"]?.post?.security).toEqual([{ bearerAuth: [] }, {}]);
+    expect(spec.paths["/interests"]?.post?.security).toEqual([{ bearerAuth: [] }, {}]);
+    // e o recibo público não tem nem a opção de bearer
+    expect(spec.paths["/orders/{id}/receipt"]?.get?.security).toBeUndefined();
   });
 });

@@ -1,6 +1,8 @@
+import { randomUUID } from "node:crypto";
 import type { FastifyPluginAsync } from "fastify";
 import { db } from "../../../../infra/db/client.js";
-import { requireUser } from "../../../hooks/auth.js";
+import { createGuestIdentityRepo, resolveActor } from "../../../../lib/guest-identity.js";
+import { ValidationError } from "../../../../shared/errors.js";
 import { createProductsRepository } from "../../products/products.repository.js";
 import { createStoresRepository } from "../../stores/stores.repository.js";
 import { createOrdersRepository, toOrderResponse } from "../orders.repository.js";
@@ -15,10 +17,13 @@ export const checkoutRoute: FastifyPluginAsync = async (app) => {
     stripe: app.gateways.stripe,
     woovi: app.gateways.woovi,
   });
+  const guests = createGuestIdentityRepo(db);
   app.post(
     "/orders",
     {
-      config: { permissions: { any: ["customer"] } },
+      // Público desde o fluxo sem conta: comprar de um núcleo não pode custar um cadastro. O
+      // rate limit por IP é o que segura criação de conta leve em massa.
+      config: { public: true, optionalAuth: true, rateLimit: { max: 5, timeWindow: "1 minute" } },
       schema: {
         operationId: "checkout",
         tags: ["orders"],
@@ -27,10 +32,26 @@ export const checkoutRoute: FastifyPluginAsync = async (app) => {
       },
     },
     async (req, reply) => {
-      const user = requireUser(req);
       const body = req.body as CheckoutBody;
-      const result = await service({ ...body, userId: user.sub });
-      void reply.code(201).send({ order: toOrderResponse(result.order), payment: result.payment });
+      const actor = await resolveActor(guests, {
+        sessionUserId: req.user?.sub,
+        contact: body.contact,
+      });
+      // A loja liga para combinar a entrega: um pedido sem telefone não serve para nada.
+      const contactPhone = body.contactPhone ?? body.contact?.phone;
+      if (!contactPhone) throw new ValidationError("contact_phone_required");
+      const publicToken = actor.guest ? randomUUID() : null;
+      const result = await service({
+        ...body,
+        contactPhone,
+        userId: actor.userId,
+        publicToken,
+      });
+      void reply.code(201).send({
+        order: toOrderResponse(result.order),
+        payment: result.payment,
+        receiptToken: publicToken,
+      });
     },
   );
 };

@@ -177,9 +177,26 @@ describe("POST /orders", () => {
     await app2.close();
   });
 
-  it("sem token → 401", async () => {
+  // A rota é pública desde o fluxo sem conta: corpo inválido é 400, e é a falta de identidade
+  // (nem sessão nem `contact`) que dá 401. Ver orders-guest.test.ts.
+  it("corpo inválido → 400", async () => {
     await seedStore();
     const res = await app.inject({ method: "POST", url: "/orders", payload: {} });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("sem token e sem contato → 401", async () => {
+    await seedStore();
+    const res = await app.inject({
+      method: "POST",
+      url: "/orders",
+      payload: {
+        storeSlug: "nucleo-a",
+        provider: "stripe",
+        items: [{ productSlug: "mel", qty: 1 }],
+        contactPhone: "11999990000",
+      },
+    });
     expect(res.statusCode).toBe(401);
   });
 });

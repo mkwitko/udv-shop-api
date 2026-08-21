@@ -20,7 +20,7 @@ export type CheckoutDeps = {
 
 export function createCheckoutService(deps: CheckoutDeps) {
   return async (
-    input: CheckoutBody & { userId: string },
+    input: CheckoutBody & { userId: string; contactPhone: string; publicToken: string | null },
   ): Promise<{ order: OrderWithDetails; payment: PaymentInstructions }> => {
     const store = await deps.stores.findBySlug(input.storeSlug);
     if (store?.status !== "active") throw new NotFoundError("store_not_found");
@@ -65,6 +65,7 @@ export function createCheckoutService(deps: CheckoutDeps) {
       applicationFeeCents,
       contactPhone: input.contactPhone,
       note: input.note ?? null,
+      publicToken: input.publicToken,
       expiresAt,
     });
     const paymentId = order.payment?.id;

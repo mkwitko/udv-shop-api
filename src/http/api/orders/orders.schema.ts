@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { GuestContact } from "../../../lib/guest-identity.js";
 
 export const RESERVATION_TTL_MINUTES = 30;
 
@@ -9,8 +10,11 @@ export const CheckoutBody = z.object({
     .array(z.object({ productSlug: z.string().min(1), qty: z.number().int().min(1).max(99) }))
     .min(1)
     .max(20),
-  contactPhone: z.string().min(8).max(20),
+  /** Opcional desde o fluxo sem conta: quem não está logado manda o telefone em `contact`. */
+  contactPhone: z.string().min(8).max(20).optional(),
   note: z.string().max(500).optional(),
+  /** Quem está comprando, quando não há sessão. Ignorado se houver Bearer token. */
+  contact: GuestContact.optional(),
 });
 export type CheckoutBody = z.infer<typeof CheckoutBody>;
 
@@ -49,6 +53,24 @@ export type PaymentInstructions = z.infer<typeof PaymentInstructions>;
 export const CheckoutResponse = z.object({
   order: OrderResponse,
   payment: PaymentInstructions,
+  /**
+   * Chave do recibo público, só para pedido feito sem conta. É como a tela de confirmação
+   * acompanha o Pix sem estar autenticada. Nulo para quem comprou logado.
+   */
+  receiptToken: z.string().nullable(),
+});
+
+/** Recibo público: o que aconteceu com o pagamento, nada sobre quem pagou. */
+export const OrderReceiptResponse = z.object({
+  id: z.string(),
+  status: z.string(),
+  totalCents: z.number().int(),
+  currency: z.string(),
+  store: z.object({ slug: z.string(), name: z.string() }),
+  items: z.array(
+    z.object({ name: z.string(), qty: z.number().int(), priceCents: z.number().int() }),
+  ),
+  createdAt: z.string(),
 });
 
 export const OrdersPageResponse = z.object({

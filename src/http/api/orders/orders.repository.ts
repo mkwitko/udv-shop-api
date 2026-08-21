@@ -41,6 +41,8 @@ export interface OrdersRepository {
     applicationFeeCents: number;
     contactPhone: string;
     note: string | null;
+    /** Chave do recibo público. Só vem preenchida quando o pedido nasce sem sessão. */
+    publicToken: string | null;
     expiresAt: Date;
   }): Promise<OrderWithDetails>;
   attachProviderId(paymentId: string, providerId: string): Promise<void>;
@@ -69,6 +71,11 @@ export interface OrdersRepository {
     cursor: string | null;
   }): Promise<CursorPage<OrderWithDetails>>;
   findByIdForUser(id: string, userId: string): Promise<OrderWithDetails | null>;
+  /**
+   * Recibo de quem comprou sem conta. O token é um uuid v4 sorteado por pedido: quem não o tem
+   * não acha o pedido, e ter o token não dá acesso a nada além dele.
+   */
+  findByPublicToken(id: string, token: string): Promise<OrderWithDetails | null>;
   findByIdForStore(id: string, storeId: string): Promise<OrderWithDetails | null>;
   updateOrderStatus(id: string, from: OrderStatus[], to: OrderStatus): Promise<boolean>;
   listExpiredPending(now: Date): Promise<Array<{ id: string }>>;
@@ -111,6 +118,7 @@ export function createOrdersRepository(db: PrismaClient): OrdersRepository {
             totalCents: input.totalCents,
             contactPhone: input.contactPhone,
             note: input.note,
+            publicToken: input.publicToken,
             expiresAt: input.expiresAt,
             items: { create: input.items },
             payment: {
@@ -262,6 +270,8 @@ export function createOrdersRepository(db: PrismaClient): OrdersRepository {
 
     findByIdForUser: (id, userId) =>
       db.order.findFirst({ where: { id, userId }, include: ORDER_INCLUDE }),
+    findByPublicToken: (id, token) =>
+      db.order.findFirst({ where: { id, publicToken: token }, include: ORDER_INCLUDE }),
     findByIdForStore: (id, storeId) =>
       db.order.findFirst({ where: { id, storeId }, include: ORDER_INCLUDE }),
 

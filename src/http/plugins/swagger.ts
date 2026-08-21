@@ -26,7 +26,13 @@ const transformWithSecurity: SwaggerTransform = (input) => {
     | { hide?: boolean; security?: unknown[]; operationId?: string }
     | undefined;
   if (schema && !schema.hide) {
-    if (input.route.config?.public !== true) schema.security = [{ bearerAuth: [] }];
+    if (input.route.config?.public !== true) {
+      schema.security = [{ bearerAuth: [] }];
+    } else if (input.route.config?.optionalAuth === true) {
+      // Bearer OU nada: é literalmente o contrato dos fluxos sem conta, onde o mesmo endpoint
+      // atende quem está logado e quem manda só nome e telefone.
+      schema.security = [{ bearerAuth: [] }, {}];
+    }
     const method = Array.isArray(input.route.method) ? input.route.method[0] : input.route.method;
     schema.operationId ??= operationIdFor(method ?? "get", input.url);
   }
