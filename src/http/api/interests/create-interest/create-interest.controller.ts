@@ -1,7 +1,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import { db } from "../../../../infra/db/client.js";
+import { createGuestIdentityRepo, resolveActor } from "../../../../lib/guest-identity.js";
 import { NotFoundError, ValidationError } from "../../../../shared/errors.js";
-import { requireUser } from "../../../hooks/auth.js";
 import { createProductsRepository } from "../../products/products.repository.js";
 import { createStoresRepository } from "../../stores/stores.repository.js";
 import { createInterestsRepository, toInterestResponse } from "../interests.repository.js";
@@ -11,10 +11,13 @@ export const createInterestRoute: FastifyPluginAsync = async (app) => {
   const interests = createInterestsRepository(db);
   const stores = createStoresRepository(db);
   const products = createProductsRepository(db);
+  const guests = createGuestIdentityRepo(db);
   app.post(
     "/interests",
     {
-      config: { permissions: { any: ["customer"] } },
+      // Público de propósito: dizer "me avise quando chegar" não vale uma senha. O rate limit
+      // por IP é o que segura criação de conta leve em massa.
+      config: { public: true, optionalAuth: true, rateLimit: { max: 5, timeWindow: "1 minute" } },
       schema: {
         operationId: "createInterest",
         tags: ["interests"],
@@ -23,8 +26,7 @@ export const createInterestRoute: FastifyPluginAsync = async (app) => {
       },
     },
     async (req, reply) => {
-      const user = requireUser(req);
-      const { storeSlug, productSlug, qty, note } = req.body as CreateInterestBody;
+      const { storeSlug, productSlug, qty, note, contact } = req.body as CreateInterestBody;
       const store = await stores.findBySlug(storeSlug);
       if (store?.status !== "active") throw new NotFoundError("store_not_found");
       const product = await products.findBySlug(store.id, productSlug);
@@ -34,13 +36,17 @@ export const createInterestRoute: FastifyPluginAsync = async (app) => {
       if (product.availability !== "on_demand" && product.stock > 0) {
         throw new ValidationError("product_available");
       }
+      const actor = await resolveActor(guests, { sessionUserId: req.user?.sub, contact });
       const interest = await interests.upsertOpen({
         productId: product.id,
-        userId: user.sub,
+        userId: actor.userId,
         qty,
         note: note ?? null,
       });
-      void reply.code(201).send(toInterestResponse(interest));
+      const response = toInterestResponse(interest);
+      // O upsert é por (produto, pessoa): se o contato digitado casou com quem já tinha um
+      // interesse aberto, a resposta não pode devolver a anotação daquela pessoa.
+      void reply.code(201).send(actor.guest ? { ...response, note: null } : response);
     },
   );
 };

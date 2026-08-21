@@ -4,8 +4,18 @@ import { AppError, ForbiddenError, UnauthorizedError } from "../../shared/errors
 import { type Persona, personasOf } from "../../shared/permissions.js";
 
 export async function authHook(req: FastifyRequest, _reply: FastifyReply): Promise<void> {
-  if (req.routeOptions.config.public === true) return;
   const header = req.headers.authorization;
+  if (req.routeOptions.config.public === true) {
+    // Rota de fluxo sem conta: quem chegou logado continua sendo ele mesmo em vez de virar
+    // uma conta leve nova. Sem header, segue anônimo — mas um Bearer que não vale ainda é um
+    // 401: quem se apresentou com credencial ruim não é tratado como visitante.
+    if (req.routeOptions.config.optionalAuth === true && header !== undefined) {
+      if (!header.startsWith("Bearer ")) throw new UnauthorizedError("missing_bearer_token");
+      const claims = await verifyAccessToken(header.slice("Bearer ".length));
+      req.user = { sub: claims.sub, platformAdmin: claims.platformAdmin, roles: claims.roles };
+    }
+    return;
+  }
   if (!header?.startsWith("Bearer ")) throw new UnauthorizedError("missing_bearer_token");
   const claims = await verifyAccessToken(header.slice("Bearer ".length));
   req.user = { sub: claims.sub, platformAdmin: claims.platformAdmin, roles: claims.roles };

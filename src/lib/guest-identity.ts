@@ -97,7 +97,7 @@ export function createGuestIdentityRepo(db: PrismaClient): GuestIdentityRepo {
  */
 export async function resolveActor(
   repo: GuestIdentityRepo,
-  input: { sessionUserId?: string; contact?: GuestContact },
+  input: { sessionUserId?: string | undefined; contact?: GuestContact | undefined },
 ): Promise<{ userId: string; guest: boolean }> {
   if (input.sessionUserId) return { userId: input.sessionUserId, guest: false };
   if (!input.contact) throw new UnauthorizedError("login_required");

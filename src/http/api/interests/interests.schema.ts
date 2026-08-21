@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { GuestContact } from "../../../lib/guest-identity.js";
 
 export const INTEREST_STATUSES = ["open", "notified", "converted", "cancelled"] as const;
 
@@ -7,6 +8,8 @@ export const CreateInterestBody = z.object({
   productSlug: z.string().min(1),
   qty: z.number().int().min(1).max(99).default(1),
   note: z.string().max(500).optional(),
+  /** Quem está pedindo o aviso, quando não há sessão. Ignorado se houver Bearer token. */
+  contact: GuestContact.optional(),
 });
 export type CreateInterestBody = z.infer<typeof CreateInterestBody>;
 
