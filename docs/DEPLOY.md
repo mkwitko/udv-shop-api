@@ -30,24 +30,28 @@ ver "Registro de DR" no fim.
 3. **Na VM**: instalar docker-ce + compose plugin, `awscli` v2 (aarch64), `age`, `curl`;
    criar swapfile de 4G; habilitar `unattended-upgrades` só para security. O usuário das
    units systemd é `ubuntu` — se o seu for outro, ajustar `User=` em `deploy/systemd/*.service`.
-4. **Criar o túnel** no painel da Cloudflare (Networking > Tunnels), rota
-   `api.<domínio>` → `http://api:3333`. Copiar o token para `TUNNEL_TOKEN`.
-5. **Criar o bucket de backup** no R2, separado do de uploads, e um token escopado só a ele
-   (`Workers R2 Storage Bucket Item Write`).
-6. **Retenção e imunidade no bucket** — o lock é sempre mais curto que o lifecycle, senão a
-   expiração automática bate no lock e o objeto nunca sai:
+4. **Túnel** — já provisionado em 2026-08-21 na conta `d0dfff1c29013a47c24804fe275d3b58`:
+   túnel `udv-shop`, id `95844146-c524-455e-b80f-f3ba5eb92056`, gerenciado remotamente
+   (`config_src=cloudflare`). Falta pegar o token: painel → Networking → Tunnels → `udv-shop`
+   → **Add a replica** → copiar a string `eyJ...` do comando exibido para `TUNNEL_TOKEN`.
+   O **Public Hostname** (`api.<domínio>` → `http://api:3333`) só dá para configurar depois
+   que o domínio da plataforma estiver como zona nesta conta — hoje a única zona é
+   `lexlaboral.com.br`.
+5. **Bucket de backup** — já provisionado: `udv-shop-backups` (região `enam`), separado do
+   bucket de uploads. Falta o token: R2 → Manage API Tokens → **Object Read & Write**
+   escopado **só** nesse bucket → `R2_BACKUP_ACCESS_KEY_ID` / `R2_BACKUP_SECRET_ACCESS_KEY`.
+   Não gere esse token por API/agente: o secret aparece uma única vez e acabaria gravado no
+   log da sessão.
+6. **Retenção e imunidade** — já aplicadas no bucket. Lifecycle: `hourly/` 2 dias, `daily/`
+   30 dias, `monthly/` 365 dias, `predeploy/` 30 dias. Bucket lock: `hourly/` 1 dia,
+   `daily/` 7 dias, `monthly/` 90 dias, `predeploy/` 7 dias. O lock é o que impede token
+   vazado (ou `rm` errado) de apagar backup dentro da janela, e é sempre **mais curto** que
+   o lifecycle — se fosse igual ou maior, a expiração automática bateria no lock e o objeto
+   nunca sairia. Conferir:
    ```sh
-   npx wrangler r2 bucket lifecycle add <bucket> --prefix hourly/    --expire-days 2
-   npx wrangler r2 bucket lifecycle add <bucket> --prefix daily/     --expire-days 30
-   npx wrangler r2 bucket lifecycle add <bucket> --prefix monthly/   --expire-days 365
-   npx wrangler r2 bucket lifecycle add <bucket> --prefix predeploy/ --expire-days 30
-   npx wrangler r2 bucket lock add <bucket> --name hourly    --prefix hourly/    --retention-days 1
-   npx wrangler r2 bucket lock add <bucket> --name daily     --prefix daily/     --retention-days 7
-   npx wrangler r2 bucket lock add <bucket> --name monthly   --prefix monthly/   --retention-days 90
-   npx wrangler r2 bucket lock add <bucket> --name predeploy --prefix predeploy/ --retention-days 7
+   npx wrangler r2 bucket lifecycle list udv-shop-backups
+   npx wrangler r2 bucket lock list udv-shop-backups
    ```
-   Conferir os nomes das flags com `npx wrangler r2 bucket lifecycle add --help` antes de
-   rodar; a CLI muda de versão para versão.
 7. **Gerar a chave de cifra**: `age-keygen -o .age-key` na VM, `chmod 600 .age-key`.
    Guardar a linha `# public key: age1...` em `BACKUP_AGE_RECIPIENT` **e** a chave privada
    num gerenciador de senhas fora da VM.
