@@ -1,0 +1,9 @@
+[Unit]
+Description=Reporta a falha de %i
+
+[Service]
+Type=oneshot
+# Arquivo pequeno e dedicado: o .env grande tem valores com espaço e caractere que o parser
+# de EnvironmentFile do systemd interpreta diferente do shell.
+EnvironmentFile=/opt/udv-shop/.alert-env
+ExecStart=/bin/sh -c 'curl -fsS -m 10 --retry 3 "$ALERT_HEALTHCHECK_URL/fail?msg=%i"'

@@ -1,0 +1,12 @@
+[Unit]
+Description=Backup do Postgres de hora em hora
+
+[Timer]
+OnCalendar=hourly
+# VM que ficou desligada roda o backup atrasado em vez de simplesmente pular
+Persistent=true
+# evita bater no minuto zero junto com todo mundo
+RandomizedDelaySec=180
+
+[Install]
+WantedBy=timers.target
