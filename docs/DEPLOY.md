@@ -61,7 +61,8 @@ ver "Registro de DR" no fim.
    restore-check 7 dias com grace de 1 dia, host-check 15min com grace de 15min. As três
    URLs vão no `.env` (`BACKUP_`/`RESTORE_CHECK_`/`HOST_CHECK_HEALTHCHECK_URL`); o
    `scripts/alert.sh` escolhe qual usar pelo nome da unit que falhou.
-9. **Monitor externo** em `https://api.<domínio>/health`.
+9. **Monitor externo** em `https://api.<domínio>/health/ready` — não `/health`. A primeira
+   toca o banco; a segunda só prova que o processo respondeu.
 10. **Domínio da plataforma no Worker**: acrescentar a rota em `wrangler.jsonc` do
     `udv-shop-web` (fica comentada lá) quando o domínio existir.
 
@@ -75,6 +76,34 @@ cp /caminho/do/repo/.env.example .env && chmod 600 .env   # e preencher
 docker login ghcr.io                                       # PAT com read:packages
 docker compose -f docker-compose.prod.yml up -d
 docker compose -f docker-compose.prod.yml logs -f api
+```
+
+**Nunca editar o `.env` com `sed`.** No lado de substituição do `sed`, `&` significa "todo o
+texto que casou", e as URLs de banco levam `&` entre os parâmetros. Um
+`sed -i "s|^DATABASE_URL=.*|DATABASE_URL=...?connection_limit=10&pool_timeout=20|" .env`
+grava a linha antiga inteira no lugar de cada `&`. Foi assim que a primeira
+`DATABASE_URL` de produção nasceu quebrada: a API subiu, o `migrate deploy` passou (usa
+`MIGRATE_DATABASE_URL`, sem query string) e toda rota que tocava o banco devolvia 500.
+Editar à mão, ou por um programa que não interprete o valor:
+
+```sh
+node -e '
+  const fs = require("fs");
+  const lines = fs.readFileSync(".env", "utf8").split("\n");
+  const i = lines.findIndex((l) => l.startsWith("DATABASE_URL="));
+  lines[i] = "DATABASE_URL=" + process.argv[1];
+  fs.writeFileSync(".env", lines.join("\n"), { mode: 0o600 });
+' 'postgresql://udv_app:SENHA@postgres:5432/udvshop?connection_limit=10&pool_timeout=20&connect_timeout=5'
+```
+
+Conferir o que ficou gravado, sem imprimir a senha:
+
+```sh
+node -e '
+  const l = require("fs").readFileSync(".env","utf8").split("\n").find((x)=>x.startsWith("DATABASE_URL="));
+  const u = new URL(l.slice(13));
+  console.log(u.username, u.host, u.pathname, [...u.searchParams]);
+'
 ```
 
 `POSTGRES_INITDB_ARGS` e os roles só agem com o volume vazio. Se o cluster subir com a
@@ -144,7 +173,7 @@ docker cp /tmp/restore.dump "$PG:/tmp/restore.dump"
 docker exec "$PG" pg_restore -U udv -d udvshop -j 4 --no-owner --no-acl /tmp/restore.dump
 # 5. subir
 docker compose -f docker-compose.prod.yml up -d api
-curl -fsS https://api.<domínio>/health
+curl -fsS https://api.<domínio>/health/ready   # {"status":"ok","database":"up"}
 ```
 
 Recriar o banco **não** recria os roles (eles são do cluster, não do banco), mas apaga os

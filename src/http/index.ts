@@ -6,6 +6,7 @@ import { connectRoutes } from "./api/connect/index.js";
 import { domainsRoutes } from "./api/domains/index.js";
 import { donationsRoutes } from "./api/donations/index.js";
 import { getHealthRoute } from "./api/health/get-health/get-health.controller.js";
+import { getHealthReadyRoute } from "./api/health/get-health-ready/get-health-ready.controller.js";
 import { interestsRoutes } from "./api/interests/index.js";
 import { ordersRoutes } from "./api/orders/index.js";
 import { payoutsRoutes } from "./api/payouts/index.js";
@@ -21,6 +22,7 @@ export const httpRoutes: FastifyPluginAsync = async (app) => {
   app.addHook("onRequest", authHook);
   app.addHook("onRequest", permissionsHook);
   await app.register(getHealthRoute);
+  await app.register(getHealthReadyRoute);
   await app.register(authRoutes);
   await app.register(uploadsRoutes);
   await app.register(storesRoutes);

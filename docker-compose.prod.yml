@@ -15,12 +15,15 @@ services:
       postgres:
         condition: service_healthy
     healthcheck:
-      # /health é rota pública e sem rate limit; node 22 tem fetch nativo, então não precisa
-      # de curl na imagem.
+      # /health/ready e não /health: a segunda só prova que o processo responde. Uma
+      # DATABASE_URL malformada deixa a API subir, migrar (outra credencial) e ficar
+      # `healthy` servindo 500 em toda rota que toca o banco — que é exatamente o que
+      # aconteceu no primeiro deploy. Readiness toca o banco, então o rollback vê a falha.
+      # Rota pública e sem rate limit; node 22 tem fetch nativo, não precisa de curl na imagem.
       test:
         [
           "CMD-SHELL",
-          "node -e \"fetch('http://127.0.0.1:3333/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\"",
+          "node -e \"fetch('http://127.0.0.1:3333/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\"",
         ]
       interval: 15s
       timeout: 5s
