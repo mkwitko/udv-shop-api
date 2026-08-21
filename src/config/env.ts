@@ -55,6 +55,11 @@ const BaseEnvSchema = z.object({
   // quando CF_AI_ACCOUNT_ID não é informado — é a mesma conta Cloudflare.
   CF_AI_ACCOUNT_ID: z.string().default(""),
   CF_AI_API_TOKEN: z.string().default(""),
+  /**
+   * Segredo do Turnstile. Vazio desliga o desafio: as rotas sem conta seguem abertas com o
+   * limite por IP, que é o que já segura abuso acidental.
+   */
+  TURNSTILE_SECRET_KEY: z.string().default(""),
   CF_AI_MODEL: z.string().default("@cf/meta/llama-4-scout-17b-16e-instruct"),
   WOOVI_API_KEY: z.string().default(""),
   // A Woovi tem dois ambientes com AppIDs SEPARADOS: produção (api.woovi.com) e teste

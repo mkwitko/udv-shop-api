@@ -7,6 +7,7 @@ import { createEmailGateway } from "../../gateways/email/email.gateway.js";
 import { createGoogleGateway } from "../../gateways/google/google.gateway.js";
 import { createR2Gateway } from "../../gateways/r2/r2.gateway.js";
 import { createStripeGateway } from "../../gateways/stripe/stripe.gateway.js";
+import { createTurnstileGateway } from "../../gateways/turnstile/turnstile.gateway.js";
 import { createFakeWooviGateway } from "../../gateways/woovi/woovi.fake.js";
 import { createWooviGateway } from "../../gateways/woovi/woovi.gateway.js";
 import type { Gateways } from "../../types/fastify.js";
@@ -38,6 +39,7 @@ export function buildDefaultGateways(): Gateways {
       connectWebhookSecret: env.STRIPE_CONNECT_WEBHOOK_SECRET,
       connectCountry: env.STRIPE_CONNECT_COUNTRY,
     }),
+    turnstile: createTurnstileGateway({ secretKey: env.TURNSTILE_SECRET_KEY }),
     // demo local sem credenciais: Pix falso que se autoconfirma (proibido em produção)
     woovi: env.DEV_FAKE_PAYMENTS
       ? createFakeWooviGateway()

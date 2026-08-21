@@ -3,6 +3,7 @@ import type { FastifyPluginAsync } from "fastify";
 import { db } from "../../../../infra/db/client.js";
 import { createGuestIdentityRepo, resolveActor } from "../../../../lib/guest-identity.js";
 import { ValidationError } from "../../../../shared/errors.js";
+import { assertHumanIfGuest } from "../../../hooks/captcha.js";
 import { strictLimit } from "../../../plugins/rate-limit.js";
 import { createProductsRepository } from "../../products/products.repository.js";
 import { createStoresRepository } from "../../stores/stores.repository.js";
@@ -34,6 +35,7 @@ export const checkoutRoute: FastifyPluginAsync = async (app) => {
     },
     async (req, reply) => {
       const body = req.body as CheckoutBody;
+      await assertHumanIfGuest(app.gateways.turnstile, req, body.captchaToken);
       const actor = await resolveActor(guests, {
         sessionUserId: req.user?.sub,
         contact: body.contact,

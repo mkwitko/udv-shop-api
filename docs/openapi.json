@@ -6512,6 +6512,10 @@
                       "name",
                       "phone"
                     ]
+                  },
+                  "captchaToken": {
+                    "type": "string",
+                    "maxLength": 4096
                   }
                 },
                 "required": [
@@ -7533,6 +7537,10 @@
                       "name",
                       "phone"
                     ]
+                  },
+                  "captchaToken": {
+                    "type": "string",
+                    "maxLength": 4096
                   }
                 },
                 "required": [
@@ -9096,6 +9104,10 @@
                       "name",
                       "phone"
                     ]
+                  },
+                  "captchaToken": {
+                    "type": "string",
+                    "maxLength": 4096
                   }
                 },
                 "required": [

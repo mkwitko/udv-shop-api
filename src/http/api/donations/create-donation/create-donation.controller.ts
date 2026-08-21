@@ -3,6 +3,7 @@ import type { FastifyPluginAsync } from "fastify";
 import { db } from "../../../../infra/db/client.js";
 import { createGuestIdentityRepo, resolveActor } from "../../../../lib/guest-identity.js";
 import { UnauthorizedError } from "../../../../shared/errors.js";
+import { assertHumanIfGuest } from "../../../hooks/captcha.js";
 import { strictLimit } from "../../../plugins/rate-limit.js";
 import { createCampaignsRepository } from "../../campaigns/campaigns.repository.js";
 import { createStoresRepository } from "../../stores/stores.repository.js";
@@ -37,6 +38,7 @@ export const createDonationRoute: FastifyPluginAsync = async (app) => {
       // Mensal continua exigindo conta: a assinatura precisa de e-mail para o customer do
       // Stripe, e quem assina tem que ter onde cancelar sem depender de ninguém.
       if (body.type === "monthly" && !req.user) throw new UnauthorizedError("login_required");
+      await assertHumanIfGuest(app.gateways.turnstile, req, body.captchaToken);
       const actor = await resolveActor(guests, {
         sessionUserId: req.user?.sub,
         contact: body.contact,

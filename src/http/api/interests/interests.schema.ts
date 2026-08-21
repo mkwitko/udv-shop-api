@@ -10,6 +10,11 @@ export const CreateInterestBody = z.object({
   note: z.string().max(500).optional(),
   /** Quem está pedindo o aviso, quando não há sessão. Ignorado se houver Bearer token. */
   contact: GuestContact.optional(),
+  /**
+   * Desafio anti-abuso, exigido de quem não tem sessão quando a plataforma tem Turnstile
+   * configurado. Ignorado quando o desafio está desligado.
+   */
+  captchaToken: z.string().max(4096).optional(),
 });
 export type CreateInterestBody = z.infer<typeof CreateInterestBody>;
 

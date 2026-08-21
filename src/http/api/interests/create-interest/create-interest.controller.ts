@@ -2,6 +2,7 @@ import type { FastifyPluginAsync } from "fastify";
 import { db } from "../../../../infra/db/client.js";
 import { createGuestIdentityRepo, resolveActor } from "../../../../lib/guest-identity.js";
 import { NotFoundError, ValidationError } from "../../../../shared/errors.js";
+import { assertHumanIfGuest } from "../../../hooks/captcha.js";
 import { strictLimit } from "../../../plugins/rate-limit.js";
 import { createProductsRepository } from "../../products/products.repository.js";
 import { createStoresRepository } from "../../stores/stores.repository.js";
@@ -28,7 +29,9 @@ export const createInterestRoute: FastifyPluginAsync = async (app) => {
       },
     },
     async (req, reply) => {
-      const { storeSlug, productSlug, qty, note, contact } = req.body as CreateInterestBody;
+      const { storeSlug, productSlug, qty, note, contact, captchaToken } =
+        req.body as CreateInterestBody;
+      await assertHumanIfGuest(app.gateways.turnstile, req, captchaToken);
       const store = await stores.findBySlug(storeSlug);
       if (store?.status !== "active") throw new NotFoundError("store_not_found");
       const product = await products.findBySlug(store.id, productSlug);

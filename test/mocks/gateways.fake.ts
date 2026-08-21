@@ -249,5 +249,8 @@ export function buildFakeGateways(overrides: Partial<Gateways> = {}): FakeGatewa
         return signature !== "invalid";
       },
     },
+    // Desligado por padrão, como numa plataforma sem segredo configurado. Quem quer testar o
+    // caminho com desafio passa um override: `{ turnstile: fakeTurnstile("ok") }`.
+    turnstile: overrides.turnstile ?? { enabled: false, verify: async () => true },
   };
 }

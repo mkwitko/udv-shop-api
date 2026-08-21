@@ -18,6 +18,11 @@ export const CreateDonationBody = z.object({
    * `monthly` — assinatura precisa de conta, é lá que se cancela.
    */
   contact: GuestContact.optional(),
+  /**
+   * Desafio anti-abuso, exigido de quem não tem sessão quando a plataforma tem Turnstile
+   * configurado. Ignorado quando o desafio está desligado.
+   */
+  captchaToken: z.string().max(4096).optional(),
 });
 export type CreateDonationBody = z.infer<typeof CreateDonationBody>;
 

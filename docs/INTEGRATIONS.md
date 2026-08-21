@@ -371,6 +371,34 @@ continua funcionando sem IA.
 
 ---
 
+## Cloudflare Turnstile
+
+Desafio anti-robô nas três escritas sem conta: `POST /interests`, `POST /orders` e
+`POST /donations`. Exigido apenas de quem **não** tem sessão — quem já se cadastrou
+não passa pelo desafio, porque ele existe para conter criação de conta leve em
+massa, não para atrapalhar cliente.
+
+### Configuração
+
+- `TURNSTILE_SECRET_KEY` (API) — Secret Key do widget. Cloudflare → Turnstile →
+  Add site.
+- `VITE_TURNSTILE_SITE_KEY` (web) — Site Key do mesmo widget.
+
+Configure as duas ou nenhuma. Só a pública faz o widget aparecer sem ninguém
+validar o token (teatro); só a secreta recusa todo convidado com
+`400 captcha_required`, porque o front nunca manda o token.
+
+Vazio desliga: as rotas seguem abertas e o teto por IP (`strictLimit(20)`, 20/min
+fora de produção multiplicado por 10) continua sendo a barreira. Esse teto foi
+escolhido pensando em wifi de núcleo e NAT de operadora, que chegam na API como um
+IP só — uma fila de pessoas doando depois da sessão não pode tomar 429.
+
+Se o siteverify da Cloudflare estiver fora do ar, o gateway **libera** a requisição
+e loga: o desafio é defesa contra abuso em massa, não controle de acesso, e uma
+indisponibilidade da Cloudflare não pode fechar a loja.
+
+---
+
 ## Resumo de env (checkout + webhooks)
 
 Após habilitar checkout Stripe/Woovi:
