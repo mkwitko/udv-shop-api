@@ -25,7 +25,7 @@ export const updateStoreStatusRoute: FastifyPluginAsync = async (app) => {
       const store = await repo.findBySlug((req.params as z.infer<typeof Params>).slug);
       if (!store) throw new NotFoundError("store not found");
       const { status } = req.body as UpdateStoreStatusBody;
-      return toStoreResponse(await repo.setStatus(store.id, status));
+      return toStoreResponse(await repo.setStatus(store.id, status), app.gateways.r2.publicUrl);
     },
   );
 };

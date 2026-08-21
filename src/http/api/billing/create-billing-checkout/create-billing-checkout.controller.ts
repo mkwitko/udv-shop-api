@@ -2,7 +2,7 @@ import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { env } from "../../../../config/env.js";
 import { db } from "../../../../infra/db/client.js";
-import { ConflictError } from "../../../../shared/errors.js";
+import { ConflictError, ValidationError } from "../../../../shared/errors.js";
 import { requireUser } from "../../../hooks/auth.js";
 import { resolveStoreForRole } from "../../campaigns/manage.helpers.js";
 import { createBillingRepository } from "../billing.repository.js";
@@ -41,6 +41,9 @@ export const createBillingCheckoutRoute: FastifyPluginAsync = async (app) => {
 
       const { sub } = requireUser(req);
       const user = await db.user.findUniqueOrThrow({ where: { id: sub }, select: { email: true } });
+      // Conta leve (criada num fluxo sem conta) não assina a plataforma: sem e-mail o Stripe
+      // não tem onde mandar recibo nem como reusar o customer entre tentativas.
+      if (!user.email) throw new ValidationError("email_required");
       const base = `${env.WEB_ORIGIN}/gestao/${store.slug}`;
       const session = await app.gateways.stripe.createSaasCheckoutSession({
         priceId: env.STRIPE_SAAS_PRICE_ID,

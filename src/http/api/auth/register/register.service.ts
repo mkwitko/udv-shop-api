@@ -31,7 +31,7 @@ export function createRegisterService(deps: RegisterDeps) {
     });
     const { subject, html } = verifyEmailHtml(user.name, rawToken);
     try {
-      await deps.email.send({ to: user.email, subject, html });
+      await deps.email.send({ to: input.email, subject, html });
     } catch (err) {
       // registro não falha por email; usuário pode pedir reenvio depois
       logger.warn({ err, userId: user.id }, "verify email send failed");

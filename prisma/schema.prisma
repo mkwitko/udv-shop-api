@@ -9,11 +9,15 @@ datasource db {
 
 model User {
   id            String   @id @default(uuid()) @db.Uuid
-  email         String   @unique
+  /// Nulável desde o fluxo sem conta: quem chega para pedir aviso, doar ou comprar pode
+  /// entrar só com telefone. Continua único, então segue servindo de chave de login.
+  email         String?  @unique
   passwordHash  String?  @map("password_hash")
   googleId      String?  @unique @map("google_id")
   name          String
-  phone         String?
+  /// Único e normalizado (dígitos com DDI: "5511988887777"). É a chave de identidade de
+  /// quem chega sem e-mail — e o canal que a loja usa para avisar essa pessoa.
+  phone         String?  @unique
   emailVerified Boolean  @default(false) @map("email_verified")
   platformAdmin Boolean  @default(false) @map("platform_admin")
   createdAt     DateTime @default(now()) @map("created_at")
@@ -140,6 +144,7 @@ model Store {
 
   roles        UserStoreRole[]
   products     Product[]
+  categories   ProductCategory[]
   orders       Order[]
   campaigns    Campaign[]
   donations    Donation[]
@@ -200,6 +205,10 @@ model Product {
   createdAt    DateTime            @default(now()) @map("created_at")
   updatedAt    DateTime            @updatedAt @map("updated_at")
 
+  /// Gaveta da vitrine. Opcional de propósito: loja pequena não precisa classificar
+  /// nada, e apagar uma categoria não pode apagar produto (SetNull).
+  categoryId String? @map("category_id") @db.Uuid
+
   /// Acordo de repasse vigente. Vale para vendas futuras: cada OrderItem congela o
   /// valor no momento da compra, então mudar o acordo não reescreve o passado.
   supplierId  String?     @map("supplier_id") @db.Uuid
@@ -208,13 +217,38 @@ model Product {
 
   store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
   supplier   Supplier?         @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  category   ProductCategory?  @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   orderItems OrderItem[]
   interests  ProductInterest[]
 
   @@unique([storeId, slug])
   @@index([storeId, active, createdAt(sort: Desc), id(sort: Desc)])
+  /// Vitrine filtrada por categoria, paginada pelo mesmo keyset da vitrine inteira.
+  @@index([storeId, categoryId, active, createdAt(sort: Desc), id(sort: Desc)])
+  /// Ordenação por preço tem cursor próprio (priceCents + id) e precisa do índice dela.
+  @@index([storeId, active, priceCents, id])
   @@index([supplierId])
   @@map("products")
+}
+
+/// Gaveta da vitrine, por loja. Nome é o que a comunidade escreve ("Chás", "Artesanato"),
+/// slug é o que viaja na URL. `position` existe porque ordem alfabética não é ordem de
+/// importância: a loja decide o que aparece primeiro.
+model ProductCategory {
+  id        String   @id @default(uuid()) @db.Uuid
+  storeId   String   @map("store_id") @db.Uuid
+  slug      String
+  name      String
+  position  Int      @default(0)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  store    Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  products Product[]
+
+  @@unique([storeId, slug])
+  @@index([storeId, position])
+  @@map("product_categories")
 }
 
 model ProductInterest {
@@ -336,6 +370,9 @@ model Order {
   currency     String      @default("BRL")
   contactPhone String      @map("contact_phone")
   note         String?
+  /// Chave do recibo público. Preenchida só quando o pedido nasce sem sessão: é como a tela
+  /// de confirmação acompanha o Pix sem estar autenticada. Não é credencial de conta.
+  publicToken  String?     @unique @map("public_token")
   expiresAt    DateTime    @map("expires_at")
   createdAt    DateTime    @default(now()) @map("created_at")
   updatedAt    DateTime    @updatedAt @map("updated_at")
@@ -500,6 +537,9 @@ model Donation {
   providerInvoiceId      String?        @unique @map("provider_invoice_id")
   subscriptionCancelledAt DateTime?     @map("subscription_cancelled_at")
   raffleGranted          Boolean        @default(false) @map("raffle_granted")
+  /// Chave do recibo público. Preenchida só quando a doação nasce sem sessão: é como a tela
+  /// de confirmação acompanha o Pix sem estar autenticada. Não é credencial de conta.
+  publicToken            String?        @unique @map("public_token")
   /// Momento em que a doação virou `paid`. É o que decide a janela do sorteio —
   /// `createdAt` é quando o checkout abriu, e um Pix pago horas depois cairia na
   /// janela errada.

@@ -635,7 +635,33 @@
                       ]
                     },
                     "branding": {
-                      "nullable": true
+                      "nullable": true,
+                      "type": "object",
+                      "properties": {
+                        "logoKey": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "coverKey": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "logoUrl": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "coverUrl": {
+                          "nullable": true,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "logoKey",
+                        "coverKey",
+                        "logoUrl",
+                        "coverUrl"
+                      ],
+                      "additionalProperties": false
                     },
                     "createdAt": {
                       "type": "string"
@@ -718,7 +744,33 @@
                             ]
                           },
                           "branding": {
-                            "nullable": true
+                            "nullable": true,
+                            "type": "object",
+                            "properties": {
+                              "logoKey": {
+                                "nullable": true,
+                                "type": "string"
+                              },
+                              "coverKey": {
+                                "nullable": true,
+                                "type": "string"
+                              },
+                              "logoUrl": {
+                                "nullable": true,
+                                "type": "string"
+                              },
+                              "coverUrl": {
+                                "nullable": true,
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "logoKey",
+                              "coverKey",
+                              "logoUrl",
+                              "coverUrl"
+                            ],
+                            "additionalProperties": false
                           },
                           "createdAt": {
                             "type": "string"
@@ -903,7 +955,33 @@
                             ]
                           },
                           "branding": {
-                            "nullable": true
+                            "nullable": true,
+                            "type": "object",
+                            "properties": {
+                              "logoKey": {
+                                "nullable": true,
+                                "type": "string"
+                              },
+                              "coverKey": {
+                                "nullable": true,
+                                "type": "string"
+                              },
+                              "logoUrl": {
+                                "nullable": true,
+                                "type": "string"
+                              },
+                              "coverUrl": {
+                                "nullable": true,
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "logoKey",
+                              "coverKey",
+                              "logoUrl",
+                              "coverUrl"
+                            ],
+                            "additionalProperties": false
                           },
                           "createdAt": {
                             "type": "string"
@@ -984,7 +1062,33 @@
                             ]
                           },
                           "branding": {
-                            "nullable": true
+                            "nullable": true,
+                            "type": "object",
+                            "properties": {
+                              "logoKey": {
+                                "nullable": true,
+                                "type": "string"
+                              },
+                              "coverKey": {
+                                "nullable": true,
+                                "type": "string"
+                              },
+                              "logoUrl": {
+                                "nullable": true,
+                                "type": "string"
+                              },
+                              "coverUrl": {
+                                "nullable": true,
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "logoKey",
+                              "coverKey",
+                              "logoUrl",
+                              "coverUrl"
+                            ],
+                            "additionalProperties": false
                           },
                           "createdAt": {
                             "type": "string"
@@ -1069,7 +1173,33 @@
                       ]
                     },
                     "branding": {
-                      "nullable": true
+                      "nullable": true,
+                      "type": "object",
+                      "properties": {
+                        "logoKey": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "coverKey": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "logoUrl": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "coverUrl": {
+                          "nullable": true,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "logoKey",
+                        "coverKey",
+                        "logoUrl",
+                        "coverUrl"
+                      ],
+                      "additionalProperties": false
                     },
                     "createdAt": {
                       "type": "string"
@@ -1115,7 +1245,20 @@
                   },
                   "branding": {
                     "type": "object",
-                    "additionalProperties": {}
+                    "properties": {
+                      "logoKey": {
+                        "nullable": true,
+                        "type": "string",
+                        "maxLength": 300,
+                        "pattern": "^stores\\/.*"
+                      },
+                      "coverKey": {
+                        "nullable": true,
+                        "type": "string",
+                        "maxLength": 300,
+                        "pattern": "^stores\\/.*"
+                      }
+                    }
                   }
                 }
               }
@@ -1167,7 +1310,33 @@
                       ]
                     },
                     "branding": {
-                      "nullable": true
+                      "nullable": true,
+                      "type": "object",
+                      "properties": {
+                        "logoKey": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "coverKey": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "logoUrl": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "coverUrl": {
+                          "nullable": true,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "logoKey",
+                        "coverKey",
+                        "logoUrl",
+                        "coverUrl"
+                      ],
+                      "additionalProperties": false
                     },
                     "createdAt": {
                       "type": "string"
@@ -1264,7 +1433,33 @@
                       ]
                     },
                     "branding": {
-                      "nullable": true
+                      "nullable": true,
+                      "type": "object",
+                      "properties": {
+                        "logoKey": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "coverKey": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "logoUrl": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "coverUrl": {
+                          "nullable": true,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "logoKey",
+                        "coverKey",
+                        "logoUrl",
+                        "coverUrl"
+                      ],
+                      "additionalProperties": false
                     },
                     "createdAt": {
                       "type": "string"
@@ -1883,6 +2078,414 @@
         }
       }
     },
+    "/stores/{slug}/categories": {
+      "get": {
+        "operationId": "listCategories",
+        "tags": [
+          "products"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "slug",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "slug": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "position": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "productCount": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "slug",
+                          "name",
+                          "position",
+                          "productCount"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "total": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "total"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createCategory",
+        "tags": [
+          "products"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 60
+                  }
+                },
+                "required": [
+                  "name"
+                ]
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "slug",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "slug": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "position": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "productCount": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "slug",
+                    "name",
+                    "position",
+                    "productCount"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/stores/{slug}/categories/reorder": {
+      "post": {
+        "operationId": "reorderCategories",
+        "tags": [
+          "products"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "ids": {
+                    "minItems": 1,
+                    "maxItems": 200,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    }
+                  }
+                },
+                "required": [
+                  "ids"
+                ]
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "slug",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "slug": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "position": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "productCount": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "slug",
+                          "name",
+                          "position",
+                          "productCount"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "total": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "total"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/stores/{slug}/categories/{id}": {
+      "patch": {
+        "operationId": "updateCategory",
+        "tags": [
+          "products"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 60
+                  }
+                },
+                "required": [
+                  "name"
+                ]
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "slug",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "slug": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "position": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "productCount": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "slug",
+                    "name",
+                    "position",
+                    "productCount"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteCategory",
+        "tags": [
+          "products"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "slug",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string",
+                  "nullable": true,
+                  "enum": [
+                    null
+                  ],
+                  "description": "No Content"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/stores/{slug}/products": {
       "post": {
         "operationId": "createProduct",
@@ -1938,6 +2541,12 @@
                       "in_stock",
                       "on_demand"
                     ]
+                  },
+                  "categoryId": {
+                    "nullable": true,
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                   },
                   "supplierId": {
                     "nullable": true,
@@ -2043,6 +2652,27 @@
                     "createdAt": {
                       "type": "string"
                     },
+                    "category": {
+                      "nullable": true,
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "slug": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "slug",
+                        "name"
+                      ],
+                      "additionalProperties": false
+                    },
                     "payout": {
                       "nullable": true,
                       "type": "object",
@@ -2094,6 +2724,7 @@
                     "availability",
                     "active",
                     "createdAt",
+                    "category",
                     "payout"
                   ],
                   "additionalProperties": false
@@ -2138,6 +2769,38 @@
             },
             "in": "query",
             "name": "all",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 80
+            },
+            "in": "query",
+            "name": "category",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 80
+            },
+            "in": "query",
+            "name": "q",
+            "required": false
+          },
+          {
+            "schema": {
+              "default": "recent",
+              "type": "string",
+              "enum": [
+                "recent",
+                "price_asc",
+                "price_desc"
+              ]
+            },
+            "in": "query",
+            "name": "sort",
             "required": false
           },
           {
@@ -2213,6 +2876,27 @@
                           "createdAt": {
                             "type": "string"
                           },
+                          "category": {
+                            "nullable": true,
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "slug": {
+                                "type": "string"
+                              },
+                              "name": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "slug",
+                              "name"
+                            ],
+                            "additionalProperties": false
+                          },
                           "payout": {
                             "nullable": true,
                             "type": "object",
@@ -2264,6 +2948,7 @@
                           "availability",
                           "active",
                           "createdAt",
+                          "category",
                           "payout"
                         ],
                         "additionalProperties": false
@@ -2369,6 +3054,27 @@
                     "createdAt": {
                       "type": "string"
                     },
+                    "category": {
+                      "nullable": true,
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "slug": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "slug",
+                        "name"
+                      ],
+                      "additionalProperties": false
+                    },
                     "payout": {
                       "nullable": true,
                       "type": "object",
@@ -2420,6 +3126,7 @@
                     "availability",
                     "active",
                     "createdAt",
+                    "category",
                     "payout"
                   ],
                   "additionalProperties": false
@@ -2476,6 +3183,12 @@
                       "in_stock",
                       "on_demand"
                     ]
+                  },
+                  "categoryId": {
+                    "nullable": true,
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                   },
                   "supplierId": {
                     "nullable": true,
@@ -2584,6 +3297,27 @@
                     "createdAt": {
                       "type": "string"
                     },
+                    "category": {
+                      "nullable": true,
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "slug": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "slug",
+                        "name"
+                      ],
+                      "additionalProperties": false
+                    },
                     "payout": {
                       "nullable": true,
                       "type": "object",
@@ -2635,6 +3369,7 @@
                     "availability",
                     "active",
                     "createdAt",
+                    "category",
                     "payout"
                   ],
                   "additionalProperties": false
@@ -2779,6 +3514,27 @@
                     "createdAt": {
                       "type": "string"
                     },
+                    "category": {
+                      "nullable": true,
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "slug": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "slug",
+                        "name"
+                      ],
+                      "additionalProperties": false
+                    },
                     "payout": {
                       "nullable": true,
                       "type": "object",
@@ -2830,6 +3586,7 @@
                     "availability",
                     "active",
                     "createdAt",
+                    "category",
                     "payout"
                   ],
                   "additionalProperties": false
@@ -9622,7 +10379,33 @@
                       ]
                     },
                     "branding": {
-                      "nullable": true
+                      "nullable": true,
+                      "type": "object",
+                      "properties": {
+                        "logoKey": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "coverKey": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "logoUrl": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "coverUrl": {
+                          "nullable": true,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "logoKey",
+                        "coverKey",
+                        "logoUrl",
+                        "coverUrl"
+                      ],
+                      "additionalProperties": false
                     },
                     "createdAt": {
                       "type": "string"

@@ -20,6 +20,8 @@ export const CreateProductBody = z.object({
   images: z.array(z.string().startsWith("stores/")).max(10).optional(),
   stock: z.number().int().min(0).default(0),
   availability: z.enum(["in_stock", "on_demand"]).default("in_stock"),
+  /** Gaveta da vitrine. A rota confere que a categoria é da mesma loja. */
+  categoryId: z.string().uuid().nullable().optional(),
   ...PayoutFields,
 });
 export type CreateProductBody = z.infer<typeof CreateProductBody>;
@@ -31,6 +33,7 @@ export const UpdateProductBody = z.object({
   images: z.array(z.string().startsWith("stores/")).max(10).optional(),
   stock: z.number().int().min(0).optional(),
   availability: z.enum(["in_stock", "on_demand"]).optional(),
+  categoryId: z.string().uuid().nullable().optional(),
   ...PayoutFields,
 });
 export type UpdateProductBody = z.infer<typeof UpdateProductBody>;
@@ -48,6 +51,8 @@ export const ProductResponse = z.object({
   availability: z.enum(["in_stock", "on_demand"]),
   active: z.boolean(),
   createdAt: z.string(),
+  /** Categoria da vitrine, quando a loja classificou o produto. */
+  category: z.object({ id: z.string(), slug: z.string(), name: z.string() }).nullable(),
   /**
    * Só quem cuida da loja recebe isto preenchido: quanto do preço é combinado com
    * o parceiro é acordo interno, não vitrine.
@@ -68,6 +73,10 @@ export const ProductsPageResponse = z.object({
   nextCursor: z.string().nullable(),
 });
 
+/** Ordem da vitrine. Enum fechado: ordenação é nome de coluna, não texto livre. */
+export const ProductSortSchema = z.enum(["recent", "price_asc", "price_desc"]).default("recent");
+export type ProductSort = z.infer<typeof ProductSortSchema>;
+
 export const ListProductsQuery = z.object({
   limit: z.coerce.number().int().min(1).max(50).default(20),
   cursor: z.string().optional(),
@@ -75,6 +84,11 @@ export const ListProductsQuery = z.object({
     .enum(["true", "false"])
     .transform((v) => v === "true")
     .default(false),
+  /** Slug da categoria. Slug que não existe devolve lista vazia, não erro. */
+  category: z.string().max(80).optional(),
+  /** Busca por nome e descrição. Limitada no tamanho para não virar varredura caríssima. */
+  q: z.string().trim().max(80).optional(),
+  sort: ProductSortSchema,
 });
 export type ListProductsQuery = z.infer<typeof ListProductsQuery>;
 

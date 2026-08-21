@@ -1,19 +1,34 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
 import {
   afterCursorWhere,
+  afterPriceCursorWhere,
   type CursorPage,
   decodeCursor,
+  decodePriceCursor,
+  encodeCursor,
+  encodePriceCursor,
   KEYSET_ORDER_BY,
-  toPage,
+  priceOrderBy,
+  toPageBy,
 } from "../../../lib/cursor.js";
 import { normalizePayoutFields, unitPayoutCents } from "../payouts/payouts.helpers.js";
-import type { CreateProductBody, UpdateProductBody } from "./products.schema.js";
+import type { CreateProductBody, ProductSort, UpdateProductBody } from "./products.schema.js";
 
 // O nome do parceiro vem junto porque a tela de gestão mostra "quem recebe" ao lado
-// do produto; a resposta pública descarta o bloco inteiro.
+// do produto; a resposta pública descarta o bloco inteiro. A categoria vem sempre:
+// é rótulo da vitrine, não acordo interno.
 const PRODUCT_INCLUDE = {
   supplier: { select: { id: true, name: true } },
+  category: { select: { id: true, slug: true, name: true } },
 } satisfies Prisma.ProductInclude;
+
+/**
+ * `contains` do Prisma não escapa `%` e `_`, então um termo de curinga viraria "traga
+ * tudo". Tirar os curingas é o comportamento honesto: quem digitou só `%` não buscou nada.
+ */
+export function sanitizeSearch(term: string): string {
+  return term.replace(/[%_\\]/g, "").trim();
+}
 
 export type ProductWithSupplier = Prisma.ProductGetPayload<{ include: typeof PRODUCT_INCLUDE }>;
 
@@ -28,6 +43,10 @@ export interface ProductsRepository {
     limit: number;
     cursor: string | null;
     includeInactive: boolean;
+    /** id já resolvido a partir do slug pela rota — o cliente nunca manda id aqui. */
+    categoryId?: string | undefined;
+    search?: string | undefined;
+    sort?: ProductSort | undefined;
   }): Promise<CursorPage<ProductWithSupplier>>;
   findActiveBySlugs(storeId: string, slugs: string[]): Promise<ProductWithSupplier[]>;
 }
@@ -50,6 +69,7 @@ export function createProductsRepository(db: PrismaClient): ProductsRepository {
           images: data.images ?? [],
           stock: data.stock,
           availability: data.availability,
+          categoryId: data.categoryId ?? null,
           ...normalizePayoutFields(data),
         },
         include: PRODUCT_INCLUDE,
@@ -64,6 +84,7 @@ export function createProductsRepository(db: PrismaClient): ProductsRepository {
           ...(data.images !== undefined && { images: data.images }),
           ...(data.stock !== undefined && { stock: data.stock }),
           ...(data.availability !== undefined && { availability: data.availability }),
+          ...(data.categoryId !== undefined && { categoryId: data.categoryId }),
           // o acordo de repasse só é reescrito quando o formulário manda os três campos
           ...(data.supplierId !== undefined ||
           data.payoutKind !== undefined ||
@@ -80,18 +101,63 @@ export function createProductsRepository(db: PrismaClient): ProductsRepository {
     restore: async (id) => {
       await db.product.update({ where: { id }, data: { active: true } });
     },
-    listByStoreCursor: async ({ storeId, limit, cursor, includeInactive }) => {
-      const after = cursor ? afterCursorWhere(decodeCursor(cursor)) : {};
+    listByStoreCursor: async ({
+      storeId,
+      limit,
+      cursor,
+      includeInactive,
+      categoryId,
+      search,
+      sort = "recent",
+    }) => {
+      const term = search ? sanitizeSearch(search) : "";
+      // termo que era só curinga não pode virar "traga tudo": não achou nada, e ponto
+      if (search && !term) return { items: [], nextCursor: null };
+      const filters: Prisma.ProductWhereInput = {
+        storeId,
+        ...(includeInactive ? {} : { active: true }),
+        ...(categoryId ? { categoryId } : {}),
+        ...(term
+          ? {
+              OR: [
+                { name: { contains: term, mode: "insensitive" } },
+                { description: { contains: term, mode: "insensitive" } },
+              ],
+            }
+          : {}),
+      };
+
+      if (sort === "recent") {
+        const rows = await db.product.findMany({
+          where: { ...filters, ...(cursor ? afterCursorWhere(decodeCursor(cursor)) : {}) },
+          orderBy: [...KEYSET_ORDER_BY],
+          take: limit + 1,
+          include: PRODUCT_INCLUDE,
+        });
+        return toPageBy(
+          rows,
+          limit,
+          (r) => encodeCursor(r.createdAt, r.id),
+          (r) => r,
+        );
+      }
+
+      // preço tem cursor próprio (preço + id): com o cursor de data a página pularia
+      // e repetiria produto sempre que dois preços não estivessem na mesma ordem das datas
+      const direction = sort === "price_asc" ? "asc" : "desc";
       const rows = await db.product.findMany({
-        where: { storeId, ...(includeInactive ? {} : { active: true }), ...after },
-        orderBy: [...KEYSET_ORDER_BY],
+        where: {
+          ...filters,
+          ...(cursor ? afterPriceCursorWhere(decodePriceCursor(cursor), direction) : {}),
+        },
+        orderBy: [...priceOrderBy(direction)],
         take: limit + 1,
         include: PRODUCT_INCLUDE,
       });
-      return toPage(
+      return toPageBy(
         rows,
         limit,
-        (r) => ({ createdAt: r.createdAt, id: r.id }),
+        (r) => encodePriceCursor(r.priceCents, r.id),
         (r) => r,
       );
     },
@@ -132,6 +198,9 @@ export function toProductResponse(
     availability: product.availability,
     active: product.active,
     createdAt: product.createdAt.toISOString(),
+    category: product.category
+      ? { id: product.category.id, slug: product.category.slug, name: product.category.name }
+      : null,
     payout: agreement,
   };
 }

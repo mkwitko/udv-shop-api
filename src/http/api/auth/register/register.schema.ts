@@ -13,7 +13,8 @@ export type RegisterBody = z.infer<typeof RegisterBody>;
 export const PublicUserSchema = z.object({
   id: z.string(),
   name: z.string(),
-  email: z.string(),
+  /** Nulável: conta leve criada num fluxo sem conta pode não ter e-mail. */
+  email: z.string().nullable(),
   emailVerified: z.boolean(),
   platformAdmin: z.boolean(),
 });

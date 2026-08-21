@@ -20,7 +20,12 @@ export const listMyStoresRoute: FastifyPluginAsync = async (app) => {
     async (req) => {
       const user = requireUser(req);
       const rows = await createStoresRepository(db).listByMember(user.sub);
-      return { items: rows.map(({ store, role }) => ({ ...toStoreResponse(store), role })) };
+      return {
+        items: rows.map(({ store, role }) => ({
+          ...toStoreResponse(store, app.gateways.r2.publicUrl),
+          role,
+        })),
+      };
     },
   );
 };

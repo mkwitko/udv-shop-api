@@ -21,7 +21,7 @@ export const createStoreRoute: FastifyPluginAsync = async (app) => {
       const { sub } = requireUser(req);
       const service = createCreateStoreService({ repo: createStoresRepository(db) });
       const store = await service({ ...(req.body as CreateStoreBody), userId: sub });
-      void reply.code(201).send(toStoreResponse(store));
+      void reply.code(201).send(toStoreResponse(store, app.gateways.r2.publicUrl));
     },
   );
 };

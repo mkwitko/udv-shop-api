@@ -19,7 +19,9 @@ export function createForgotPasswordService(deps: { repo: AuthRepository; email:
     });
     const { subject, html } = resetPasswordHtml(user.name, raw);
     try {
-      await deps.email.send({ to: user.email, subject, html });
+      // `input.email` e não `user.email`: é a chave pela qual a conta foi encontrada, e o
+      // tipo agora é nulável por causa das contas leves.
+      await deps.email.send({ to: input.email, subject, html });
     } catch (err) {
       logger.warn({ err, userId: user.id }, "reset email send failed");
     }

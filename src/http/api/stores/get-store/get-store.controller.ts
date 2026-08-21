@@ -25,7 +25,7 @@ export const getStoreRoute: FastifyPluginAsync = async (app) => {
       const store = await createStoresRepository(db).findBySlug(slug);
       // Suspensa continua legível: a página pública precisa dizer que está fora do ar.
       assertStoreReadable(store, await optionalUser(req));
-      return toStoreResponse(store);
+      return toStoreResponse(store, app.gateways.r2.publicUrl);
     },
   );
 };

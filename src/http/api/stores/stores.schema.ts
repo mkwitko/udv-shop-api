@@ -24,13 +24,31 @@ export type SuggestStoreDescriptionBody = z.infer<typeof SuggestStoreDescription
 
 export const SuggestStoreDescriptionResponse = z.object({ text: z.string() });
 
+/**
+ * Identidade visual da loja, guardada em `Store.branding`. Só as chaves do R2 vão para o
+ * banco; as URLs são derivadas na resposta, como nas fotos de produto. Era `unknown` e
+ * ninguém escrevia — sem tipo, a vitrine não tinha como confiar no que vinha.
+ */
+export const StoreBrandingInput = z.object({
+  logoKey: z.string().startsWith("stores/").max(300).nullable().optional(),
+  coverKey: z.string().startsWith("stores/").max(300).nullable().optional(),
+});
+export type StoreBrandingInput = z.infer<typeof StoreBrandingInput>;
+
+export const StoreBrandingResponse = z.object({
+  logoKey: z.string().nullable(),
+  coverKey: z.string().nullable(),
+  logoUrl: z.string().nullable(),
+  coverUrl: z.string().nullable(),
+});
+
 export const StoreResponse = z.object({
   id: z.string(),
   slug: z.string(),
   name: z.string(),
   description: z.string().nullable(),
   status: z.enum(["pending", "active", "suspended"]),
-  branding: z.unknown().nullable(),
+  branding: StoreBrandingResponse.nullable(),
   createdAt: z.string(),
 });
 
@@ -63,7 +81,7 @@ export type AdminListStoresQuery = z.infer<typeof AdminListStoresQuery>;
 export const UpdateStoreBody = z.object({
   name: z.string().min(2).max(120).optional(),
   description: z.string().max(2000).nullable().optional(),
-  branding: z.record(z.string(), z.unknown()).optional(),
+  branding: StoreBrandingInput.optional(),
 });
 export type UpdateStoreBody = z.infer<typeof UpdateStoreBody>;
 

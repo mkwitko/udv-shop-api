@@ -18,7 +18,10 @@ export const listStoresRoute: FastifyPluginAsync = async (app) => {
     async (req) => {
       const { limit, cursor } = req.query as ListStoresQuery;
       const page = await createStoresRepository(db).listActiveByCursor(limit, cursor ?? null);
-      return { items: page.items.map(toStoreResponse), nextCursor: page.nextCursor };
+      return {
+        items: page.items.map((store) => toStoreResponse(store, app.gateways.r2.publicUrl)),
+        nextCursor: page.nextCursor,
+      };
     },
   );
 };

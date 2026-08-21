@@ -22,7 +22,7 @@ export type CreateDonationDeps = {
 
 export function createDonationService(deps: CreateDonationDeps) {
   return async (
-    input: CreateDonationBody & { userId: string; userEmail: string },
+    input: CreateDonationBody & { userId: string; userEmail: string | null },
   ): Promise<{ donation: DonationWithDetails; payment: DonationPaymentInstructions }> => {
     const store = await deps.stores.findBySlug(input.storeSlug);
     if (store?.status !== "active") throw new NotFoundError("store_not_found");
@@ -34,6 +34,9 @@ export function createDonationService(deps: CreateDonationDeps) {
     if (input.type === "monthly" && input.provider === "woovi") {
       throw new ValidationError("monthly_not_supported_for_provider");
     }
+    // A assinatura precisa de e-mail para criar o customer na conta conectada. Recusado antes
+    // de gravar a doação: cair nisso depois deixaria um pendente órfão.
+    if (input.type === "monthly") requireSubscriberEmail(input.userEmail);
 
     let campaignId: string | null = null;
     if (input.campaignSlug !== undefined) {
@@ -82,7 +85,8 @@ export function createDonationService(deps: CreateDonationDeps) {
           // bps → percentual (500 bps = 5%). Stripe aceita até 2 casas.
           applicationFeePercent: store.applicationFeeBps / 100,
           destinationAccountId: store.stripeAccountId as string,
-          customerEmail: input.userEmail,
+          // Chamado de novo porque o narrowing da guarda acima não atravessa este bloco.
+          customerEmail: requireSubscriberEmail(input.userEmail),
           productName: `Doação mensal — ${store.name}`.slice(0, 140),
           productId: store.stripeDonationProductId,
           metadata: { donationId: donation.id, paymentId },
@@ -130,6 +134,16 @@ export function createDonationService(deps: CreateDonationDeps) {
     }
     return { donation, payment: instructions };
   };
+}
+
+/**
+ * Doação mensal exige e-mail: o Stripe cria um customer na conta conectada, e sem endereço não
+ * há recibo nem como a pessoa reconhecer a cobrança. É por isso que a mensal continua pedindo
+ * conta enquanto a avulsa aceita só nome e telefone.
+ */
+function requireSubscriberEmail(email: string | null): string {
+  if (!email) throw new ValidationError("email_required_for_monthly");
+  return email;
 }
 
 function assertProviderConfigured(store: Store, provider: "stripe" | "woovi"): void {

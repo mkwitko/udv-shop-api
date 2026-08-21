@@ -78,11 +78,17 @@ export async function relayOutbox(deps: {
                 `<li>${i.qty}× ${escapeHtml(i.name)} — R$ ${(i.priceCents / 100).toFixed(2)}</li>`,
             )
             .join("");
-          await deps.email.send({
-            to: order.user.email,
-            subject: `Pagamento confirmado — ${order.store.name}`,
-            html: `<p>Olá, ${escapeHtml(order.user.name)}!</p><p>Recebemos o pagamento do seu pedido na loja ${escapeHtml(order.store.name)}. Quem cuida da loja vai entrar em contato pelo telefone informado para combinar a entrega.</p><ul>${lines}</ul><p>Total: R$ ${(order.totalCents / 100).toFixed(2)}</p><p>Obrigado por apoiar ${escapeHtml(order.store.name)}!</p>`,
-          });
+          // Conta leve (compra sem conta) pode não ter e-mail: a loja combina a entrega pelo
+          // telefone do pedido. O evento fecha de qualquer jeito — não há o que reenviar.
+          if (!order.user.email) {
+            deps.log.info({ orderId: order.id }, "order.paid sem e-mail: contato por telefone");
+          } else {
+            await deps.email.send({
+              to: order.user.email,
+              subject: `Pagamento confirmado — ${order.store.name}`,
+              html: `<p>Olá, ${escapeHtml(order.user.name)}!</p><p>Recebemos o pagamento do seu pedido na loja ${escapeHtml(order.store.name)}. Quem cuida da loja vai entrar em contato pelo telefone informado para combinar a entrega.</p><ul>${lines}</ul><p>Total: R$ ${(order.totalCents / 100).toFixed(2)}</p><p>Obrigado por apoiar ${escapeHtml(order.store.name)}!</p>`,
+            });
+          }
         }
       } else if (event.type === "interest.notified") {
         const { interestId } = event.payload as { interestId: string };
@@ -97,11 +103,17 @@ export async function relayOutbox(deps: {
           },
         });
         if (interest) {
-          await deps.email.send({
-            to: interest.user.email,
-            subject: `Chegou: ${interest.product.name} — ${interest.product.store.name}`,
-            html: `<p>Olá, ${escapeHtml(interest.user.name)}!</p><p>O produto <strong>${escapeHtml(interest.product.name)}</strong> que você encomendou em ${escapeHtml(interest.product.store.name)} chegou.</p><p>Sua encomenda era de ${interest.qty} unidade(s). É só acessar a loja para finalizar o pedido — quem chega antes garante.</p><p>Com carinho, quem cuida de ${escapeHtml(interest.product.store.name)}.</p>`,
-          });
+          // Quem pediu aviso deixando só telefone não recebe e-mail: quem cuida da loja fala
+          // por WhatsApp, com o número que aparece na fila de encomendas.
+          if (!interest.user.email) {
+            deps.log.info({ interestId }, "interest.notified sem e-mail: aviso manual pela loja");
+          } else {
+            await deps.email.send({
+              to: interest.user.email,
+              subject: `Chegou: ${interest.product.name} — ${interest.product.store.name}`,
+              html: `<p>Olá, ${escapeHtml(interest.user.name)}!</p><p>O produto <strong>${escapeHtml(interest.product.name)}</strong> que você encomendou em ${escapeHtml(interest.product.store.name)} chegou.</p><p>Sua encomenda era de ${interest.qty} unidade(s). É só acessar a loja para finalizar o pedido — quem chega antes garante.</p><p>Com carinho, quem cuida de ${escapeHtml(interest.product.store.name)}.</p>`,
+            });
+          }
         }
         // Nota: se o interesse sumiu (produto apagado), o evento é marcado processed do
         // mesmo jeito — não há o que notificar.
@@ -123,11 +135,18 @@ export async function relayOutbox(deps: {
           const destino = donation.campaign
             ? `a campanha “${escapeHtml(donation.campaign.title)}”`
             : escapeHtml(donation.store.name);
-          await deps.email.send({
-            to: donation.user.email,
-            subject: `Recebemos sua doação — ${donation.store.name}`,
-            html: `<p>Olá, ${escapeHtml(donation.user.name)}!</p><p>Sua doação de R$ ${(donation.amountCents / 100).toFixed(2)} para ${destino} foi confirmada.</p><p>Obrigado por caminhar junto com a gente.</p><p>Com carinho, quem cuida de ${escapeHtml(donation.store.name)}.</p>`,
-          });
+          // Doação sem conta e sem e-mail: o recibo é a própria tela de confirmação, que a
+          // pessoa acompanha pelo link com o token. Os números do sorteio já foram concedidos
+          // acima, então nada se perde por não haver e-mail.
+          if (!donation.user.email) {
+            deps.log.info({ donationId }, "donation.received sem e-mail: recibo só na tela");
+          } else {
+            await deps.email.send({
+              to: donation.user.email,
+              subject: `Recebemos sua doação — ${donation.store.name}`,
+              html: `<p>Olá, ${escapeHtml(donation.user.name)}!</p><p>Sua doação de R$ ${(donation.amountCents / 100).toFixed(2)} para ${destino} foi confirmada.</p><p>Obrigado por caminhar junto com a gente.</p><p>Com carinho, quem cuida de ${escapeHtml(donation.store.name)}.</p>`,
+            });
+          }
         }
       } else if (event.type === "payment.orphaned") {
         // Money captured for an aggregate (order or donation) that is no longer pending.
@@ -174,6 +193,15 @@ export async function relayOutbox(deps: {
           const winner = prize.winnerEntry;
           if (!winner) continue;
           const campaign = prize.raffle.campaign;
+          // Ganhador que doou sem conta pode não ter e-mail. O sorteio já está registrado e a
+          // loja tem o telefone: o aviso vira contato humano, não um envio perdido.
+          if (!winner.user.email) {
+            deps.log.warn(
+              { prizeId: prize.id, entryId: winner.id },
+              "sorteio: ganhador sem e-mail, avisar pelo telefone",
+            );
+            continue;
+          }
           await deps.email.send({
             to: winner.user.email,
             subject: `Você foi sorteado — ${campaign.title}`,

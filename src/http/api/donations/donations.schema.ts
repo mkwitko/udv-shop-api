@@ -71,7 +71,12 @@ export const StoreDonationsQuery = DonationsListQuery.extend({
 // Doador visto pela gestão da loja: nome e email completos (é quem agradece e
 // emite recibo). Nunca sai em rota pública — ver D11.
 export const StoreDonationResponse = DonationResponse.extend({
-  donor: z.object({ name: z.string(), email: z.string(), phone: z.string().nullable() }),
+  donor: z.object({
+    name: z.string(),
+    /** Nulável: quem doa sem conta pode ter deixado só telefone. */
+    email: z.string().nullable(),
+    phone: z.string().nullable(),
+  }),
 });
 
 export const StoreDonationsPageResponse = z.object({

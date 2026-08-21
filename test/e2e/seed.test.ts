@@ -21,7 +21,9 @@ describe("seed de desenvolvimento", () => {
 
     expect(await db.store.count()).toBe(1);
     expect(await db.user.count()).toBe(4);
-    expect(await db.product.count()).toBe(4);
+    expect(await db.product.count()).toBe(12);
+    // gavetas da vitrine, uma delas de propósito vazia
+    expect(await db.productCategory.count()).toBe(5);
     // o pedido/doação de exemplo só entra na primeira execução
     expect(await db.order.count()).toBe(1);
     expect(await db.donation.count()).toBe(1);
@@ -37,7 +39,7 @@ describe("seed de desenvolvimento", () => {
     const catalog = await app.inject({ method: "GET", url: `/stores/${SEED_STORE_SLUG}/products` });
     expect(catalog.statusCode).toBe(200);
     // o produto inativo não aparece no catálogo público
-    expect(catalog.json().items).toHaveLength(3);
+    expect(catalog.json().items).toHaveLength(11);
 
     const orders = await app.inject({
       method: "GET",

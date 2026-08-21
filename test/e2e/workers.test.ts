@@ -214,6 +214,51 @@ describe("workers", () => {
     expect(row.status).toBe("processed");
   });
 
+  it("interest.notified de conta sem e-mail não dispara envio", async () => {
+    const store = await db.store.create({
+      data: { slug: "nucleo-a", name: "Núcleo A", status: "active" },
+    });
+    const product = await db.product.create({
+      data: {
+        storeId: store.id,
+        slug: "mel",
+        name: "Mel",
+        priceCents: 3000,
+        availability: "on_demand",
+      },
+    });
+    // Conta leve: quem pediu aviso deixando só telefone. Quem cuida da loja avisa por
+    // WhatsApp — o outbox não tem para onde mandar e não pode travar a fila por isso.
+    const user = await db.user.create({
+      data: { name: "Maria", phone: "5511988887777", email: null },
+    });
+    const interest = await db.productInterest.create({
+      data: {
+        productId: product.id,
+        userId: user.id,
+        qty: 1,
+        status: "notified",
+        notifiedAt: new Date(),
+      },
+    });
+    await db.outboxEvent.create({
+      data: { type: "interest.notified", payload: { interestId: interest.id } },
+    });
+
+    const gateways = buildFakeGateways();
+    const processed = await relayOutbox({
+      db,
+      email: gateways.email,
+      woovi: gateways.woovi,
+      log: logger,
+    });
+
+    expect(processed).toBe(1);
+    expect(gateways.sentEmails).toHaveLength(0);
+    const row = await db.outboxEvent.findFirstOrThrow({ where: { type: "interest.notified" } });
+    expect(row.status).toBe("processed");
+  });
+
   it("order.paid converte os interesses do comprador nos produtos do pedido", async () => {
     const store = await db.store.create({
       data: { slug: "nucleo-a", name: "Núcleo A", status: "active" },

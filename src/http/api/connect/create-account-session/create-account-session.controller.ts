@@ -1,7 +1,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { db } from "../../../../infra/db/client.js";
-import { ConflictError } from "../../../../shared/errors.js";
+import { ConflictError, ValidationError } from "../../../../shared/errors.js";
 import { requireUser } from "../../../hooks/auth.js";
 import { requireWritableStore } from "../../../hooks/store-role.js";
 import { resolveStoreForRole } from "../../campaigns/manage.helpers.js";
@@ -43,6 +43,9 @@ export const createAccountSessionRoute: FastifyPluginAsync = async (app) => {
           where: { id: sub },
           select: { email: true },
         });
+        // A conta conectada nasce no nome de quem responde pela loja, e o Stripe exige um
+        // e-mail para ela. Conta leve não abre conta conectada.
+        if (!user.email) throw new ValidationError("email_required");
         const created = await app.gateways.stripe.createConnectedAccount({
           email: user.email,
           storeName: store.name,

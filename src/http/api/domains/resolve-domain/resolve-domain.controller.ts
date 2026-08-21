@@ -31,7 +31,7 @@ export const resolveDomainRoute: FastifyPluginAsync = async (app) => {
       if (!domain) throw new NotFoundError("store_not_found");
       const store = await createStoresRepository(db).findByVerifiedDomain(domain);
       if (!store) throw new NotFoundError("store_not_found");
-      return toStoreResponse(store);
+      return toStoreResponse(store, app.gateways.r2.publicUrl);
     },
   );
 };

@@ -28,7 +28,7 @@ export const updateStoreRoute: FastifyPluginAsync = async (app) => {
       requireStoreRole(req, store.id, "admin");
       requireWritableStore(req, store);
       const updated = await repo.update(store.id, req.body as UpdateStoreBody);
-      return toStoreResponse(updated);
+      return toStoreResponse(updated, app.gateways.r2.publicUrl);
     },
   );
 };

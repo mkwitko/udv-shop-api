@@ -61,6 +61,26 @@ export async function seedDatabase(db: PrismaClient): Promise<string> {
     });
   }
 
+  // Gavetas da vitrine, incluindo uma vazia de propósito: a gestão precisa vê-la e a
+  // vitrine não pode desenhá-la.
+  const categoryNames = [
+    { slug: "vestuario", name: "Vestuário", position: 0 },
+    { slug: "casa", name: "Casa", position: 1 },
+    { slug: "leitura", name: "Leitura", position: 2 },
+    { slug: "sementes", name: "Sementes", position: 3 },
+    // gaveta sem produto: existe na gestão, não aparece na vitrine
+    { slug: "cozinha", name: "Cozinha", position: 4 },
+  ];
+  const categories = new Map<string, string>();
+  for (const category of categoryNames) {
+    const saved = await db.productCategory.upsert({
+      where: { storeId_slug: { storeId: store.id, slug: category.slug } },
+      update: { name: category.name, position: category.position },
+      create: { ...category, storeId: store.id },
+    });
+    categories.set(category.slug, saved.id);
+  }
+
   const products = [
     {
       slug: "camiseta-uniao",
@@ -70,6 +90,7 @@ export async function seedDatabase(db: PrismaClient): Promise<string> {
       stock: 12,
       availability: "in_stock" as const,
       active: true,
+      category: "vestuario",
     },
     {
       slug: "caneca-esperanca",
@@ -79,6 +100,7 @@ export async function seedDatabase(db: PrismaClient): Promise<string> {
       stock: 3,
       availability: "in_stock" as const,
       active: true,
+      category: "casa",
     },
     {
       slug: "livro-doutrina",
@@ -88,6 +110,7 @@ export async function seedDatabase(db: PrismaClient): Promise<string> {
       stock: 0,
       availability: "on_demand" as const,
       active: true,
+      category: "leitura",
     },
     {
       slug: "chaveiro-antigo",
@@ -97,16 +120,99 @@ export async function seedDatabase(db: PrismaClient): Promise<string> {
       stock: 0,
       availability: "in_stock" as const,
       active: false,
+      category: "casa",
+    },
+    // volume suficiente para exercitar paginação, busca e ordenação na vitrine
+    {
+      slug: "cha-de-hortela",
+      name: "Chá de hortelã da horta comunitária",
+      description: "Folhas colhidas e secas no núcleo, embalagem de 40g.",
+      priceCents: 2200,
+      stock: 30,
+      availability: "in_stock" as const,
+      active: true,
+      category: "casa",
+    },
+    {
+      slug: "mel-silvestre",
+      name: "Mel silvestre",
+      description: "Colhido na mata do núcleo, vidro de 500g.",
+      priceCents: 4800,
+      stock: 8,
+      availability: "in_stock" as const,
+      active: true,
+      category: "casa",
+    },
+    {
+      slug: "cesto-de-palha",
+      name: "Cesto de palha trançado à mão",
+      description: "Trançado por Dona Ana, dois tamanhos.",
+      priceCents: 15900,
+      stock: 4,
+      availability: "in_stock" as const,
+      active: true,
+      category: "casa",
+    },
+    {
+      slug: "moletom-colheita",
+      name: "Moletom Colheita",
+      description: "Moletom flanelado, bordado no peito.",
+      priceCents: 18900,
+      stock: 6,
+      availability: "in_stock" as const,
+      active: true,
+      category: "vestuario",
+    },
+    {
+      slug: "bone-uniao",
+      name: "Boné União",
+      description: "Aba curva, bordado.",
+      priceCents: 6500,
+      stock: 0,
+      availability: "in_stock" as const,
+      active: true,
+      category: "vestuario",
+    },
+    {
+      slug: "caderno-de-hinos",
+      name: "Caderno de hinos com capa de tecido",
+      description: "Costurado à mão, 120 páginas pautadas.",
+      priceCents: 7500,
+      stock: 15,
+      availability: "in_stock" as const,
+      active: true,
+      category: "leitura",
+    },
+    {
+      slug: "muda-de-jagube",
+      name: "Muda de jagube",
+      description: "Retirada apenas no núcleo, sob encomenda.",
+      priceCents: 3500,
+      stock: 0,
+      availability: "on_demand" as const,
+      active: true,
+      category: "sementes",
+    },
+    {
+      slug: "vela-artesanal",
+      name: "Vela artesanal de cera de abelha com pavio de algodão trançado",
+      description: "Nome longo de propósito: o card precisa aguentar duas linhas.",
+      priceCents: 3900,
+      stock: 22,
+      availability: "in_stock" as const,
+      active: true,
+      category: null,
     },
   ];
 
   const saved = [];
-  for (const p of products) {
+  for (const { category, ...p } of products) {
+    const categoryId = category ? (categories.get(category) ?? null) : null;
     saved.push(
       await db.product.upsert({
         where: { storeId_slug: { storeId: store.id, slug: p.slug } },
-        update: p,
-        create: { ...p, storeId: store.id },
+        update: { ...p, categoryId },
+        create: { ...p, categoryId, storeId: store.id },
       }),
     );
   }

@@ -4,6 +4,7 @@ import { db } from "../../../../infra/db/client.js";
 import { NotFoundError } from "../../../../shared/errors.js";
 import { requireStoreRole, requireWritableStore } from "../../../hooks/store-role.js";
 import { createStoresRepository } from "../../stores/stores.repository.js";
+import { assertCategoryForStore } from "../product-category.js";
 import { assertPayoutForStore } from "../product-payout.js";
 import { createProductsRepository, toProductResponse } from "../products.repository.js";
 import { ProductResponse, UpdateProductBody } from "../products.schema.js";
@@ -39,6 +40,7 @@ export const updateProductRoute: FastifyPluginAsync = async (app) => {
         payoutKind: body.payoutKind !== undefined ? body.payoutKind : product.payoutKind,
         payoutValue: body.payoutValue !== undefined ? body.payoutValue : product.payoutValue,
       });
+      await assertCategoryForStore(store.id, body.categoryId);
       const updated = await repo.update(product.id, body);
       return toProductResponse(updated, app.gateways.r2.publicUrl, { payout: true });
     },

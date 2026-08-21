@@ -6,6 +6,31 @@ import {
   KEYSET_ORDER_BY,
   toPage,
 } from "../../../lib/cursor.js";
+import type { StoreBrandingInput } from "./stores.schema.js";
+
+/** Chaves guardadas em `Store.branding`. Só isso vai para o banco. */
+type StoredBranding = { logoKey: string | null; coverKey: string | null };
+
+function readBranding(raw: unknown): StoredBranding | null {
+  if (!raw || typeof raw !== "object") return null;
+  const value = raw as Record<string, unknown>;
+  return {
+    logoKey: typeof value.logoKey === "string" ? value.logoKey : null,
+    coverKey: typeof value.coverKey === "string" ? value.coverKey : null,
+  };
+}
+
+/**
+ * PATCH de verdade: campo ausente fica como está, `null` limpa. Sem isto, salvar só a
+ * capa apagaria a logo que a loja já tinha subido.
+ */
+function mergeBranding(current: unknown, patch: StoreBrandingInput): StoredBranding {
+  const base = readBranding(current) ?? { logoKey: null, coverKey: null };
+  return {
+    logoKey: patch.logoKey === undefined ? base.logoKey : patch.logoKey,
+    coverKey: patch.coverKey === undefined ? base.coverKey : patch.coverKey,
+  };
+}
 
 export interface StoresRepository {
   findBySlug(slug: string): Promise<Store | null>;
@@ -29,7 +54,7 @@ export interface StoresRepository {
     data: {
       name?: string | undefined;
       description?: string | null | undefined;
-      branding?: unknown;
+      branding?: StoreBrandingInput | undefined;
     },
   ): Promise<Store>;
   setStatus(id: string, status: StoreStatus): Promise<Store>;
@@ -109,11 +134,20 @@ export function createStoresRepository(db: PrismaClient): StoresRepository {
       return rows.map((r) => ({ store: r.store, role: r.role }));
     },
 
-    update: (id, data) => {
+    update: async (id, data) => {
       const updateData: Prisma.StoreUpdateInput = {};
       if (data.name !== undefined) updateData.name = data.name;
       if (data.description !== undefined) updateData.description = data.description;
-      if (data.branding !== undefined) updateData.branding = data.branding as Prisma.InputJsonValue;
+      if (data.branding !== undefined) {
+        const current = await db.store.findUniqueOrThrow({
+          where: { id },
+          select: { branding: true },
+        });
+        updateData.branding = mergeBranding(
+          current.branding,
+          data.branding,
+        ) as unknown as Prisma.InputJsonValue;
+      }
       return db.store.update({ where: { id }, data: updateData });
     },
     setStatus: (id, status) => db.store.update({ where: { id }, data: { status } }),
@@ -149,14 +183,22 @@ export function createStoresRepository(db: PrismaClient): StoresRepository {
   };
 }
 
-export function toStoreResponse(store: Store) {
+export function toStoreResponse(store: Store, publicUrl: (key: string) => string) {
+  const branding = readBranding(store.branding);
   return {
     id: store.id,
     slug: store.slug,
     name: store.name,
     description: store.description,
     status: store.status,
-    branding: store.branding ?? null,
+    // chave é o que guardamos; URL é derivada, igual às fotos de produto
+    branding: branding
+      ? {
+          ...branding,
+          logoUrl: branding.logoKey ? publicUrl(branding.logoKey) : null,
+          coverUrl: branding.coverKey ? publicUrl(branding.coverKey) : null,
+        }
+      : null,
     createdAt: store.createdAt.toISOString(),
   };
 }

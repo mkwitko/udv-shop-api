@@ -19,7 +19,8 @@ export type ExportOrderRow = {
   totalCents: number;
   contactPhone: string;
   customerName: string;
-  customerEmail: string;
+  /** Nulável: quem compra sem conta pode ter deixado só telefone. */
+  customerEmail: string | null;
   items: string;
 };
 

@@ -4,6 +4,7 @@ import { db } from "../../../../infra/db/client.js";
 import { NotFoundError } from "../../../../shared/errors.js";
 import { requireStoreRole, requireWritableStore } from "../../../hooks/store-role.js";
 import { createStoresRepository } from "../../stores/stores.repository.js";
+import { assertCategoryForStore } from "../product-category.js";
 import { assertPayoutForStore } from "../product-payout.js";
 import { createProductsRepository, toProductResponse } from "../products.repository.js";
 import { CreateProductBody, ProductResponse } from "../products.schema.js";
@@ -33,6 +34,7 @@ export const createProductRoute: FastifyPluginAsync = async (app) => {
       requireWritableStore(req, store);
       const body = req.body as CreateProductBody;
       await assertPayoutForStore(store, { ...body, priceCents: body.priceCents });
+      await assertCategoryForStore(store.id, body.categoryId);
       const service = createCreateProductService({ repo: createProductsRepository(db) });
       const product = await service({ ...body, storeId: store.id });
       void reply
