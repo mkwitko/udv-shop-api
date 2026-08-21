@@ -61,7 +61,18 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - name: compose pull && up na VM
+      - uses: actions/checkout@v4
+      # Sem este passo, mudança em script, compose ou tuning do banco nunca chega na VM.
+      - name: manda compose, scripts e deploy/ para a VM
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.DEPLOY_SSH_HOST }}
+          username: ${{ secrets.DEPLOY_SSH_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          source: "docker-compose.prod.yml,scripts/*,deploy/**"
+          target: ${{ secrets.DEPLOY_PATH }}
+          overwrite: true
+      - name: troca a imagem, com dump antes e volta se falhar
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.DEPLOY_SSH_HOST }}
@@ -70,6 +81,5 @@ jobs:
           script: |
             set -euo pipefail
             cd ${{ secrets.DEPLOY_PATH }}
-            docker compose -f docker-compose.prod.yml pull api
-            docker compose -f docker-compose.prod.yml up -d
-            docker image prune -f
+            chmod +x scripts/*.sh
+            ./scripts/deploy-image.sh '${{ needs.image.outputs.image }}'
