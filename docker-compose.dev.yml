@@ -1,19 +1,23 @@
 services:
   postgres:
-    image: postgres:17-alpine
+    # bookworm, não alpine: musl não tem locale de verdade e a collation cai para byte-a-byte.
+    # ICU pt-BR precisa valer em dev, CI e produção — divergir é ter teste que mente.
+    image: postgres:17.6-bookworm
     environment:
       POSTGRES_USER: udv
       POSTGRES_PASSWORD: udv
       POSTGRES_DB: udvshop
+      POSTGRES_INITDB_ARGS: "--locale-provider=icu --icu-locale=pt-BR --encoding=UTF8 --locale=C.UTF-8"
     # 5433 já é usada por outro projeto nesta máquina (jurispro-test-db)
     ports: ["5436:5432"]
     volumes: [pgdata:/var/lib/postgresql/data]
   postgres-test:
-    image: postgres:17-alpine
+    image: postgres:17.6-bookworm
     environment:
       POSTGRES_USER: udv
       POSTGRES_PASSWORD: udv
       POSTGRES_DB: udvshop_test
+      POSTGRES_INITDB_ARGS: "--locale-provider=icu --icu-locale=pt-BR --encoding=UTF8 --locale=C.UTF-8"
     ports: ["5434:5432"]
 volumes:
   pgdata:

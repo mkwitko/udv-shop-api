@@ -10,11 +10,13 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:17-alpine
+        # Mesma imagem e mesmo locale da produção: divergir aqui é ter teste que mente.
+        image: postgres:17.6-bookworm
         env:
           POSTGRES_USER: udv
           POSTGRES_PASSWORD: udv
           POSTGRES_DB: udvshop_test
+          POSTGRES_INITDB_ARGS: "--locale-provider=icu --icu-locale=pt-BR --encoding=UTF8 --locale=C.UTF-8"
         ports:
           # .env.test aponta para 5434
           - 5434:5432
