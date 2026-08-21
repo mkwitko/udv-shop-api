@@ -34,15 +34,25 @@ TMP="$(mktemp -d)"
 cleanup() { rm -rf "$TMP"; }
 trap cleanup EXIT
 
+PG_CID="$(docker compose -f docker-compose.prod.yml ps -q postgres)"
+[[ -n "$PG_CID" ]] || {
+  echo "container do postgres não está rodando" >&2
+  exit 1
+}
+
 # 1. Formato custom, não SQL puro: permite pg_restore -j (paralelo) e restore de uma
 #    tabela só, que é o que salva o dia quando o problema é uma tabela e não o banco.
-docker compose -f docker-compose.prod.yml exec -T \
-  -e PGPASSWORD="$POSTGRES_BACKUP_PASSWORD" postgres \
-  pg_dump -U udv_backup -d udvshop -Fc -Z6 --no-owner --no-acl >"$TMP/$BASE"
+#    O dump nasce dentro do container e é validado lá: o pg_restore do host costuma ser de
+#    uma versão mais velha e recusa o header do arquivo ("unsupported version").
+docker exec -e PGPASSWORD="$POSTGRES_BACKUP_PASSWORD" "$PG_CID" \
+  pg_dump -U udv_backup -d udvshop -Fc -Z6 --no-owner --no-acl -f "/tmp/$BASE"
 
 # 2. Dump truncado por disco cheio ou OOM "termina bem": só a leitura do índice do arquivo
 #    prova que está inteiro. Sem este passo, o defeito aparece no dia do desastre.
-pg_restore --list "$TMP/$BASE" >/dev/null
+docker exec "$PG_CID" pg_restore --list "/tmp/$BASE" >/dev/null
+
+docker cp "$PG_CID:/tmp/$BASE" "$TMP/$BASE"
+docker exec "$PG_CID" rm -f "/tmp/$BASE"
 
 # 3. Impressão digital do arquivo em claro, para o ensaio de restore conferir.
 sha256sum "$TMP/$BASE" | awk '{print $1}' >"$TMP/$BASE.sha256"
