@@ -63,7 +63,10 @@ q() { docker exec -e PGPASSWORD=ensaio "$NAME" psql -qtAX -U postgres -d udvshop
 
 fail=0
 
-MIGRATIONS="$(q 'SELECT count(*) FROM _prisma_migrations')"
+# só dígitos: se a tabela não existe, o psql devolve texto de erro e a comparação
+# numérica abaixo se perderia num "integer expression expected" em vez da mensagem certa
+MIGRATIONS="$(q 'SELECT count(*) FROM _prisma_migrations' 2>/dev/null | tr -dc '0-9')"
+MIGRATIONS="${MIGRATIONS:-0}"
 if [[ "$MIGRATIONS" -lt 1 ]]; then
   echo "FALHOU: banco restaurado sem migration registrada" >&2
   fail=1
@@ -81,8 +84,10 @@ done
 # por algum motivo que ninguém notou.
 LIVE_STORES="$(docker compose -f docker-compose.prod.yml exec -T \
   -e PGPASSWORD="$POSTGRES_BACKUP_PASSWORD" postgres \
-  psql -qtAX -U udv_backup -d udvshop -c 'SELECT count(*) FROM stores' | tr -d '[:space:]')"
-RESTORED_STORES="$(q 'SELECT count(*) FROM stores' | tr -d '[:space:]')"
+  psql -qtAX -U udv_backup -d udvshop -c 'SELECT count(*) FROM stores' 2>/dev/null | tr -dc '0-9')"
+LIVE_STORES="${LIVE_STORES:-0}"
+RESTORED_STORES="$(q 'SELECT count(*) FROM stores' 2>/dev/null | tr -dc '0-9')"
+RESTORED_STORES="${RESTORED_STORES:-0}"
 if [[ "$LIVE_STORES" -gt 0 && "$RESTORED_STORES" -lt 1 ]]; then
   echo "FALHOU: produção tem $LIVE_STORES loja(s) e o restore tem $RESTORED_STORES" >&2
   fail=1
