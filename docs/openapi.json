@@ -106,6 +106,7 @@
                           "type": "string"
                         },
                         "email": {
+                          "nullable": true,
                           "type": "string"
                         },
                         "emailVerified": {
@@ -233,6 +234,7 @@
                           "type": "string"
                         },
                         "email": {
+                          "nullable": true,
                           "type": "string"
                         },
                         "emailVerified": {
@@ -291,6 +293,7 @@
                           "type": "string"
                         },
                         "email": {
+                          "nullable": true,
                           "type": "string"
                         },
                         "emailVerified": {
@@ -468,6 +471,7 @@
                       "type": "string"
                     },
                     "email": {
+                      "nullable": true,
                       "type": "string"
                     },
                     "emailVerified": {
@@ -6484,6 +6488,30 @@
                   "message": {
                     "type": "string",
                     "maxLength": 500
+                  },
+                  "contact": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "minLength": 2,
+                        "maxLength": 120
+                      },
+                      "phone": {
+                        "type": "string",
+                        "minLength": 8,
+                        "maxLength": 20
+                      },
+                      "email": {
+                        "type": "string",
+                        "format": "email",
+                        "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "phone"
+                    ]
                   }
                 },
                 "required": [
@@ -6498,7 +6526,8 @@
         "security": [
           {
             "bearerAuth": []
-          }
+          },
+          {}
         ],
         "responses": {
           "201": {
@@ -6675,11 +6704,16 @@
                           "additionalProperties": false
                         }
                       ]
+                    },
+                    "receiptToken": {
+                      "nullable": true,
+                      "type": "string"
                     }
                   },
                   "required": [
                     "donation",
-                    "payment"
+                    "payment",
+                    "receiptToken"
                   ],
                   "additionalProperties": false
                 }
@@ -7035,6 +7069,127 @@
         }
       }
     },
+    "/donations/{id}/receipt": {
+      "get": {
+        "operationId": "getDonationReceipt",
+        "tags": [
+          "donations"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "in": "query",
+            "name": "token",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "type": "string",
+                      "enum": [
+                        "one_time",
+                        "monthly"
+                      ]
+                    },
+                    "amountCents": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "currency": {
+                      "type": "string"
+                    },
+                    "store": {
+                      "type": "object",
+                      "properties": {
+                        "slug": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "slug",
+                        "name"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "campaign": {
+                      "nullable": true,
+                      "type": "object",
+                      "properties": {
+                        "slug": {
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "slug",
+                        "title"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "raffleNumbers": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      }
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "status",
+                    "type",
+                    "amountCents",
+                    "currency",
+                    "store",
+                    "campaign",
+                    "raffleNumbers",
+                    "createdAt"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/stores/{slug}/donations": {
       "get": {
         "operationId": "listStoreDonations",
@@ -7194,6 +7349,7 @@
                                 "type": "string"
                               },
                               "email": {
+                                "nullable": true,
                                 "type": "string"
                               },
                               "phone": {
@@ -7274,6 +7430,30 @@
                   "note": {
                     "type": "string",
                     "maxLength": 500
+                  },
+                  "contact": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "minLength": 2,
+                        "maxLength": 120
+                      },
+                      "phone": {
+                        "type": "string",
+                        "minLength": 8,
+                        "maxLength": 20
+                      },
+                      "email": {
+                        "type": "string",
+                        "format": "email",
+                        "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "phone"
+                    ]
                   }
                 },
                 "required": [
@@ -7287,7 +7467,8 @@
         "security": [
           {
             "bearerAuth": []
-          }
+          },
+          {}
         ],
         "responses": {
           "201": {
@@ -7795,11 +7976,16 @@
                               "phoneMasked": {
                                 "nullable": true,
                                 "type": "string"
+                              },
+                              "phone": {
+                                "nullable": true,
+                                "type": "string"
                               }
                             },
                             "required": [
                               "name",
-                              "phoneMasked"
+                              "phoneMasked",
+                              "phone"
                             ],
                             "additionalProperties": false
                           }
@@ -8807,13 +8993,36 @@
                   "note": {
                     "type": "string",
                     "maxLength": 500
+                  },
+                  "contact": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "minLength": 2,
+                        "maxLength": 120
+                      },
+                      "phone": {
+                        "type": "string",
+                        "minLength": 8,
+                        "maxLength": 20
+                      },
+                      "email": {
+                        "type": "string",
+                        "format": "email",
+                        "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "phone"
+                    ]
                   }
                 },
                 "required": [
                   "storeSlug",
                   "provider",
-                  "items",
-                  "contactPhone"
+                  "items"
                 ]
               }
             }
@@ -8822,7 +9031,8 @@
         "security": [
           {
             "bearerAuth": []
-          }
+          },
+          {}
         ],
         "responses": {
           "201": {
@@ -8991,11 +9201,16 @@
                           "additionalProperties": false
                         }
                       ]
+                    },
+                    "receiptToken": {
+                      "nullable": true,
+                      "type": "string"
                     }
                   },
                   "required": [
                     "order",
-                    "payment"
+                    "payment",
+                    "receiptToken"
                   ],
                   "additionalProperties": false
                 }
@@ -9308,6 +9523,120 @@
                     "createdAt",
                     "items",
                     "payment"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/orders/{id}/receipt": {
+      "get": {
+        "operationId": "getOrderReceipt",
+        "tags": [
+          "orders"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "in": "query",
+            "name": "token",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "totalCents": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "currency": {
+                      "type": "string"
+                    },
+                    "store": {
+                      "type": "object",
+                      "properties": {
+                        "slug": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "slug",
+                        "name"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "qty": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "priceCents": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "qty",
+                          "priceCents"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "status",
+                    "totalCents",
+                    "currency",
+                    "store",
+                    "items",
+                    "createdAt"
                   ],
                   "additionalProperties": false
                 }

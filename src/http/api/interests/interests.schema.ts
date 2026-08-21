@@ -35,13 +35,16 @@ export const InterestsPageResponse = z.object({
 });
 
 /**
- * Fila vista pela loja: precisa de quem é a pessoa para combinar a entrega, mas o
- * telefone sai mascarado — a lista inteira não é lugar de dado de contato completo.
+ * Fila vista pela loja: precisa de quem é a pessoa para combinar a entrega. O telefone sai
+ * mascarado por padrão — a lista inteira não é lugar de dado de contato completo — e o número
+ * inteiro só aparece para owner e admin, que são quem avisa por WhatsApp quem deixou só
+ * telefone. Mesma fronteira que já governa quem pode disparar o aviso de chegada.
  */
 export const StoreInterestResponse = InterestResponse.extend({
   customer: z.object({
     name: z.string(),
     phoneMasked: z.string().nullable(),
+    phone: z.string().nullable(),
   }),
 });
 

@@ -171,8 +171,59 @@ describe("gestão de encomendas", () => {
     const item = res
       .json()
       .items.find((i: { customer: { name: string } }) => i.customer.name === "Maria Silva");
-    expect(item.customer).toEqual({ name: "Maria Silva", phoneMasked: "(48) ****-5678" });
+    expect(item.customer).toEqual({
+      name: "Maria Silva",
+      phoneMasked: "(48) ****-5678",
+      phone: null,
+    });
     expect(res.payload).not.toContain("999995678");
+  });
+
+  // Quem deixou só telefone é avisado por WhatsApp: sem o número inteiro, a loja coleta um
+  // dado que não consegue usar. Owner e admin são a mesma fronteira que já pode disparar o
+  // aviso de chegada; staff continua no mascarado.
+  it("owner vê o telefone completo do interessado", async () => {
+    const { store, cha } = await seedDemand();
+    const pessoa = await db.user.create({
+      data: { name: "Maria Visitante", phone: "5548999995678" },
+    });
+    await db.productInterest.create({ data: { productId: cha.id, userId: pessoa.id, qty: 1 } });
+    const { token } = await registerWithRole(app, "owner-fone@example.org", store.id, "owner");
+    const res = await app.inject({
+      method: "GET",
+      url: "/stores/nucleo-a/interests?limit=50",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(200);
+    const item = res
+      .json()
+      .items.find((i: { customer: { name: string } }) => i.customer.name === "Maria Visitante");
+    expect(item.customer.phone).toBe("5548999995678");
+    expect(item.customer.phoneMasked).toBe("(48) ****-5678");
+  });
+
+  it("admin também vê, staff não", async () => {
+    const { store, cha } = await seedDemand();
+    const pessoa = await db.user.create({
+      data: { name: "Maria Visitante", phone: "5548999995678" },
+    });
+    await db.productInterest.create({ data: { productId: cha.id, userId: pessoa.id, qty: 1 } });
+
+    const admin = await registerWithRole(app, "admin-fone@example.org", store.id, "admin");
+    const asAdmin = await app.inject({
+      method: "GET",
+      url: "/stores/nucleo-a/interests?limit=50",
+      headers: { authorization: `Bearer ${admin.token}` },
+    });
+    expect(asAdmin.payload).toContain("5548999995678");
+
+    const staff = await registerWithRole(app, "staff-fone@example.org", store.id, "staff");
+    const asStaff = await app.inject({
+      method: "GET",
+      url: "/stores/nucleo-a/interests?limit=50",
+      headers: { authorization: `Bearer ${staff.token}` },
+    });
+    expect(asStaff.payload).not.toContain("5548999995678");
   });
 
   it("filtra por productSlug e por status", async () => {

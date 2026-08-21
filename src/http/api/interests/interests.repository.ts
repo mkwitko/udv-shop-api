@@ -220,13 +220,18 @@ export function createInterestsRepository(db: PrismaClient): InterestsRepository
   };
 }
 
-/** Resposta da fila da loja: identidade suficiente para agir, contato mascarado. */
-export function toStoreInterestResponse(interest: InterestWithDetails) {
+/**
+ * Resposta da fila da loja: identidade suficiente para agir, contato mascarado. O número
+ * inteiro só vai quando quem pediu responde pela loja — é essa pessoa que avisa por WhatsApp
+ * quem deixou só telefone.
+ */
+export function toStoreInterestResponse(interest: InterestWithDetails, revealPhone: boolean) {
   return {
     ...toInterestResponse(interest),
     customer: {
       name: interest.user.name,
       phoneMasked: maskPhone(interest.user.phone),
+      phone: revealPhone ? interest.user.phone : null,
     },
   };
 }
