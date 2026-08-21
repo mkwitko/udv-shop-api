@@ -11,7 +11,15 @@ import {
 const DONATION_INCLUDE = {
   store: { select: { slug: true, name: true } },
   campaign: { select: { slug: true, title: true } },
-  payment: { select: { id: true, provider: true, status: true } },
+  payment: {
+    select: {
+      id: true,
+      provider: true,
+      status: true,
+      pixBrCode: true,
+      pixQrCodeUrl: true,
+    },
+  },
   entries: { select: { number: true }, orderBy: { number: "asc" } },
 } satisfies Prisma.DonationInclude;
 
@@ -40,6 +48,11 @@ export interface DonationsRepository {
     expiresAt: Date | null;
   }): Promise<DonationWithDetails>;
   attachProviderId(paymentId: string, providerId: string): Promise<void>;
+  /**
+   * Guarda a cobrança Pix para a tela de pagamento renascer depois de um F5 — sem isso o QR
+   * code vive só na memória do navegador.
+   */
+  attachPixCharge(paymentId: string, pix: { brCode: string; qrCodeUrl: string }): Promise<void>;
   attachSubscriptionRef(donationId: string, subscriptionRef: string): Promise<void>;
   compensateFailedDonation(donationId: string): Promise<void>;
   markPaid(
@@ -112,6 +125,13 @@ export function createDonationsRepository(db: PrismaClient): DonationsRepository
 
     attachProviderId: async (paymentId, providerId) => {
       await db.payment.update({ where: { id: paymentId }, data: { providerId } });
+    },
+
+    attachPixCharge: async (paymentId, pix) => {
+      await db.payment.update({
+        where: { id: paymentId },
+        data: { pixBrCode: pix.brCode, pixQrCodeUrl: pix.qrCodeUrl },
+      });
     },
 
     attachSubscriptionRef: async (donationId, subscriptionRef) => {

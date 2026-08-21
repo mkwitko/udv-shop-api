@@ -44,6 +44,16 @@ export const donationReceiptRoute: FastifyPluginAsync = async (app) => {
           ? { slug: donation.campaign.slug, title: donation.campaign.title }
           : null,
         raffleNumbers: donation.entries.map((e) => e.number),
+        // A validade do Pix é a da doação pendente: é o mesmo relógio. Doação mensal não tem
+        // `expiresAt` — e também nunca chega aqui, porque exige conta.
+        pix:
+          donation.payment?.pixBrCode && donation.payment.pixQrCodeUrl && donation.expiresAt
+            ? {
+                brCode: donation.payment.pixBrCode,
+                qrCodeImageUrl: donation.payment.pixQrCodeUrl,
+                expiresAt: donation.expiresAt.toISOString(),
+              }
+            : null,
         createdAt: donation.createdAt.toISOString(),
       };
     },

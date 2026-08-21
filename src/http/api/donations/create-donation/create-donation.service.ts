@@ -126,6 +126,12 @@ export function createDonationService(deps: CreateDonationDeps) {
           comment: `Doação — ${store.name}`.slice(0, 140),
         });
         await deps.donations.attachProviderId(paymentId, charge.providerId);
+        // A cobrança fica gravada: o Pix espera minutos na tela, e um F5 sem isto perdia o QR
+        // code e deixava um pendente que ninguém tinha como pagar.
+        await deps.donations.attachPixCharge(paymentId, {
+          brCode: charge.brCode,
+          qrCodeUrl: charge.qrCodeImageUrl,
+        });
         instructions = {
           provider: "woovi",
           brCode: charge.brCode,

@@ -417,6 +417,12 @@ model Payment {
   donationId          String?         @unique @map("donation_id") @db.Uuid
   provider            PaymentProvider
   providerId          String?         @map("provider_id")
+  /// Cobrança Pix como o provedor devolveu. Persistida porque o Pix fica minutos na tela
+  /// esperando: sem isso um F5 perde o QR code e a pessoa fica com um pagamento pendente e
+  /// nenhum jeito de pagá-lo. Cartão não entra aqui — é síncrono, e o clientSecret morre com
+  /// a tentativa.
+  pixBrCode           String?         @map("pix_br_code")
+  pixQrCodeUrl        String?         @map("pix_qr_code_url")
   amountCents         Int             @map("amount_cents")
   applicationFeeCents Int             @map("application_fee_cents")
   status              PaymentStatus   @default(pending)

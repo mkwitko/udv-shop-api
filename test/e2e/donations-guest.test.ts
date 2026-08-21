@@ -88,6 +88,22 @@ describe("doação sem conta", () => {
     expect(JSON.stringify(receipt)).not.toContain("98888");
   });
 
+  it("recibo devolve a cobrança Pix para a tela renascer depois de um F5", async () => {
+    await seedStore();
+    const created = await guestDonation(app);
+    const { donation, receiptToken, payment } = created.json();
+    const res = await app.inject({
+      method: "GET",
+      url: `/donations/${donation.id}/receipt?token=${receiptToken}`,
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().pix).toEqual({
+      brCode: payment.brCode,
+      qrCodeImageUrl: payment.qrCodeImageUrl,
+      expiresAt: expect.any(String),
+    });
+  });
+
   it("token errado é 404", async () => {
     await seedStore();
     const created = await guestDonation(app);

@@ -46,6 +46,11 @@ export interface OrdersRepository {
     expiresAt: Date;
   }): Promise<OrderWithDetails>;
   attachProviderId(paymentId: string, providerId: string): Promise<void>;
+  /**
+   * Guarda a cobrança Pix para a tela de pagamento renascer depois de um F5 — sem isso o QR
+   * code vive só na memória do navegador.
+   */
+  attachPixCharge(paymentId: string, pix: { brCode: string; qrCodeUrl: string }): Promise<void>;
   compensateFailedCheckout(orderId: string): Promise<void>;
   markPaid(
     paymentId: string,
@@ -135,6 +140,13 @@ export function createOrdersRepository(db: PrismaClient): OrdersRepository {
 
     attachProviderId: async (paymentId, providerId) => {
       await db.payment.update({ where: { id: paymentId }, data: { providerId } });
+    },
+
+    attachPixCharge: async (paymentId, pix) => {
+      await db.payment.update({
+        where: { id: paymentId },
+        data: { pixBrCode: pix.brCode, pixQrCodeUrl: pix.qrCodeUrl },
+      });
     },
 
     compensateFailedCheckout: async (orderId) => {

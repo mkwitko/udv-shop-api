@@ -79,6 +79,36 @@ describe("checkout sem conta", () => {
     expect(JSON.stringify(receipt)).not.toContain("98888");
   });
 
+  // O Pix fica minutos na tela esperando. Se o recibo não devolver a cobrança, um F5 deixa a
+  // pessoa com um pedido pendente e nenhum jeito de pagá-lo.
+  it("recibo devolve a cobrança Pix para a tela renascer depois de um F5", async () => {
+    await seedStore();
+    const created = await guestCheckout(app);
+    const { order, receiptToken, payment } = created.json();
+    const res = await app.inject({
+      method: "GET",
+      url: `/orders/${order.id}/receipt?token=${receiptToken}`,
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().pix).toEqual({
+      brCode: payment.brCode,
+      qrCodeImageUrl: payment.qrCodeImageUrl,
+      expiresAt: expect.any(String),
+    });
+  });
+
+  it("recibo de pedido no cartão não tem Pix", async () => {
+    await seedStore();
+    const created = await guestCheckout(app, { provider: "stripe" });
+    const { order, receiptToken } = created.json();
+    const res = await app.inject({
+      method: "GET",
+      url: `/orders/${order.id}/receipt?token=${receiptToken}`,
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().pix).toBeNull();
+  });
+
   it("token errado é 404", async () => {
     await seedStore();
     const created = await guestCheckout(app);

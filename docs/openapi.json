@@ -7167,6 +7167,27 @@
                         "maximum": 9007199254740991
                       }
                     },
+                    "pix": {
+                      "nullable": true,
+                      "type": "object",
+                      "properties": {
+                        "brCode": {
+                          "type": "string"
+                        },
+                        "qrCodeImageUrl": {
+                          "type": "string"
+                        },
+                        "expiresAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "brCode",
+                        "qrCodeImageUrl",
+                        "expiresAt"
+                      ],
+                      "additionalProperties": false
+                    },
                     "createdAt": {
                       "type": "string"
                     }
@@ -7180,6 +7201,7 @@
                     "store",
                     "campaign",
                     "raffleNumbers",
+                    "pix",
                     "createdAt"
                   ],
                   "additionalProperties": false
@@ -9625,6 +9647,27 @@
                         "additionalProperties": false
                       }
                     },
+                    "pix": {
+                      "nullable": true,
+                      "type": "object",
+                      "properties": {
+                        "brCode": {
+                          "type": "string"
+                        },
+                        "qrCodeImageUrl": {
+                          "type": "string"
+                        },
+                        "expiresAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "brCode",
+                        "qrCodeImageUrl",
+                        "expiresAt"
+                      ],
+                      "additionalProperties": false
+                    },
                     "createdAt": {
                       "type": "string"
                     }
@@ -9636,6 +9679,7 @@
                     "currency",
                     "store",
                     "items",
+                    "pix",
                     "createdAt"
                   ],
                   "additionalProperties": false

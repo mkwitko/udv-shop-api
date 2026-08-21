@@ -60,6 +60,16 @@ export const CheckoutResponse = z.object({
   receiptToken: z.string().nullable(),
 });
 
+/**
+ * Cobrança Pix guardada, para a tela de pagamento renascer depois de um F5. Nula quando o
+ * pagamento é no cartão — aí a tentativa morre com a aba, e é isso mesmo.
+ */
+export const PixCharge = z.object({
+  brCode: z.string(),
+  qrCodeImageUrl: z.string(),
+  expiresAt: z.string(),
+});
+
 /** Recibo público: o que aconteceu com o pagamento, nada sobre quem pagou. */
 export const OrderReceiptResponse = z.object({
   id: z.string(),
@@ -70,6 +80,7 @@ export const OrderReceiptResponse = z.object({
   items: z.array(
     z.object({ name: z.string(), qty: z.number().int(), priceCents: z.number().int() }),
   ),
+  pix: PixCharge.nullable(),
   createdAt: z.string(),
 });
 

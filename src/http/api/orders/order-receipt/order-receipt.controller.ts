@@ -39,6 +39,15 @@ export const orderReceiptRoute: FastifyPluginAsync = async (app) => {
         currency: order.currency,
         store: { slug: order.store.slug, name: order.store.name },
         items: order.items.map((i) => ({ name: i.name, qty: i.qty, priceCents: i.priceCents })),
+        // A validade do Pix é a da reserva do pedido: é o mesmo relógio.
+        pix:
+          order.payment?.pixBrCode && order.payment.pixQrCodeUrl
+            ? {
+                brCode: order.payment.pixBrCode,
+                qrCodeImageUrl: order.payment.pixQrCodeUrl,
+                expiresAt: order.expiresAt.toISOString(),
+              }
+            : null,
         createdAt: order.createdAt.toISOString(),
       };
     },

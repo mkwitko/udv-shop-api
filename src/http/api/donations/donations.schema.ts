@@ -64,6 +64,16 @@ export const CreateDonationResponse = z.object({
   receiptToken: z.string().nullable(),
 });
 
+/**
+ * Cobrança Pix guardada, para a tela de pagamento renascer depois de um F5. Nula quando o
+ * pagamento é no cartão — aí a tentativa morre com a aba, e é isso mesmo.
+ */
+export const PixCharge = z.object({
+  brCode: z.string(),
+  qrCodeImageUrl: z.string(),
+  expiresAt: z.string(),
+});
+
 /** Recibo público da doação: status, valor e números da sorte. Nada sobre quem doou. */
 export const DonationReceiptResponse = z.object({
   id: z.string(),
@@ -74,6 +84,7 @@ export const DonationReceiptResponse = z.object({
   store: z.object({ slug: z.string(), name: z.string() }),
   campaign: z.object({ slug: z.string(), title: z.string() }).nullable(),
   raffleNumbers: z.array(z.number().int()),
+  pix: PixCharge.nullable(),
   createdAt: z.string(),
 });
 
