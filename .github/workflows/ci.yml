@@ -55,6 +55,8 @@ jobs:
           # severity=warning: os avisos de nível info incluem SC2329 ("função nunca chamada")
           # para função que só o trap invoca, o que é falso positivo aqui.
           shellcheck --severity=warning scripts/*.sh scripts/test/*.sh deploy/postgres/initdb/*.sh
+      - name: parser de .env aguenta valor com < > | e espaço
+        run: ./scripts/test/load-env-check.sh
       - name: cluster nasce com ICU, tuning e roles corretos
         run: ./scripts/test/db-bootstrap-check.sh
       - name: composes válidos e sem porta publicada em produção

@@ -6,8 +6,9 @@ set -euo pipefail
 COMPOSE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$COMPOSE_DIR"
 
-# shellcheck disable=SC1091
-set -a && source .env && set +a
+# shellcheck source=scripts/load-env.sh
+source "$(dirname "${BASH_SOURCE[0]}")/load-env.sh"
+load_env .env
 
 fail=0
 

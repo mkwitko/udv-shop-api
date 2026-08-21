@@ -21,8 +21,9 @@ fi
 COMPOSE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$COMPOSE_DIR"
 
-# shellcheck disable=SC1091
-set -a && source .env && set +a
+# shellcheck source=scripts/load-env.sh
+source "$(dirname "${BASH_SOURCE[0]}")/load-env.sh"
+load_env .env
 
 : "${POSTGRES_BACKUP_PASSWORD:?}" "${R2_ACCOUNT_ID:?}" "${R2_BACKUP_BUCKET:?}" \
   "${R2_BACKUP_ACCESS_KEY_ID:?}" "${R2_BACKUP_SECRET_ACCESS_KEY:?}" "${BACKUP_AGE_RECIPIENT:?}"
