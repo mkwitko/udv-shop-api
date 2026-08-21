@@ -42,3 +42,18 @@ jobs:
           DATABASE_URL: postgresql://udv:udv@localhost:5434/udvshop_test
       - run: pnpm test
       - run: pnpm build
+
+  # Infra de banco e de deploy tem teste próprio: cluster que nasce errado e compose que não
+  # sobe são defeitos que só aparecem na VM, e lá é caro.
+  db-bootstrap:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck nos scripts de host
+        run: |
+          sudo apt-get update && sudo apt-get install -y shellcheck
+          # severity=warning: os avisos de nível info incluem SC2329 ("função nunca chamada")
+          # para função que só o trap invoca, o que é falso positivo aqui.
+          shellcheck --severity=warning scripts/*.sh scripts/test/*.sh deploy/postgres/initdb/*.sh
+      - name: cluster nasce com ICU, tuning e roles corretos
+        run: ./scripts/test/db-bootstrap-check.sh
