@@ -130,3 +130,37 @@ describe("woovi withdrawSubAccount", () => {
     }
   });
 });
+
+describe("woovi createCharge", () => {
+  // A Woovi recusa a cobrança inteira com "Emoji não é permitido no comentário" diante de
+  // travessão. O rótulo é montado longe daqui (`Doação — Núcleo X`), então a limpeza mora
+  // no gateway: é a única porta por onde o texto sai para a Woovi.
+  it("limpa o comentário antes de enviar", async () => {
+    const original = globalThis.fetch;
+    let sent: Record<string, unknown> = {};
+    globalThis.fetch = (async (_url: string, init: RequestInit) => {
+      sent = JSON.parse(init.body as string);
+      return new Response(
+        JSON.stringify({
+          charge: { identifier: "id", qrCodeImage: "img", expiresDate: "2026-01-01T00:00:00Z" },
+          brCode: "000201",
+        }),
+        { status: 200 },
+      );
+    }) as never;
+    const gw = createWooviGateway({ apiKey: "k", webhookHmacSecret: "s" });
+    try {
+      await gw.createCharge({
+        amountCents: 2500,
+        correlationID: "c1",
+        expiresInSeconds: 1800,
+        splitPixKey: "a@b.org",
+        splitValueCents: 2499,
+        comment: "Doação — Núcleo Demo",
+      });
+      expect(sent.comment).toBe("Doação - Núcleo Demo");
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+});

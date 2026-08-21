@@ -75,6 +75,29 @@ describe("createPaymentIntent", () => {
     expect(payload).not.toHaveProperty("application_fee_amount");
   });
 
+  it("conta conectada inválida vira erro acionável, não 502 genérico", async () => {
+    // o Stripe recusa quando o id da conta não existe mais (ou nunca existiu, como o
+    // do seed antigo): 502 "payment_provider_error" mandava a loja procurar um problema
+    // de plataforma que era, na verdade, o Connect dela
+    stripeMock.paymentIntentsCreate.mockRejectedValue(
+      Object.assign(new Error("does not have access to account"), { code: "account_invalid" }),
+    );
+
+    await expect(
+      gw().createPaymentIntent({ ...input, applicationFeeCents: 0 }),
+    ).rejects.toMatchObject({ message: "store_stripe_account_invalid", statusCode: 409 });
+  });
+
+  it("outros erros do Stripe continuam 502", async () => {
+    stripeMock.paymentIntentsCreate.mockRejectedValue(
+      Object.assign(new Error("api down"), { code: "api_error" }),
+    );
+
+    await expect(
+      gw().createPaymentIntent({ ...input, applicationFeeCents: 0 }),
+    ).rejects.toMatchObject({ message: "payment_provider_error", statusCode: 502 });
+  });
+
   it("manda a comissão quando ela existe (o campo continua por loja)", async () => {
     stripeMock.paymentIntentsCreate.mockResolvedValue({ id: "pi_1", client_secret: "cs_1" });
     await gw().createPaymentIntent({ ...input, applicationFeeCents: 250 });

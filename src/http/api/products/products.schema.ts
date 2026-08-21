@@ -83,6 +83,8 @@ export const SuggestDescriptionBody = z.object({
   name: z.string().min(2).max(160),
   draft: z.string().max(2000).optional(),
   mode: z.enum(["create", "improve"]).default("create"),
+  /** Pedido de quem escreve: "mais curto", "cita a horta". Vira contexto, não regra. */
+  instruction: z.string().max(300).optional(),
 });
 export type SuggestDescriptionBody = z.infer<typeof SuggestDescriptionBody>;
 

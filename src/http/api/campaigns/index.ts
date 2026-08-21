@@ -7,7 +7,9 @@ import { listRafflesRoute } from "../raffles/list-raffles/list-raffles.controlle
 import { putRaffleRoute } from "../raffles/put-raffle/put-raffle.controller.js";
 import { suggestPrizeDescriptionRoute } from "../raffles/suggest-prize-description/suggest-prize-description.controller.js";
 import { updateRaffleStatusRoute } from "../raffles/update-raffle-status/update-raffle-status.controller.js";
+import { archiveCampaignRoute } from "./archive-campaign/archive-campaign.controller.js";
 import { createCampaignRoute } from "./create-campaign/create-campaign.controller.js";
+import { deleteCampaignRoute } from "./delete-campaign/delete-campaign.controller.js";
 import { getCampaignRoute } from "./get-campaign/get-campaign.controller.js";
 import { listCampaignsRoute } from "./list-campaigns/list-campaigns.controller.js";
 import { suggestStoryRoute } from "./suggest-story/suggest-story.controller.js";
@@ -20,6 +22,8 @@ export const campaignsRoutes: FastifyPluginAsync = async (app) => {
   await app.register(getCampaignRoute);
   await app.register(updateCampaignRoute);
   await app.register(updateCampaignStatusRoute);
+  await app.register(deleteCampaignRoute);
+  await app.register(archiveCampaignRoute);
   // O sorteio mora sob a campanha na URL; registrar aqui evita uma terceira raiz de rotas.
   await app.register(createRaffleRoute);
   await app.register(listRafflesRoute);

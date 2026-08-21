@@ -125,6 +125,8 @@ export const SuggestPrizeDescriptionBody = z.object({
   campaignTitle: z.string().max(160).optional(),
   draft: z.string().max(4000).optional(),
   mode: z.enum(["create", "improve"]).default("create"),
+  /** Pedido de quem escreve: "mais curto", "cita a horta". Vira contexto, não regra. */
+  instruction: z.string().max(300).optional(),
 });
 export type SuggestPrizeDescriptionBody = z.infer<typeof SuggestPrizeDescriptionBody>;
 

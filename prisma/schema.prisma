@@ -467,6 +467,11 @@ model Campaign {
   acceptedTypes CampaignAcceptedTypes @default(both) @map("accepted_types")
   status        CampaignStatus        @default(draft)
   endsAt        DateTime?             @map("ends_at")
+  /// Arquivada sai das listagens sem perder a história: `status` continua sendo o que
+  /// aconteceu com a campanha (encerrada), e isto é só onde ela aparece.
+  archivedAt    DateTime?             @map("archived_at")
+  /// Galeria da campanha. `coverImage` é a escolhida para capa e é uma destas.
+  images        String[]              @default([])
   createdAt     DateTime              @default(now()) @map("created_at")
   updatedAt     DateTime              @updatedAt @map("updated_at")
 

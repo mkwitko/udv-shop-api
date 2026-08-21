@@ -42,12 +42,9 @@ export async function seedDatabase(db: PrismaClient): Promise<string> {
       status: "active",
       // sem comissão por venda: a plataforma vive da mensalidade (ADR-027)
       applicationFeeBps: 0,
-      // conta conectada fictícia: suficiente para as rotas de checkout aceitarem a loja
-      stripeAccountId: "acct_seed_demo",
-      stripeTransfersEnabled: true,
-      stripeChargesEnabled: true,
-      stripePayoutsEnabled: true,
-      stripeDetailsSubmitted: true,
+      // sem conta conectada: id inventado passava pelas nossas checagens e só quebrava
+      // no Stripe, com 502 na cara de quem tentava doar no cartão. A loja de exemplo
+      // nasce como qualquer loja nova — cartão só depois do onboarding em Recebimento.
       // chave Pix fictícia: com DEV_FAKE_PAYMENTS=true o checkout Pix funciona inteiro
       wooviPixKey: "demo@prospera.fake",
     },

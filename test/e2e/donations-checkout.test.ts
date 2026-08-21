@@ -136,6 +136,20 @@ describe("POST /donations", () => {
     expect(res.json().message).toBe("donation_type_not_accepted");
   });
 
+  // A Woovi devolve 400 quando o split iguala o valor da cobrança, e loja sem comissão
+  // (o padrão hoje: a plataforma vive de mensalidade) cairia exatamente nesse caso.
+  it("woovi com loja sem comissão: retém 1 centavo em vez de tentar split de 100%", async () => {
+    await seedStore({ applicationFeeBps: 0 });
+    const token = await customerToken(app, "d-fee0@example.org");
+    const res = await donate(app, token, { provider: "woovi" });
+    expect(res.statusCode).toBe(201);
+    const charge = gateways.wooviCharges.at(-1);
+    expect(charge?.amountCents).toBe(10000);
+    expect(charge?.splitValueCents).toBe(9999);
+    const payment = await db.payment.findFirstOrThrow();
+    expect(payment.applicationFeeCents).toBe(1);
+  });
+
   it("provider woovi + type monthly → 400 monthly_not_supported_for_provider", async () => {
     await seedStore();
     const token = await customerToken(app, "d5@example.org");

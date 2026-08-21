@@ -277,6 +277,204 @@ describe("gestão de campanhas", () => {
     }
   });
 
+  it("arquiva campanha encerrada: some da listagem e volta ao restaurar", async () => {
+    const store = await db.store.create({ data: { slug: "nx", name: "NX", status: "active" } });
+    const { token } = await registerWithRole(app, "adm-arq@example.org", store.id, "admin");
+    await db.campaign.create({
+      data: { storeId: store.id, slug: "reforma", title: "Reforma", status: "finished" },
+    });
+
+    const arq = await app.inject({
+      method: "PATCH",
+      url: "/stores/nx/campaigns/reforma/archive",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { archived: true },
+    });
+    expect(arq.statusCode).toBe(200);
+    expect(arq.json().archivedAt).toEqual(expect.any(String));
+
+    const lista = await app.inject({
+      method: "GET",
+      url: "/stores/nx/campaigns?all=true",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(lista.json().items).toEqual([]);
+
+    const arquivadas = await app.inject({
+      method: "GET",
+      url: "/stores/nx/campaigns?all=true&archived=true",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(arquivadas.json().items).toHaveLength(1);
+
+    const volta = await app.inject({
+      method: "PATCH",
+      url: "/stores/nx/campaigns/reforma/archive",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { archived: false },
+    });
+    expect(volta.statusCode).toBe(200);
+    expect(volta.json().archivedAt).toBeNull();
+  });
+
+  it("campanha no ar não arquiva → 409 campaign_not_finished", async () => {
+    const store = await db.store.create({ data: { slug: "nx", name: "NX", status: "active" } });
+    const { token } = await registerWithRole(app, "adm-arq2@example.org", store.id, "admin");
+    await db.campaign.create({
+      data: { storeId: store.id, slug: "reforma", title: "Reforma", status: "active" },
+    });
+
+    const res = await app.inject({
+      method: "PATCH",
+      url: "/stores/nx/campaigns/reforma/archive",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { archived: true },
+    });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().message).toBe("campaign_not_finished");
+  });
+
+  it("guarda a galeria e a capa escolhida entre as fotos", async () => {
+    const store = await db.store.create({ data: { slug: "nx", name: "NX", status: "active" } });
+    const { token } = await registerWithRole(app, "adm-fotos@example.org", store.id, "admin");
+    const images = ["stores/nx/c/a.jpg", "stores/nx/c/b.jpg"];
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/stores/nx/campaigns",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { slug: "reforma", title: "Reforma", images, coverImage: images[1] },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(res.json()).toMatchObject({
+      images,
+      imageUrls: ["https://cdn.fake/stores/nx/c/a.jpg", "https://cdn.fake/stores/nx/c/b.jpg"],
+      coverImage: images[1],
+      coverImageUrl: "https://cdn.fake/stores/nx/c/b.jpg",
+    });
+
+    // capa fora da galeria seria uma foto que a loja não vê para trocar
+    const fora = await app.inject({
+      method: "PATCH",
+      url: "/stores/nx/campaigns/reforma",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { coverImage: "stores/nx/c/zzz.jpg" },
+    });
+    expect(fora.statusCode).toBe(409);
+    expect(fora.json().message).toBe("cover_not_in_gallery");
+  });
+
+  it("sem capa escolhida, a primeira foto da galeria vira capa", async () => {
+    const store = await db.store.create({ data: { slug: "nx", name: "NX", status: "active" } });
+    const { token } = await registerWithRole(app, "adm-fotos2@example.org", store.id, "admin");
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/stores/nx/campaigns",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        slug: "reforma",
+        title: "Reforma",
+        images: ["stores/nx/c/a.jpg", "stores/nx/c/b.jpg"],
+      },
+    });
+    expect(res.json().coverImage).toBe("stores/nx/c/a.jpg");
+  });
+
+  it("apaga rascunho e leva junto os sorteios; some da listagem", async () => {
+    const store = await db.store.create({ data: { slug: "nx", name: "NX", status: "active" } });
+    const { token } = await registerWithRole(app, "adm-del@example.org", store.id, "admin");
+    await app.inject({
+      method: "POST",
+      url: "/stores/nx/campaigns",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        slug: "reforma",
+        title: "Reforma do salão",
+        raffle: {
+          title: "Sorteio de agosto",
+          centsPerNumber: 1000,
+          prizes: [{ position: 1, title: "Cesta de produtos" }],
+        },
+      },
+    });
+
+    const res = await app.inject({
+      method: "DELETE",
+      url: "/stores/nx/campaigns/reforma",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(204);
+
+    const list = await app.inject({
+      method: "GET",
+      url: "/stores/nx/campaigns?all=true",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(list.json().items).toEqual([]);
+    expect(await db.raffle.count()).toBe(0);
+    expect(await db.rafflePrize.count()).toBe(0);
+  });
+
+  it("campanha no ar não é apagada → 409 campaign_not_draft", async () => {
+    const store = await db.store.create({ data: { slug: "nx", name: "NX", status: "active" } });
+    const { token } = await registerWithRole(app, "adm-del2@example.org", store.id, "admin");
+    await db.campaign.create({
+      data: { storeId: store.id, slug: "reforma", title: "Reforma", status: "active" },
+    });
+
+    const res = await app.inject({
+      method: "DELETE",
+      url: "/stores/nx/campaigns/reforma",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().message).toBe("campaign_not_draft");
+    expect(await db.campaign.count()).toBe(1);
+  });
+
+  it("rascunho com doação não é apagado → 409 campaign_has_donations", async () => {
+    const store = await db.store.create({ data: { slug: "nx", name: "NX", status: "active" } });
+    const { token, user } = await registerWithRole(app, "adm-del3@example.org", store.id, "admin");
+    const campaign = await db.campaign.create({
+      data: { storeId: store.id, slug: "reforma", title: "Reforma" },
+    });
+    await db.donation.create({
+      data: {
+        storeId: store.id,
+        campaignId: campaign.id,
+        userId: user.id,
+        amountCents: 5000,
+        status: "pending_payment",
+      },
+    });
+
+    const res = await app.inject({
+      method: "DELETE",
+      url: "/stores/nx/campaigns/reforma",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().message).toBe("campaign_has_donations");
+  });
+
+  it("apagar rascunho de outra loja → 404 campaign_not_found", async () => {
+    const store = await db.store.create({ data: { slug: "nx", name: "NX", status: "active" } });
+    const outra = await db.store.create({ data: { slug: "ny", name: "NY", status: "active" } });
+    await db.campaign.create({
+      data: { storeId: outra.id, slug: "reforma", title: "Reforma de outra loja" },
+    });
+    const { token } = await registerWithRole(app, "adm-del4@example.org", store.id, "admin");
+
+    const res = await app.inject({
+      method: "DELETE",
+      url: "/stores/nx/campaigns/reforma",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(404);
+    expect(await db.campaign.count()).toBe(1);
+  });
+
   it("campanha de outra loja → 404 campaign_not_found", async () => {
     const store = await db.store.create({ data: { slug: "nx", name: "NX", status: "active" } });
     const outra = await db.store.create({ data: { slug: "ny", name: "NY", status: "active" } });

@@ -1,6 +1,7 @@
 import type { Store } from "@prisma/client";
 import type { StripeGateway } from "../../../../gateways/stripe/stripe.gateway.js";
 import type { WooviGateway } from "../../../../gateways/woovi/woovi.gateway.js";
+import { wooviApplicationFeeCents } from "../../../../lib/application-fee.js";
 import { badGateway, NotFoundError, ValidationError } from "../../../../shared/errors.js";
 import {
   type CampaignsRepository,
@@ -26,8 +27,10 @@ export function createDonationService(deps: CreateDonationDeps) {
     const store = await deps.stores.findBySlug(input.storeSlug);
     if (store?.status !== "active") throw new NotFoundError("store_not_found");
     assertProviderConfigured(store, input.provider);
-    // Assinatura Pix Woovi fica para o plano 6 junto do onboarding de subconta
-    // (spec §11 registra que o split em assinatura ainda não está confirmado) — D4.
+    // Mensal é só cartão. `POST /api/v1/subscriptions` da Woovi ignora `splits` (testado no
+    // sandbox: aceita a chave Pix inexistente e qualquer campo desconhecido, e nada disso
+    // volta no GET), então a recorrência cairia na conta da plataforma em vez da subconta
+    // de quem organiza. Enquanto não houver rota oficial assinatura → subconta, fica fora.
     if (input.type === "monthly" && input.provider === "woovi") {
       throw new ValidationError("monthly_not_supported_for_provider");
     }
@@ -43,7 +46,13 @@ export function createDonationService(deps: CreateDonationDeps) {
       campaignId = campaign.id;
     }
 
-    const applicationFeeCents = Math.floor((input.amountCents * store.applicationFeeBps) / 10000);
+    const storeFeeCents = Math.floor((input.amountCents * store.applicationFeeBps) / 10000);
+    // A Woovi recusa split de 100%, então o Pix retém ao menos 1 centavo. Grava-se o valor
+    // efetivo, não o da loja: o extrato precisa bater com o que a subconta recebeu.
+    const applicationFeeCents =
+      input.provider === "woovi"
+        ? wooviApplicationFeeCents(input.amountCents, storeFeeCents)
+        : storeFeeCents;
     // Mensal não tem TTL: a assinatura fica incompleta no Stripe até o cartão confirmar.
     const expiresAt =
       input.type === "one_time" ? new Date(Date.now() + DONATION_TTL_MINUTES * 60 * 1000) : null;

@@ -43,6 +43,7 @@ export const suggestDescriptionRoute: FastifyPluginAsync = async (app) => {
         productName: body.name,
         draft: body.draft,
         mode: body.mode,
+        instruction: body.instruction,
         storeName: store.name,
       });
       return { text };

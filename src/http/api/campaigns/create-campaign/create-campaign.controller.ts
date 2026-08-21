@@ -6,7 +6,7 @@ import { requireWritableStore } from "../../../hooks/store-role.js";
 import { assertUniquePrizePositions } from "../../raffles/raffles.schema.js";
 import { createCampaignsRepository, toCampaignResponse } from "../campaigns.repository.js";
 import { CampaignResponse, CreateCampaignBody } from "../campaigns.schema.js";
-import { resolveStoreForRole } from "../manage.helpers.js";
+import { assertCoverInGallery, resolveStoreForRole } from "../manage.helpers.js";
 
 export const createCampaignRoute: FastifyPluginAsync = async (app) => {
   const repo = createCampaignsRepository(db);
@@ -27,6 +27,7 @@ export const createCampaignRoute: FastifyPluginAsync = async (app) => {
       requireWritableStore(req, store);
       const body = req.body as CreateCampaignBody;
       if (body.raffle) assertUniquePrizePositions(body.raffle.prizes);
+      assertCoverInGallery(body.coverImage, body.images, { coverImage: null, images: [] });
       const existing = await repo.findBySlug(store.id, body.slug);
       if (existing) throw new ConflictError("campaign_slug_taken");
       const campaign = await repo.create(store.id, body);

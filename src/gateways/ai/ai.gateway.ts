@@ -2,7 +2,14 @@ import { badGateway, ServiceUnavailableError } from "../../shared/errors.js";
 
 export type DescriptionMode = "create" | "improve";
 
-export type WriteDescriptionInput = {
+/**
+ * Pedido em linguagem natural de quem está escrevendo ("mais curto", "cita a horta").
+ * Entra no prompt do usuário, nunca no system: as proibições continuam mandando, então
+ * "diga que vale R$ 300" não passa a valer só porque foi pedido no campo.
+ */
+export type WithInstruction = { instruction?: string | undefined };
+
+export type WriteDescriptionInput = WithInstruction & {
   /** Nome do produto — é o único dado obrigatório para escrever do zero. */
   productName: string;
   /** O que a loja já escreveu. Em `improve` é o texto que vai ser reescrito. */
@@ -11,7 +18,7 @@ export type WriteDescriptionInput = {
   storeName?: string | undefined;
 };
 
-export type WriteStoryInput = {
+export type WriteStoryInput = WithInstruction & {
   /** Título da campanha. */
   campaignTitle: string;
   draft?: string | undefined;
@@ -21,7 +28,7 @@ export type WriteStoryInput = {
   goalCents?: number | undefined;
 };
 
-export type WritePrizeInput = {
+export type WritePrizeInput = WithInstruction & {
   /** O que é o prêmio, do jeito que a loja escreveu no campo de título. */
   prizeTitle: string;
   draft?: string | undefined;
@@ -31,7 +38,7 @@ export type WritePrizeInput = {
   campaignTitle?: string | undefined;
 };
 
-export type WriteStoreInput = {
+export type WriteStoreInput = WithInstruction & {
   /** Nome da loja/comunidade. Único dado obrigatório. */
   storeName: string;
   draft?: string | undefined;
@@ -60,13 +67,28 @@ export type AiGatewayConfig = {
 const MAX_CHARS = 900;
 
 /**
+ * Persona comum aos quatro textos. Marketing aqui é técnica de escrita — abrir pelo que
+ * a pessoa ganha, usar detalhe concreto, terminar com convite —, não licença para
+ * exagerar: cada prompt repete as proibições logo depois, e elas mandam. A comunidade
+ * assina esse texto, então promessa inventada custa a confiança dela, não a nossa.
+ */
+const PERSONA = [
+  "Você é especialista em marketing e vendas e auxilia pequenos negócios de comunidade a",
+  "vender melhor. Você abre pelo benefício concreto de quem lê, usa detalhe sensorial",
+  "verdadeiro em vez de adjetivo vazio e fecha com um convite simples.",
+  "Você nunca inventa fato para vender: o que não estiver no texto dado não entra.",
+].join(" ");
+
+/**
  * O preço NÃO entra no contexto de propósito: com ele no prompt o modelo escreve
  * "por R$ 45,00" no meio da descrição, que já aparece na página e desatualiza no
  * primeiro reajuste. Medido com llama-3.3 e llama-4 — os dois caem nessa.
  */
 const SYSTEM_PROMPT = [
-  "Você é a própria loja escrevendo a descrição de um produto que ela vende.",
+  PERSONA,
+  "Agora você escreve como a própria loja, sobre um produto que ela vende.",
   "Escreva em português do Brasil correto, em tom simples, honesto e caloroso.",
+  "Comece pelo que a pessoa ganha ao usar o produto e termine convidando a levar.",
   "Regras: 2 a 4 frases curtas (máximo ~70 palavras).",
   "NÃO cite preço, valor em reais, desconto, frete, prazo, garantia nem medida que",
   "não esteja no texto dado. NÃO invente material, origem, tamanho nem benefício.",
@@ -80,9 +102,11 @@ const SYSTEM_PROMPT = [
  * sem graça, é texto que promete o que a comunidade não pode garantir.
  */
 const STORY_SYSTEM_PROMPT = [
-  "Você é a própria comunidade escrevendo a história de uma campanha de arrecadação.",
+  PERSONA,
+  "Agora você escreve como a própria comunidade, a história de uma campanha de arrecadação.",
   "Escreva em português do Brasil correto, no plural da comunidade (nós), em tom",
   "honesto e direto, sem apelo dramático e sem culpa.",
+  "Diga logo o que a doação torna possível e termine convidando a participar.",
   "Regras: 3 a 5 frases curtas (máximo ~110 palavras).",
   "NÃO invente valor arrecadado, prazo, número de pessoas, obra, laudo, parceria nem",
   "destino do dinheiro que não esteja no texto dado.",
@@ -90,6 +114,29 @@ const STORY_SYSTEM_PROMPT = [
   "NÃO use emoji, hashtag, ALL CAPS nem aspas.",
   "Responda só com o texto final, sem título e sem comentários.",
 ].join(" ");
+
+/** Teto da instrução no prompt; o schema da rota corta antes, isto é a última linha. */
+const MAX_INSTRUCTION_CHARS = 300;
+
+/**
+ * A instrução vai por último e como pedido, não como regra: o modelo lê as proibições
+ * primeiro e o texto de quem escreve depois. Cortar o tamanho evita que alguém cole um
+ * prompt inteiro tentando reescrever as regras da casa.
+ */
+function withInstruction(lines: string[], instruction: string | undefined): string {
+  const clean = instruction?.trim().slice(0, MAX_INSTRUCTION_CHARS);
+  if (clean) {
+    lines.push(
+      "",
+      "Pedido de quem escreve (atenda só no que não contrariar as regras acima).",
+      // sem esta linha o modelo pequeno lê "mais curto" e devolve o mesmo tamanho: a
+      // regra de frases é um intervalo, e ele fica no meio dele por padrão
+      "Se o pedido for por texto mais curto, use o mínimo de frases que a regra permite:",
+      clean,
+    );
+  }
+  return lines.join("\n");
+}
 
 function storyPrompt(input: WriteStoryInput): string {
   const lines = [`Campanha: ${input.campaignTitle}`];
@@ -110,7 +157,7 @@ function storyPrompt(input: WriteStoryInput): string {
     );
     if (input.draft) lines.push("", `Anotação de quem organiza: ${input.draft}`);
   }
-  return lines.join("\n");
+  return withInstruction(lines, input.instruction);
 }
 
 /**
@@ -119,8 +166,10 @@ function storyPrompt(input: WriteStoryInput): string {
  * proibições serem mais duras que as da descrição de produto.
  */
 const PRIZE_SYSTEM_PROMPT = [
-  "Você é a comunidade descrevendo um prêmio que vai sortear entre quem doa.",
+  PERSONA,
+  "Agora você escreve como a comunidade, sobre um prêmio que ela vai sortear entre quem doa.",
   "Escreva em português do Brasil correto, em tom simples e concreto.",
+  "Faça a pessoa imaginar o prêmio na mão dela usando só o que foi dito sobre ele.",
   "Regras: 1 a 3 frases curtas (máximo ~50 palavras).",
   "NÃO invente marca, modelo, tamanho, cor, quantidade, validade nem valor em reais",
   "que não esteja no texto dado. NÃO diga quanto o prêmio vale.",
@@ -134,8 +183,10 @@ const PRIZE_SYSTEM_PROMPT = [
  * histórico são exatamente o que o modelo inventa se deixarem.
  */
 const STORE_SYSTEM_PROMPT = [
-  "Você é a própria loja de uma comunidade se apresentando na página dela.",
+  PERSONA,
+  "Agora você escreve como a própria loja de uma comunidade se apresentando na página dela.",
   "Escreva em português do Brasil correto, em tom acolhedor e sóbrio.",
+  "Diga o que a pessoa encontra ali e por que vale comprar dessa comunidade.",
   "Regras: 2 a 3 frases curtas (máximo ~60 palavras).",
   "NÃO invente ano de fundação, número de pessoas, cidade, história, prêmio,",
   "certificação nem produto que não esteja no texto dado.",
@@ -164,7 +215,7 @@ function prizePrompt(input: WritePrizeInput): string {
     );
     if (input.draft) lines.push("", `Anotação de quem organiza: ${input.draft}`);
   }
-  return lines.join("\n");
+  return withInstruction(lines, input.instruction);
 }
 
 function storePrompt(input: WriteStoreInput): string {
@@ -185,7 +236,7 @@ function storePrompt(input: WriteStoreInput): string {
     );
     if (input.draft) lines.push("", `Anotação da loja: ${input.draft}`);
   }
-  return lines.join("\n");
+  return withInstruction(lines, input.instruction);
 }
 
 function userPrompt(input: WriteDescriptionInput): string {
@@ -207,7 +258,7 @@ function userPrompt(input: WriteDescriptionInput): string {
     );
     if (input.draft) lines.push("", `Anotação da loja: ${input.draft}`);
   }
-  return lines.join("\n");
+  return withInstruction(lines, input.instruction);
 }
 
 /** Modelo devolve texto solto: tira cerca de código, aspas de moldura e sobra de prompt. */

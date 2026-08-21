@@ -17,6 +17,8 @@ export const SuggestStoreDescriptionBody = z.object({
   name: z.string().min(2).max(120),
   draft: z.string().max(4000).optional(),
   mode: z.enum(["create", "improve"]).default("create"),
+  /** Pedido de quem escreve: "mais curto", "cita a horta". Vira contexto, não regra. */
+  instruction: z.string().max(300).optional(),
 });
 export type SuggestStoreDescriptionBody = z.infer<typeof SuggestStoreDescriptionBody>;
 

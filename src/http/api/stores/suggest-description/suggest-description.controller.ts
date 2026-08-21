@@ -29,6 +29,7 @@ export const suggestStoreDescriptionRoute: FastifyPluginAsync = async (app) => {
         storeName: body.name,
         draft: body.draft,
         mode: body.mode,
+        instruction: body.instruction,
       });
       return { text };
     },

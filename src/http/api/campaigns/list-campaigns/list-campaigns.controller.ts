@@ -30,12 +30,14 @@ export const listCampaignsRoute: FastifyPluginAsync = async (app) => {
       const user = await optionalUser(req);
       assertStoreReadable(store, user);
       const member = isStoreMember(user, store.id);
-      const { limit, cursor, all } = req.query as ListCampaignsQuery;
+      const { limit, cursor, all, archived } = req.query as ListCampaignsQuery;
       const page = await repo.listByStoreCursor({
         storeId: store.id,
         limit,
         cursor: cursor ?? null,
         includeDrafts: all && member,
+        // arquivada é decisão de quem administra: quem só visita nunca vê essa lista
+        archived: archived && member,
       });
       const progress = await repo.progressFor(page.items.map((c) => c.id));
       return {

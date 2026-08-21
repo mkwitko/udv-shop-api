@@ -1,5 +1,5 @@
 import Stripe from "stripe";
-import { badGateway } from "../../shared/errors.js";
+import { badGateway, ConflictError } from "../../shared/errors.js";
 
 export type StripeWebhookEvent = {
   id: string;
@@ -79,6 +79,17 @@ export interface StripeGateway {
   verifyWebhook(rawBody: Buffer, signature: string): StripeWebhookEvent;
 }
 
+/**
+ * O Stripe recusa a conta de destino quando o id não existe mais (ou nunca existiu).
+ * Isso é problema do Connect DAQUELA loja, não da plataforma: 502 mandava o time procurar
+ * pane de infraestrutura enquanto a correção era refazer o onboarding.
+ */
+function stripeFailure(err: unknown): Error {
+  const code = (err as { code?: string } | null)?.code;
+  if (code === "account_invalid") return new ConflictError("store_stripe_account_invalid");
+  return badGateway("payment_provider_error", err);
+}
+
 export function createStripeGateway(cfg: {
   secretKey: string;
   webhookSecret: string;
@@ -95,19 +106,23 @@ export function createStripeGateway(cfg: {
   };
   return {
     async createPaymentIntent(input) {
-      const intent = await stripe().paymentIntents.create({
-        amount: input.amountCents,
-        currency: input.currency.toLowerCase(),
-        automatic_payment_methods: { enabled: true },
-        // Sem comissão por venda (ADR-027) o campo é omitido em vez de mandado zerado:
-        // `application_fee_amount: 0` cria ApplicationFee de R$ 0 em todo pagamento e
-        // sujaria o relatório da plataforma sem significar nada.
-        ...(input.applicationFeeCents > 0
-          ? { application_fee_amount: input.applicationFeeCents }
-          : {}),
-        transfer_data: { destination: input.destinationAccountId },
-        metadata: input.metadata,
-      });
+      const intent = await stripe()
+        .paymentIntents.create({
+          amount: input.amountCents,
+          currency: input.currency.toLowerCase(),
+          automatic_payment_methods: { enabled: true },
+          // Sem comissão por venda (ADR-027) o campo é omitido em vez de mandado zerado:
+          // `application_fee_amount: 0` cria ApplicationFee de R$ 0 em todo pagamento e
+          // sujaria o relatório da plataforma sem significar nada.
+          ...(input.applicationFeeCents > 0
+            ? { application_fee_amount: input.applicationFeeCents }
+            : {}),
+          transfer_data: { destination: input.destinationAccountId },
+          metadata: input.metadata,
+        })
+        .catch((err: unknown) => {
+          throw stripeFailure(err);
+        });
       if (!intent.client_secret) throw new Error("stripe_missing_client_secret");
       return { providerId: intent.id, clientSecret: intent.client_secret };
     },

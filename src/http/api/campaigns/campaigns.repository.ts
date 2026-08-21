@@ -24,12 +24,18 @@ export interface CampaignsRepository {
   create(storeId: string, data: CreateCampaignBody): Promise<CampaignWithStore>;
   update(id: string, data: UpdateCampaignBody): Promise<CampaignWithStore>;
   setStatus(id: string, status: CampaignStatus): Promise<CampaignWithStore>;
+  setArchived(id: string, archived: boolean): Promise<CampaignWithStore>;
+  /** Sorteios e prêmios saem junto por cascade; doação bloqueia (`onDelete: Restrict`). */
+  deleteById(id: string): Promise<void>;
+  countDonations(campaignId: string): Promise<number>;
   findBySlug(storeId: string, slug: string): Promise<CampaignWithStore | null>;
   listByStoreCursor(args: {
     storeId: string;
     limit: number;
     cursor: string | null;
     includeDrafts: boolean;
+    /** `true` lista só as arquivadas; `false` esconde as arquivadas. */
+    archived: boolean;
   }): Promise<CursorPage<CampaignWithStore>>;
   progressFor(campaignIds: string[]): Promise<Map<string, CampaignProgress>>;
 }
@@ -44,7 +50,9 @@ export function createCampaignsRepository(db: PrismaClient): CampaignsRepository
             slug: data.slug,
             title: data.title,
             story: data.story ?? null,
-            coverImage: data.coverImage ?? null,
+            images: data.images ?? [],
+            // capa é uma das fotos: sem escolha explícita, a primeira da galeria
+            coverImage: data.coverImage ?? data.images?.[0] ?? null,
             goalCents: data.goalCents ?? null,
             acceptedTypes: data.acceptedTypes,
             endsAt: data.endsAt ? new Date(data.endsAt) : null,
@@ -77,7 +85,11 @@ export function createCampaignsRepository(db: PrismaClient): CampaignsRepository
         data: {
           ...(data.title !== undefined && { title: data.title }),
           ...(data.story !== undefined && { story: data.story }),
-          ...(data.coverImage !== undefined && { coverImage: data.coverImage }),
+          ...(data.images !== undefined && { images: data.images }),
+          ...(data.coverImage !== undefined
+            ? { coverImage: data.coverImage }
+            : // galeria trocada sem dizer a capa: a capa antiga pode ter saído junto
+              data.images !== undefined && { coverImage: data.images[0] ?? null }),
           ...(data.goalCents !== undefined && { goalCents: data.goalCents }),
           ...(data.acceptedTypes !== undefined && { acceptedTypes: data.acceptedTypes }),
           ...(data.endsAt !== undefined && { endsAt: data.endsAt ? new Date(data.endsAt) : null }),
@@ -88,18 +100,32 @@ export function createCampaignsRepository(db: PrismaClient): CampaignsRepository
     setStatus: (id, status) =>
       db.campaign.update({ where: { id }, data: { status }, include: CAMPAIGN_INCLUDE }),
 
+    setArchived: (id, archived) =>
+      db.campaign.update({
+        where: { id },
+        data: { archivedAt: archived ? new Date() : null },
+        include: CAMPAIGN_INCLUDE,
+      }),
+
+    deleteById: async (id) => {
+      await db.campaign.delete({ where: { id } });
+    },
+
+    countDonations: (campaignId) => db.donation.count({ where: { campaignId } }),
+
     findBySlug: (storeId, slug) =>
       db.campaign.findUnique({
         where: { storeId_slug: { storeId, slug } },
         include: CAMPAIGN_INCLUDE,
       }),
 
-    listByStoreCursor: async ({ storeId, limit, cursor, includeDrafts }) => {
+    listByStoreCursor: async ({ storeId, limit, cursor, includeDrafts, archived }) => {
       const after = cursor ? afterCursorWhere(decodeCursor(cursor)) : {};
       const rows = await db.campaign.findMany({
         where: {
           storeId,
           ...(includeDrafts ? {} : { status: { in: PUBLIC_STATUSES } }),
+          archivedAt: archived ? { not: null } : null,
           ...after,
         },
         orderBy: [...KEYSET_ORDER_BY],
@@ -150,6 +176,9 @@ export function toCampaignResponse(
     story: campaign.story,
     coverImage: campaign.coverImage,
     coverImageUrl: campaign.coverImage ? publicUrl(campaign.coverImage) : null,
+    images: campaign.images,
+    imageUrls: campaign.images.map(publicUrl),
+    archivedAt: campaign.archivedAt?.toISOString() ?? null,
     goalCents: campaign.goalCents,
     raisedCents: progress?.raisedCents ?? 0,
     donationCount: progress?.donationCount ?? 0,

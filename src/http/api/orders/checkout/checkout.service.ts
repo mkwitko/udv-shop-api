@@ -1,6 +1,7 @@
 import type { Store } from "@prisma/client";
 import type { StripeGateway } from "../../../../gateways/stripe/stripe.gateway.js";
 import type { WooviGateway } from "../../../../gateways/woovi/woovi.gateway.js";
+import { wooviApplicationFeeCents } from "../../../../lib/application-fee.js";
 import { badGateway, NotFoundError, ValidationError } from "../../../../shared/errors.js";
 import { itemPayoutCents } from "../../payouts/payouts.helpers.js";
 import type { ProductsRepository } from "../../products/products.repository.js";
@@ -46,7 +47,13 @@ export function createCheckoutService(deps: CheckoutDeps) {
     });
 
     const totalCents = items.reduce((sum, i) => sum + i.priceCents * i.qty, 0);
-    const applicationFeeCents = Math.floor((totalCents * store.applicationFeeBps) / 10000);
+    const storeFeeCents = Math.floor((totalCents * store.applicationFeeBps) / 10000);
+    // A Woovi recusa split de 100%, então o Pix retém ao menos 1 centavo. Grava-se o valor
+    // efetivo, não o da loja: o extrato precisa bater com o que a subconta recebeu.
+    const applicationFeeCents =
+      input.provider === "woovi"
+        ? wooviApplicationFeeCents(totalCents, storeFeeCents)
+        : storeFeeCents;
     const expiresAt = new Date(Date.now() + RESERVATION_TTL_MINUTES * 60 * 1000);
 
     const order = await deps.orders.createPendingOrder({

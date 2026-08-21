@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { wooviComment } from "../../lib/woovi-comment.js";
 import { badGateway } from "../../shared/errors.js";
 
 export type CreateChargeInput = {
@@ -173,7 +174,8 @@ export function createWooviGateway(cfg: {
         value: input.amountCents,
         correlationID: input.correlationID,
         expiresIn: input.expiresInSeconds,
-        comment: input.comment,
+        // Travessão e afins fazem a Woovi recusar a cobrança inteira como "emoji" — ver lib.
+        comment: wooviComment(input.comment),
         splits: [
           {
             pixKey: input.splitPixKey,
