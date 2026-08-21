@@ -37,5 +37,7 @@ COPY --chown=node:node prisma ./prisma
 COPY --chown=node:node package.json ./
 USER node
 EXPOSE 3333
-# Migra antes de subir: o deploy é atômico do ponto de vista do schema.
-CMD ["sh", "-c", "node_modules/.bin/prisma migrate deploy && node dist/server.js"]
+# Migra antes de subir (o deploy é atômico do ponto de vista do schema) e migra com OUTRA
+# credencial: o processo que atende requisição não precisa de DDL. Sem MIGRATE_DATABASE_URL
+# definida, cai na DATABASE_URL — é o caso do dev e de quem roda a imagem à mão.
+CMD ["sh", "-c", "DATABASE_URL=\"${MIGRATE_DATABASE_URL:-$DATABASE_URL}\" node_modules/.bin/prisma migrate deploy && node dist/server.js"]

@@ -50,4 +50,21 @@ check "pg_stat_statements pré-carregado" "SHOW shared_preload_libraries" "pg_st
 check "log de query lenta em 500ms" "SHOW log_min_duration_statement" "500ms" || fail=1
 check "timezone do servidor é UTC" "SHOW timezone" "UTC" || fail=1
 
+# Prova o DEFAULT PRIVILEGES: tabela criada pelo migrate depois do init precisa nascer
+# acessível ao app. Sem isso, cada migration exigiria um GRANT manual e o esquecimento
+# aparece como 500 em produção.
+docker exec -e PGPASSWORD=migrate "$NAME" \
+  psql -qtAX -U udv_migrate -d udvshop -c "CREATE TABLE exemplo (id int)" >/dev/null
+
+check "udv_app enxerga tabela do migrate" \
+  "SELECT has_table_privilege('udv_app','public.exemplo','SELECT')::text" "true" || fail=1
+check "udv_app não cria tabela" \
+  "SELECT has_schema_privilege('udv_app','public','CREATE')::text" "false" || fail=1
+check "udv_migrate cria tabela" \
+  "SELECT has_schema_privilege('udv_migrate','public','CREATE')::text" "true" || fail=1
+check "udv_backup lê tudo" \
+  "SELECT pg_has_role('udv_backup','pg_read_all_data','MEMBER')::text" "true" || fail=1
+check "udv_app tem statement_timeout" \
+  "SELECT 'statement_timeout=30s' = ANY(rolconfig) FROM pg_roles WHERE rolname='udv_app'" "t" || fail=1
+
 exit "$fail"
