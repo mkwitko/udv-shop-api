@@ -51,9 +51,12 @@ ver "Registro de DR" no fim.
 7. **Gerar a chave de cifra**: `age-keygen -o .age-key` na VM, `chmod 600 .age-key`.
    Guardar a linha `# public key: age1...` em `BACKUP_AGE_RECIPIENT` **e** a chave privada
    num gerenciador de senhas fora da VM.
-8. **Criar as checagens no healthchecks.io** (grátis): backup (janela 90min), ensaio de
-   restore (janela 8 dias), host-check (janela 30min). Pôr as URLs no `.env` e a de alerta
-   em `/opt/udv-shop/.alert-env` como `ALERT_HEALTHCHECK_URL=...`.
+8. **Criar as checagens no healthchecks.io** (grátis), as três em modo **Simple** — não
+   cron: as units usam `Persistent=true` e `RandomizedDelaySec`, então o horário derrapa de
+   propósito e o modo cron alertaria por desvio. Períodos: backup 1h com grace de 30min,
+   restore-check 7 dias com grace de 1 dia, host-check 15min com grace de 15min. As três
+   URLs vão no `.env` (`BACKUP_`/`RESTORE_CHECK_`/`HOST_CHECK_HEALTHCHECK_URL`); o
+   `scripts/alert.sh` escolhe qual usar pelo nome da unit que falhou.
 9. **Monitor externo** em `https://api.<domínio>/health`.
 10. **Domínio da plataforma no Worker**: acrescentar a rota em `wrangler.jsonc` do
     `udv-shop-web` (fica comentada lá) quando o domínio existir.
