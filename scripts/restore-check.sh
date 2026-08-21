@@ -34,15 +34,24 @@ trap cleanup EXIT
 
 START="$(date +%s)"
 
-LATEST="$(aws s3 ls "s3://${R2_BACKUP_BUCKET}/daily/" --endpoint-url "$ENDPOINT" |
-  awk '{print $4}' | grep '\.dump\.age$' | sort | tail -1)"
+# O objeto mais recente entre hourly/ e daily/, e não o daily/ mais recente: num desastre
+# de verdade se restaura o backup mais novo que existir, que quase sempre é um hourly. O
+# daily/monthly são retenção, não RPO — ensaiar só o daily mede o restore de um dump com
+# até 24h de atraso e deixa o caminho realmente usado sem ensaio.
+#
+# O nome carrega timestamp ISO em UTC (udvshop-2026-08-21T205729Z.dump.age), então ordem
+# alfabética do basename é ordem cronológica.
+LATEST="$(for prefix in hourly daily; do
+  aws s3 ls "s3://${R2_BACKUP_BUCKET}/${prefix}/" --endpoint-url "$ENDPOINT" |
+    awk -v p="$prefix" '$4 ~ /\.dump\.age$/ {print $4 "\t" p "/" $4}'
+done | sort -k1,1 | tail -1 | cut -f2)"
 [[ -n "$LATEST" ]] || {
-  echo "nenhum backup em daily/" >&2
+  echo "nenhum backup em hourly/ nem daily/" >&2
   exit 1
 }
-echo "ensaiando com daily/$LATEST"
+echo "ensaiando com $LATEST"
 
-./scripts/restore-db.sh "daily/$LATEST" "$TMP/dump"
+./scripts/restore-db.sh "$LATEST" "$TMP/dump"
 
 docker run -d --name "$NAME" \
   -e POSTGRES_PASSWORD=ensaio \
@@ -80,21 +89,36 @@ for table in stores products orders donations payments campaigns users outbox_ev
   fi
 done
 
-# Contagem viva contra restaurada: se produção tem loja e o restore não, o dump está vazio
-# por algum motivo que ninguém notou.
+# Contagem viva contra restaurada, recortada pelo instante do dump.
+#
+# Comparar com a produção de agora é comparar com alvo móvel: toda loja criada depois do
+# dump aparece como diferença e o ensaio fica vermelho por motivo nenhum. O corte é
+# `created_at < instante do dump` — o dump não podia conter o que ainda não existia.
+#
+# O instante sai do nome do arquivo (udvshop-2026-08-21T210259Z.dump.age), que é UTC.
+STAMP="$(basename "$LATEST" | sed -E 's/^udvshop-([0-9]{4}-[0-9]{2}-[0-9]{2})T([0-9]{2})([0-9]{2})([0-9]{2})Z\.dump\.age$/\1 \2:\3:\4+00/')"
+# Valida o que saiu, não o que entrou: o `sed` devolve o nome intacto quando não casa, e
+# qualquer nome fora do padrão viraria um recorte silenciosamente errado.
+if [[ ! "$STAMP" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}\ [0-9]{2}:[0-9]{2}:[0-9]{2}\+00$ ]]; then
+  echo "FALHOU: nome de backup fora do padrão, sem instante para recortar: $LATEST" >&2
+  fail=1
+  STAMP="epoch"
+fi
+
 LIVE_STORES="$(docker compose -f docker-compose.prod.yml exec -T \
   -e PGPASSWORD="$POSTGRES_BACKUP_PASSWORD" postgres \
-  psql -qtAX -U udv_backup -d udvshop -c 'SELECT count(*) FROM stores' 2>/dev/null | tr -dc '0-9')"
+  psql -qtAX -U udv_backup -d udvshop \
+  -c "SELECT count(*) FROM stores WHERE created_at < '${STAMP}'::timestamptz" 2>/dev/null | tr -dc '0-9')"
 LIVE_STORES="${LIVE_STORES:-0}"
 RESTORED_STORES="$(q 'SELECT count(*) FROM stores' 2>/dev/null | tr -dc '0-9')"
 RESTORED_STORES="${RESTORED_STORES:-0}"
-if [[ "$LIVE_STORES" -gt 0 && "$RESTORED_STORES" -lt 1 ]]; then
-  echo "FALHOU: produção tem $LIVE_STORES loja(s) e o restore tem $RESTORED_STORES" >&2
+if [[ "$RESTORED_STORES" -lt "$LIVE_STORES" ]]; then
+  echo "FALHOU: produção tinha $LIVE_STORES loja(s) até $STAMP e o restore tem $RESTORED_STORES" >&2
   fail=1
 fi
 
 ELAPSED=$(($(date +%s) - START))
-echo "restore em ${ELAPSED}s — migrations=$MIGRATIONS lojas=$RESTORED_STORES (produção=$LIVE_STORES)"
+echo "restore em ${ELAPSED}s — migrations=$MIGRATIONS lojas=$RESTORED_STORES (produção até $STAMP=$LIVE_STORES)"
 echo "este número é o RTO medido; anote no registro de DR do docs/DEPLOY.md"
 
 if [[ "$fail" -eq 0 && -n "${RESTORE_CHECK_HEALTHCHECK_URL:-}" ]]; then

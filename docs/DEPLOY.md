@@ -236,6 +236,7 @@ o número mudar de ordem de grandeza:
 
 | Data | Objeto restaurado | Tempo | Observação |
 | --- | --- | --- | --- |
+| 2026-08-21 | `hourly/udvshop-2026-08-21T210259Z.dump.age` (71 KiB) | 9s | Primeiro ensaio verde na VM. Banco recém-migrado, 20 migrations, sem dado de negócio — o tempo cresce com o volume e não serve de previsão para banco cheio. |
 
 ## Domínio próprio de loja (opcional)
 
