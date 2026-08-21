@@ -39,6 +39,44 @@ describe("register / verify-email / login", () => {
     expect(res.statusCode).toBe(409);
   });
 
+  // Conta leve nasce quando alguém pede aviso, doa ou compra sem conta. Se o registro
+  // recusasse esse e-mail, quem usou o próprio endereço num fluxo de convidado ficaria
+  // trancado fora do próprio cadastro.
+  it("adota conta leve criada num fluxo sem conta", async () => {
+    const guest = await db.user.create({
+      data: { name: "Maria", email: body.email, phone: "5511988887777" },
+    });
+    const res = await app.inject({
+      method: "POST",
+      url: "/auth/register",
+      payload: { ...body, name: "Maria Silva" },
+    });
+    expect(res.statusCode).toBe(201);
+    const updated = await db.user.findUniqueOrThrow({ where: { id: guest.id } });
+    expect(updated.passwordHash).not.toBeNull();
+    expect(updated.name).toBe("Maria Silva");
+    // o telefone e o histórico da pessoa continuam onde estavam
+    expect(updated.phone).toBe("5511988887777");
+    expect(await db.user.count()).toBe(1);
+
+    const login = await app.inject({
+      method: "POST",
+      url: "/auth/login",
+      payload: { email: body.email, password: body.password },
+    });
+    expect(login.statusCode).toBe(200);
+  });
+
+  it("conta com senha continua recusando registro repetido", async () => {
+    await app.inject({ method: "POST", url: "/auth/register", payload: body });
+    const res = await app.inject({
+      method: "POST",
+      url: "/auth/register",
+      payload: { ...body, name: "Outra", password: "outra-senha-456" },
+    });
+    expect(res.statusCode).toBe(409);
+  });
+
   it("verify-email marca verificado", async () => {
     await app.inject({ method: "POST", url: "/auth/register", payload: body });
     const html = fakes.sentEmails[0]?.html ?? "";

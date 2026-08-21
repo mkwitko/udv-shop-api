@@ -14,13 +14,18 @@ export type RegisterDeps = { repo: AuthRepository; tokens: TokensService; email:
 export function createRegisterService(deps: RegisterDeps) {
   return async (input: RegisterBody): Promise<AuthResult> => {
     const existing = await deps.repo.findUserByEmail(input.email);
-    if (existing) throw new ConflictError("email_in_use");
+    // Conta leve (nascida de um interesse, doação ou compra sem conta) não é conflito: é a
+    // mesma pessoa vindo definir senha. Sem isso, quem usou o próprio e-mail num fluxo de
+    // convidado ficaria trancado fora do próprio cadastro.
+    const credentialed = Boolean(
+      existing && (existing.passwordHash !== null || existing.googleId !== null),
+    );
+    if (existing && credentialed) throw new ConflictError("email_in_use");
 
-    const user = await deps.repo.createUser({
-      email: input.email,
-      name: input.name,
-      passwordHash: await hashPassword(input.password),
-    });
+    const passwordHash = await hashPassword(input.password);
+    const user = existing
+      ? await deps.repo.adoptGuestUser(existing.id, { name: input.name, passwordHash })
+      : await deps.repo.createUser({ email: input.email, name: input.name, passwordHash });
 
     const rawToken = randomBytes(32).toString("base64url");
     await deps.repo.insertEmailToken({

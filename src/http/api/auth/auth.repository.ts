@@ -11,6 +11,11 @@ export interface AuthRepository {
     googleId?: string;
     emailVerified?: boolean;
   }): Promise<User>;
+  /**
+   * Define senha e nome numa conta leve — a que nasceu de um interesse, doação ou compra sem
+   * conta. É a mesma pessoa vindo se cadastrar, então o histórico dela continua onde está.
+   */
+  adoptGuestUser(userId: string, data: { name: string; passwordHash: string }): Promise<User>;
   linkGoogleId(userId: string, googleId: string): Promise<void>;
   setPassword(userId: string, passwordHash: string): Promise<void>;
   markEmailVerified(userId: string): Promise<void>;
@@ -58,6 +63,11 @@ export function createAuthRepository(db: PrismaClient): AuthRepository {
           googleId: data.googleId ?? null,
           emailVerified: data.emailVerified ?? false,
         },
+      }),
+    adoptGuestUser: (userId, data) =>
+      db.user.update({
+        where: { id: userId },
+        data: { name: data.name, passwordHash: data.passwordHash },
       }),
     linkGoogleId: async (userId, googleId) => {
       await db.user.update({ where: { id: userId }, data: { googleId } });
