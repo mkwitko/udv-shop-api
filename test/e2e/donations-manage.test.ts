@@ -251,3 +251,91 @@ describe("GET /stores/:slug/donations", () => {
     expect(json).not.toContain("acct_");
   });
 });
+
+/**
+ * Quem doa sem conta não existe: mensal exige sessão. Mas quem doou logado e perdeu acesso ao
+ * e-mail também não conseguia cancelar — só o Dashboard do Stripe resolvia. A loja, que é quem
+ * recebe o dinheiro e o telefonema, passa a poder encerrar.
+ */
+describe("DELETE /stores/:slug/donations/:id/subscription", () => {
+  let app: FastifyInstance;
+  beforeAll(async () => {
+    app = await buildApp({ gateways: buildFakeGateways() });
+    await app.ready();
+  });
+  afterAll(() => app.close());
+  beforeEach(resetDb);
+
+  async function seedSubscription(storeId: string) {
+    const { user } = await registerWithRole(app, "doador@example.org", null, null);
+    return seedDonation(user.id, storeId, null, {
+      type: "monthly",
+      subscriptionRef: "sub_123",
+    });
+  }
+
+  it("admin cancela a assinatura da própria loja", async () => {
+    const { store1 } = await seedStores();
+    const donation = await seedSubscription(store1.id);
+    const { token } = await registerWithRole(app, "admin@example.org", store1.id, "admin");
+    const res = await app.inject({
+      method: "DELETE",
+      url: `/stores/nucleo-a/donations/${donation.id}/subscription`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(202);
+    const row = await db.donation.findUniqueOrThrow({ where: { id: donation.id } });
+    expect(row.subscriptionCancelledAt).not.toBeNull();
+  });
+
+  it("cancelar duas vezes é conflito, não cobrança dupla de trabalho", async () => {
+    const { store1 } = await seedStores();
+    const donation = await seedSubscription(store1.id);
+    const { token } = await registerWithRole(app, "admin@example.org", store1.id, "admin");
+    const url = `/stores/nucleo-a/donations/${donation.id}/subscription`;
+    await app.inject({ method: "DELETE", url, headers: { authorization: `Bearer ${token}` } });
+    const res = await app.inject({
+      method: "DELETE",
+      url,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(409);
+  });
+
+  it("staff não cancela: mexe no dinheiro de outra pessoa", async () => {
+    const { store1 } = await seedStores();
+    const donation = await seedSubscription(store1.id);
+    const { token } = await registerWithRole(app, "staff@example.org", store1.id, "staff");
+    const res = await app.inject({
+      method: "DELETE",
+      url: `/stores/nucleo-a/donations/${donation.id}/subscription`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it("doação de outra loja → 404", async () => {
+    const { store1, store2 } = await seedStores();
+    const donation = await seedSubscription(store2.id);
+    const { token } = await registerWithRole(app, "admin@example.org", store1.id, "admin");
+    const res = await app.inject({
+      method: "DELETE",
+      url: `/stores/nucleo-a/donations/${donation.id}/subscription`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(404);
+  });
+
+  it("doação avulsa não é assinatura → 409", async () => {
+    const { store1 } = await seedStores();
+    const { user } = await registerWithRole(app, "doador@example.org", null, null);
+    const donation = await seedDonation(user.id, store1.id);
+    const { token } = await registerWithRole(app, "admin@example.org", store1.id, "admin");
+    const res = await app.inject({
+      method: "DELETE",
+      url: `/stores/nucleo-a/donations/${donation.id}/subscription`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(409);
+  });
+});

@@ -71,6 +71,8 @@ export interface DonationsRepository {
    * não acha a doação, e ter o token não dá acesso a nada além dela.
    */
   findByPublicToken(id: string, token: string): Promise<DonationWithDetails | null>;
+  /** Doação vista pelo lado da loja — quem recebe o dinheiro e atende o telefone. */
+  findByIdForStore(id: string, storeId: string): Promise<DonationWithDetails | null>;
   listMineCursor(args: {
     userId: string;
     status: DonationStatus | null;
@@ -229,6 +231,8 @@ export function createDonationsRepository(db: PrismaClient): DonationsRepository
       db.donation.findFirst({ where: { id, userId }, include: DONATION_INCLUDE }),
     findByPublicToken: (id, token) =>
       db.donation.findFirst({ where: { id, publicToken: token }, include: DONATION_INCLUDE }),
+    findByIdForStore: (id, storeId) =>
+      db.donation.findFirst({ where: { id, storeId }, include: DONATION_INCLUDE }),
 
     listMineCursor: async ({ userId, status, limit, cursor }) => {
       const after = cursor ? afterCursorWhere(decodeCursor(cursor)) : {};
