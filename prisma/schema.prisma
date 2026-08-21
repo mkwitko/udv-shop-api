@@ -1,5 +1,10 @@
 generator client {
   provider = "prisma-client-js"
+  /// `native` cobre a máquina de quem desenvolve. O alvo de produção é declarado explícito
+  /// porque a detecção do Prisma depende da libssl presente no momento do `generate`: numa
+  /// imagem slim sem openssl ele cai no default 1.1.x e o container sobe, migra e só então
+  /// morre com "could not locate the Query Engine for runtime linux-arm64-openssl-3.0.x".
+  binaryTargets = ["native", "linux-arm64-openssl-3.0.x"]
 }
 
 datasource db {

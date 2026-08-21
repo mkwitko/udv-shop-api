@@ -13,6 +13,16 @@ cd "$COMPOSE_DIR"
 
 CURRENT="$(grep -E '^API_IMAGE=' .env | cut -d= -f2- || true)"
 
+# Confere a imagem ANTES de tirar dump e trocar container. O engine errado do Prisma deixa a
+# API subir, migrar e só então morrer no primeiro query — o que custa um ciclo inteiro de
+# deploy, healthcheck estourado e rollback para descobrir.
+docker pull -q "$NEW_IMAGE" >/dev/null
+if ! docker run --rm --entrypoint sh "$NEW_IMAGE" -c \
+  'find /app/node_modules -name "libquery_engine-linux-arm64-openssl-3.0.x.so.node" | grep -q .'; then
+  echo "imagem sem o Query Engine do Prisma para linux-arm64-openssl-3.0.x; deploy abortado" >&2
+  exit 1
+fi
+
 # Rede de segurança da migration: rollback de imagem não desfaz schema, então o ponto de
 # retorno tem que ser deste minuto, não da hora passada.
 ./scripts/backup-db.sh --prefix predeploy

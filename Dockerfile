@@ -3,6 +3,11 @@
 FROM node:22-slim AS base
 ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
+# openssl aqui e não só na imagem final: o `prisma generate` escolhe o engine pela libssl
+# que encontra, e sem ela assume 1.1.x — a imagem sobe e só quebra no primeiro query.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends openssl ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
 RUN corepack enable
 WORKDIR /app
 
