@@ -10,7 +10,7 @@ WORKDIR /app
 FROM base AS build
 COPY package.json pnpm-lock.yaml ./
 RUN --mount=type=cache,target=/pnpm/store pnpm install --frozen-lockfile
-COPY tsconfig.json ./
+COPY tsconfig.json tsconfig.build.json ./
 COPY prisma ./prisma
 COPY src ./src
 RUN pnpm db:generate && pnpm build

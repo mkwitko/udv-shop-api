@@ -42,6 +42,13 @@ jobs:
           DATABASE_URL: postgresql://udv:udv@localhost:5434/udvshop_test
       - run: pnpm test
       - run: pnpm build
+      # O CMD da imagem roda `node dist/server.js`. Com o tsconfig de typecheck (que inclui
+      # test/ e scripts/) o tsc emitia dist/src/server.js e o container reiniciava em loop
+      # com MODULE_NOT_FOUND — em produção, não no CI.
+      - name: build emite dist/server.js e não carrega testes
+        run: |
+          test -f dist/server.js || { echo "dist/server.js não existe"; ls -R dist | head -30; exit 1; }
+          test ! -d dist/test || { echo "dist/test entrou no build de produção"; exit 1; }
 
   # Infra de banco e de deploy tem teste próprio: cluster que nasce errado e compose que não
   # sobe são defeitos que só aparecem na VM, e lá é caro.

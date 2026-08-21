@@ -1,0 +1,12 @@
+{
+  // Build de produção. Existe separado do tsconfig.json porque aquele inclui `test`,
+  // `scripts` e `prisma/seed.ts` para o typecheck — e com mais de uma raiz no `include` o
+  // tsc infere rootDir na raiz do projeto e emite `dist/src/server.js`, além de despejar
+  // os testes dentro da imagem. O CMD do Dockerfile espera `dist/server.js`.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist"
+  },
+  "include": ["src"]
+}
