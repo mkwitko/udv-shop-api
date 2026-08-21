@@ -57,3 +57,5 @@ jobs:
           shellcheck --severity=warning scripts/*.sh scripts/test/*.sh deploy/postgres/initdb/*.sh
       - name: cluster nasce com ICU, tuning e roles corretos
         run: ./scripts/test/db-bootstrap-check.sh
+      - name: composes válidos e sem porta publicada em produção
+        run: ./scripts/test/compose-check.sh

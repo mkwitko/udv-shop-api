@@ -1,34 +1,84 @@
-# Produção na VM (Oracle): API + Postgres. A imagem vem do GHCR via CI.
-# Subir: docker compose -f docker-compose.prod.yml up -d
-# Backup diário: agendar scripts/backup-db.sh no cron do host (ver docs/DEPLOY.md).
+# Produção na VM Ampere (Oracle Cloud): API + Postgres + túnel.
+# Subir:   docker compose -f docker-compose.prod.yml up -d
+# Deploy:  ./scripts/deploy-image.sh <imagem@digest>   (o CD chama isso)
+# Backup:  systemd timer udv-backup.timer              (ver docs/DEPLOY.md)
+#
+# Nenhum serviço publica porta: quem fala com a internet é o cloudflared, por conexão de
+# saída. A security list da OCI libera só 22.
 services:
   api:
-    image: ${API_IMAGE:-ghcr.io/OWNER/udv-shop-api:latest}
+    # Sempre fixada por digest, nunca `latest`: sem digest não existe para onde voltar.
+    image: ${API_IMAGE:?defina API_IMAGE no .env}
     restart: unless-stopped
     env_file: .env
-    environment:
-      DATABASE_URL: postgresql://udv:${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}@postgres:5432/udvshop
-    ports:
-      # só loopback: quem expõe para fora é o proxy da Cloudflare -> caddy/nginx no host
-      - "127.0.0.1:3333:3333"
     depends_on:
       postgres:
         condition: service_healthy
+    healthcheck:
+      # /health é rota pública e sem rate limit; node 22 tem fetch nativo, então não precisa
+      # de curl na imagem.
+      test:
+        [
+          "CMD-SHELL",
+          "node -e \"fetch('http://127.0.0.1:3333/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\"",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    mem_limit: 1g
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
 
   postgres:
-    image: postgres:17-alpine
+    image: postgres:17.6-bookworm
     restart: unless-stopped
     environment:
       POSTGRES_USER: udv
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}
       POSTGRES_DB: udvshop
+      # Só age no primeiro boot. Trocar depois exige dump, recriar cluster e restore.
+      POSTGRES_INITDB_ARGS: "--locale-provider=icu --icu-locale=pt-BR --encoding=UTF8 --locale=C.UTF-8"
+      POSTGRES_APP_PASSWORD: ${POSTGRES_APP_PASSWORD:?defina POSTGRES_APP_PASSWORD no .env}
+      POSTGRES_MIGRATE_PASSWORD: ${POSTGRES_MIGRATE_PASSWORD:?defina POSTGRES_MIGRATE_PASSWORD no .env}
+      POSTGRES_BACKUP_PASSWORD: ${POSTGRES_BACKUP_PASSWORD:?defina POSTGRES_BACKUP_PASSWORD no .env}
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ./deploy/postgres/tuning.conf:/etc/postgresql/tuning.conf:ro
+      - ./deploy/postgres/initdb:/docker-entrypoint-initdb.d:ro
+    # sort e hash em disco compartilhado; o default de 64MB derruba query paralela
+    shm_size: 256mb
+    mem_limit: 3g
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U udv -d udvshop"]
       interval: 10s
       timeout: 5s
       retries: 5
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    # Túnel gerenciado remotamente: o roteamento hostname -> serviço fica no painel da
+    # Cloudflare, não num arquivo nesta VM. O destino é http://api:3333.
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:?defina TUNNEL_TOKEN no .env}
+    depends_on:
+      api:
+        condition: service_started
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
 
 volumes:
   pgdata:
