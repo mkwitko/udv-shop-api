@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { GuestContact } from "../../../lib/guest-identity.js";
 
 export const DONATION_MIN_CENTS = 500;
 export const DONATION_MAX_CENTS = 5_000_000;
@@ -12,6 +13,11 @@ export const CreateDonationBody = z.object({
   amountCents: z.number().int().min(DONATION_MIN_CENTS).max(DONATION_MAX_CENTS),
   anonymous: z.boolean().default(false),
   message: z.string().max(500).optional(),
+  /**
+   * Quem está doando, quando não há sessão. Ignorado se houver Bearer token, e recusado para
+   * `monthly` — assinatura precisa de conta, é lá que se cancela.
+   */
+  contact: GuestContact.optional(),
 });
 export type CreateDonationBody = z.infer<typeof CreateDonationBody>;
 
@@ -51,6 +57,24 @@ export type DonationPaymentInstructions = z.infer<typeof DonationPaymentInstruct
 export const CreateDonationResponse = z.object({
   donation: DonationResponse,
   payment: DonationPaymentInstructions,
+  /**
+   * Chave do recibo público, só para doação feita sem conta. É como a tela de confirmação
+   * acompanha o Pix e mostra os números da sorte sem estar autenticada.
+   */
+  receiptToken: z.string().nullable(),
+});
+
+/** Recibo público da doação: status, valor e números da sorte. Nada sobre quem doou. */
+export const DonationReceiptResponse = z.object({
+  id: z.string(),
+  status: z.string(),
+  type: z.enum(["one_time", "monthly"]),
+  amountCents: z.number().int(),
+  currency: z.string(),
+  store: z.object({ slug: z.string(), name: z.string() }),
+  campaign: z.object({ slug: z.string(), title: z.string() }).nullable(),
+  raffleNumbers: z.array(z.number().int()),
+  createdAt: z.string(),
 });
 
 export const DonationsPageResponse = z.object({

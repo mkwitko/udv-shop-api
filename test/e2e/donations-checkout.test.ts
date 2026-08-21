@@ -240,9 +240,21 @@ describe("POST /donations", () => {
     expect(freshDonation.status).toBe("paid");
   });
 
-  it("sem token → 401", async () => {
+  // A rota é pública para doação avulsa desde o fluxo sem conta: corpo inválido é 400, e é a
+  // falta de identidade (nem sessão nem `contact`) que dá 401. Ver donations-guest.test.ts.
+  it("corpo inválido → 400", async () => {
     await seedStore();
     const res = await app.inject({ method: "POST", url: "/donations", payload: {} });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("sem token e sem contato → 401", async () => {
+    await seedStore();
+    const res = await app.inject({
+      method: "POST",
+      url: "/donations",
+      payload: { storeSlug: "nucleo-a", provider: "woovi", type: "one_time", amountCents: 2500 },
+    });
     expect(res.statusCode).toBe(401);
   });
 });

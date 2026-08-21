@@ -35,6 +35,8 @@ export interface DonationsRepository {
     applicationFeeCents: number;
     anonymous: boolean;
     message: string | null;
+    /** Chave do recibo público. Só vem preenchida quando a doação nasce sem sessão. */
+    publicToken: string | null;
     expiresAt: Date | null;
   }): Promise<DonationWithDetails>;
   attachProviderId(paymentId: string, providerId: string): Promise<void>;
@@ -51,6 +53,11 @@ export interface DonationsRepository {
   markRefundedByPaymentId(paymentId: string): Promise<boolean>;
   listExpiredPending(now: Date): Promise<Array<{ id: string }>>;
   findByIdForUser(id: string, userId: string): Promise<DonationWithDetails | null>;
+  /**
+   * Recibo de quem doou sem conta. O token é um uuid v4 sorteado por doação: quem não o tem
+   * não acha a doação, e ter o token não dá acesso a nada além dela.
+   */
+  findByPublicToken(id: string, token: string): Promise<DonationWithDetails | null>;
   listMineCursor(args: {
     userId: string;
     status: DonationStatus | null;
@@ -90,6 +97,7 @@ export function createDonationsRepository(db: PrismaClient): DonationsRepository
           amountCents: input.amountCents,
           anonymous: input.anonymous,
           message: input.message,
+          publicToken: input.publicToken,
           expiresAt: input.expiresAt,
           payment: {
             create: {
@@ -199,6 +207,8 @@ export function createDonationsRepository(db: PrismaClient): DonationsRepository
 
     findByIdForUser: (id, userId) =>
       db.donation.findFirst({ where: { id, userId }, include: DONATION_INCLUDE }),
+    findByPublicToken: (id, token) =>
+      db.donation.findFirst({ where: { id, publicToken: token }, include: DONATION_INCLUDE }),
 
     listMineCursor: async ({ userId, status, limit, cursor }) => {
       const after = cursor ? afterCursorWhere(decodeCursor(cursor)) : {};

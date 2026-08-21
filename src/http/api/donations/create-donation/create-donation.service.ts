@@ -22,7 +22,11 @@ export type CreateDonationDeps = {
 
 export function createDonationService(deps: CreateDonationDeps) {
   return async (
-    input: CreateDonationBody & { userId: string; userEmail: string | null },
+    input: CreateDonationBody & {
+      userId: string;
+      userEmail: string | null;
+      publicToken: string | null;
+    },
   ): Promise<{ donation: DonationWithDetails; payment: DonationPaymentInstructions }> => {
     const store = await deps.stores.findBySlug(input.storeSlug);
     if (store?.status !== "active") throw new NotFoundError("store_not_found");
@@ -70,6 +74,7 @@ export function createDonationService(deps: CreateDonationDeps) {
       applicationFeeCents,
       anonymous: input.anonymous,
       message: input.message ?? null,
+      publicToken: input.publicToken,
       expiresAt,
     });
     const paymentId = donation.payment?.id;

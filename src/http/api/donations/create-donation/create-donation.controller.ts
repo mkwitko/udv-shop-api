@@ -1,7 +1,8 @@
+import { randomUUID } from "node:crypto";
 import type { FastifyPluginAsync } from "fastify";
 import { db } from "../../../../infra/db/client.js";
+import { createGuestIdentityRepo, resolveActor } from "../../../../lib/guest-identity.js";
 import { UnauthorizedError } from "../../../../shared/errors.js";
-import { requireUser } from "../../../hooks/auth.js";
 import { createCampaignsRepository } from "../../campaigns/campaigns.repository.js";
 import { createStoresRepository } from "../../stores/stores.repository.js";
 import { createDonationsRepository, toDonationResponse } from "../donations.repository.js";
@@ -16,10 +17,13 @@ export const createDonationRoute: FastifyPluginAsync = async (app) => {
     stripe: app.gateways.stripe,
     woovi: app.gateways.woovi,
   });
+  const guests = createGuestIdentityRepo(db);
   app.post(
     "/donations",
     {
-      config: { permissions: { any: ["customer"] } },
+      // Pública para doação avulsa: apoiar um núcleo não pode custar um cadastro. O rate limit
+      // por IP é o que segura criação de conta leve em massa.
+      config: { public: true, optionalAuth: true, rateLimit: { max: 5, timeWindow: "1 minute" } },
       schema: {
         operationId: "createDonation",
         tags: ["donations"],
@@ -28,18 +32,30 @@ export const createDonationRoute: FastifyPluginAsync = async (app) => {
       },
     },
     async (req, reply) => {
-      const user = requireUser(req);
+      const body = req.body as CreateDonationBody;
+      // Mensal continua exigindo conta: a assinatura precisa de e-mail para o customer do
+      // Stripe, e quem assina tem que ter onde cancelar sem depender de ninguém.
+      if (body.type === "monthly" && !req.user) throw new UnauthorizedError("login_required");
+      const actor = await resolveActor(guests, {
+        sessionUserId: req.user?.sub,
+        contact: body.contact,
+      });
       // A assinatura mensal precisa do email para criar o customer na conta conectada.
       const record = await db.user.findUnique({
-        where: { id: user.sub },
+        where: { id: actor.userId },
         select: { email: true },
       });
-      if (!record) throw new UnauthorizedError();
-      const body = req.body as CreateDonationBody;
-      const result = await service({ ...body, userId: user.sub, userEmail: record.email });
+      const publicToken = actor.guest ? randomUUID() : null;
+      const result = await service({
+        ...body,
+        userId: actor.userId,
+        userEmail: record?.email ?? null,
+        publicToken,
+      });
       void reply.code(201).send({
         donation: toDonationResponse(result.donation),
         payment: result.payment,
+        receiptToken: publicToken,
       });
     },
   );
