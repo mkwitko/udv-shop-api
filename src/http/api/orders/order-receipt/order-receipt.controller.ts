@@ -2,6 +2,7 @@ import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { db } from "../../../../infra/db/client.js";
 import { NotFoundError } from "../../../../shared/errors.js";
+import { strictLimit } from "../../../plugins/rate-limit.js";
 import { createOrdersRepository } from "../orders.repository.js";
 import { OrderReceiptResponse } from "../orders.schema.js";
 
@@ -15,8 +16,8 @@ export const orderReceiptRoute: FastifyPluginAsync = async (app) => {
     {
       // Público porque quem comprou sem conta não tem sessão para apresentar, e o Pix é
       // assíncrono: sem isso a tela de confirmação entrega um QR code e um beco sem saída. O
-      // teto alto é o poll de 4 segundos dessa tela.
-      config: { public: true, rateLimit: { max: 60, timeWindow: "1 minute" } },
+      // teto é alto porque essa tela pergunta a cada 4 segundos, em cada aba aberta.
+      config: { public: true, rateLimit: strictLimit(120) },
       schema: {
         operationId: "getOrderReceipt",
         tags: ["orders"],

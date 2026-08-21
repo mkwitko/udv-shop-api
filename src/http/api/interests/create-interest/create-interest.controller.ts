@@ -2,6 +2,7 @@ import type { FastifyPluginAsync } from "fastify";
 import { db } from "../../../../infra/db/client.js";
 import { createGuestIdentityRepo, resolveActor } from "../../../../lib/guest-identity.js";
 import { NotFoundError, ValidationError } from "../../../../shared/errors.js";
+import { strictLimit } from "../../../plugins/rate-limit.js";
 import { createProductsRepository } from "../../products/products.repository.js";
 import { createStoresRepository } from "../../stores/stores.repository.js";
 import { createInterestsRepository, toInterestResponse } from "../interests.repository.js";
@@ -16,8 +17,9 @@ export const createInterestRoute: FastifyPluginAsync = async (app) => {
     "/interests",
     {
       // Público de propósito: dizer "me avise quando chegar" não vale uma senha. O rate limit
-      // por IP é o que segura criação de conta leve em massa.
-      config: { public: true, optionalAuth: true, rateLimit: { max: 5, timeWindow: "1 minute" } },
+      // por IP segura criação de conta leve em massa sem derrubar um grupo que compartilha a
+      // mesma rede — wifi do núcleo e NAT de operadora chegam aqui como um IP só.
+      config: { public: true, optionalAuth: true, rateLimit: strictLimit(20) },
       schema: {
         operationId: "createInterest",
         tags: ["interests"],

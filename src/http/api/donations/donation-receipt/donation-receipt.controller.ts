@@ -2,6 +2,7 @@ import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { db } from "../../../../infra/db/client.js";
 import { NotFoundError } from "../../../../shared/errors.js";
+import { strictLimit } from "../../../plugins/rate-limit.js";
 import { createDonationsRepository } from "../donations.repository.js";
 import { DonationReceiptResponse } from "../donations.schema.js";
 
@@ -15,8 +16,9 @@ export const donationReceiptRoute: FastifyPluginAsync = async (app) => {
     {
       // Público porque quem doou sem conta não tem sessão para apresentar, e o Pix é
       // assíncrono: é por aqui que a tela de obrigado descobre que o pagamento caiu e mostra
-      // os números da sorte. O teto alto é o poll de 4 segundos dessa tela.
-      config: { public: true, rateLimit: { max: 60, timeWindow: "1 minute" } },
+      // os números da sorte. O teto é alto porque essa tela pergunta a cada 4 segundos, em
+      // cada aba aberta.
+      config: { public: true, rateLimit: strictLimit(120) },
       schema: {
         operationId: "getDonationReceipt",
         tags: ["donations"],

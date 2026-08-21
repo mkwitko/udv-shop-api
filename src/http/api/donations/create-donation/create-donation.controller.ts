@@ -3,6 +3,7 @@ import type { FastifyPluginAsync } from "fastify";
 import { db } from "../../../../infra/db/client.js";
 import { createGuestIdentityRepo, resolveActor } from "../../../../lib/guest-identity.js";
 import { UnauthorizedError } from "../../../../shared/errors.js";
+import { strictLimit } from "../../../plugins/rate-limit.js";
 import { createCampaignsRepository } from "../../campaigns/campaigns.repository.js";
 import { createStoresRepository } from "../../stores/stores.repository.js";
 import { createDonationsRepository, toDonationResponse } from "../donations.repository.js";
@@ -21,9 +22,9 @@ export const createDonationRoute: FastifyPluginAsync = async (app) => {
   app.post(
     "/donations",
     {
-      // Pública para doação avulsa: apoiar um núcleo não pode custar um cadastro. O rate limit
-      // por IP é o que segura criação de conta leve em massa.
-      config: { public: true, optionalAuth: true, rateLimit: { max: 5, timeWindow: "1 minute" } },
+      // Pública para doação avulsa: apoiar um núcleo não pode custar um cadastro. O teto por
+      // IP segura abuso sem derrubar a fila de quem doa junto, depois da sessão, no mesmo wifi.
+      config: { public: true, optionalAuth: true, rateLimit: strictLimit(20) },
       schema: {
         operationId: "createDonation",
         tags: ["donations"],
