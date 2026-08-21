@@ -15,14 +15,22 @@ concurrency:
 
 jobs:
   image:
-    runs-on: ubuntu-latest
+    # A VM é Ampere A1 (arm64). Repo público: definir a variável ARM_RUNNER=ubuntu-24.04-arm
+    # e o build sai nativo (~4min). Repo privado sem plano pago: não definir nada — cai no
+    # runner x86 com QEMU (~20min), que funciona igual, só devagar.
+    runs-on: ${{ vars.ARM_RUNNER || 'ubuntu-latest' }}
     permissions:
       contents: read
       packages: write
     outputs:
-      image: ${{ steps.meta.outputs.tags }}
+      image: ghcr.io/${{ github.repository }}@${{ steps.build.outputs.digest }}
     steps:
       - uses: actions/checkout@v4
+      - name: QEMU (só quando o runner não é arm64)
+        if: ${{ !vars.ARM_RUNNER }}
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with:
@@ -37,9 +45,11 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
             type=sha
             type=ref,event=tag
-      - uses: docker/build-push-action@v6
+      - id: build
+        uses: docker/build-push-action@v6
         with:
           context: .
+          platforms: linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
