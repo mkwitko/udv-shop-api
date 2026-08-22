@@ -18,7 +18,7 @@ import type {
 import type { Gateways } from "../../src/types/fastify.js";
 
 export type FakeGateways = Gateways & {
-  sentEmails: Array<{ to: string; subject: string; html: string }>;
+  sentEmails: Array<{ to: string | string[]; subject: string; html: string }>;
   googleProfile: GoogleProfile;
   stripeIntents: CreatePaymentIntentInput[];
   stripeRefunds: string[];

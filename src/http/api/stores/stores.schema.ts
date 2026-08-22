@@ -48,6 +48,15 @@ export const StoreResponse = z.object({
   name: z.string(),
   description: z.string().nullable(),
   status: z.enum(["pending", "active", "suspended"]),
+  /** Só vem preenchido com `status: "suspended"`. Muda a mensagem e a saída oferecida. */
+  suspensionReason: z.enum(["billing", "platform"]).nullable(),
+  /** Como a loja entrega, nas palavras dela. Público: a vitrine mostra antes da compra. */
+  deliveryNote: z.string().nullable(),
+  /**
+   * WhatsApp de contato, em dígitos com DDI. Público de propósito: é telefone de negócio,
+   * publicado por escolha de quem cuida da loja, e é o caminho de volta de quem compra.
+   */
+  whatsapp: z.string().nullable(),
   branding: StoreBrandingResponse.nullable(),
   createdAt: z.string(),
 });
@@ -81,6 +90,9 @@ export type AdminListStoresQuery = z.infer<typeof AdminListStoresQuery>;
 export const UpdateStoreBody = z.object({
   name: z.string().min(2).max(120).optional(),
   description: z.string().max(2000).nullable().optional(),
+  deliveryNote: z.string().max(280).nullable().optional(),
+  /** Aceita o que a pessoa digitar; a rota normaliza para dígitos com DDI. */
+  whatsapp: z.string().max(20).nullable().optional(),
   branding: StoreBrandingInput.optional(),
 });
 export type UpdateStoreBody = z.infer<typeof UpdateStoreBody>;

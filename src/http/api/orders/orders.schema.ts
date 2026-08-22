@@ -25,9 +25,15 @@ export type CheckoutBody = z.infer<typeof CheckoutBody>;
 
 export const OrderItemResponse = z.object({
   productId: z.string(),
+  /** Para linkar de volta o ingresso ou o produto comprado. */
+  productSlug: z.string(),
   name: z.string(),
   priceCents: z.number().int(),
   qty: z.number().int(),
+  /** Preenchido quando o item comprado é ingresso: é o que faz "meus ingressos" existir. */
+  event: z.object({ at: z.string(), location: z.string().nullable() }).nullable(),
+  /** Presença conferida na porta. */
+  checkedInAt: z.string().nullable(),
 });
 
 export const OrderResponse = z.object({
@@ -86,6 +92,14 @@ export const OrderReceiptResponse = z.object({
     z.object({ name: z.string(), qty: z.number().int(), priceCents: z.number().int() }),
   ),
   pix: PixCharge.nullable(),
+  /**
+   * Telefone parcial de contato do pedido — "(48) ****-5678". A tela de confirmação
+   * devolve para a pessoa o número que a loja vai chamar: dígito errado aqui é pedido
+   * pago e entrega que nunca acontece. Parcial porque o link do recibo circula em grupo.
+   */
+  contactPhoneMasked: z.string().nullable(),
+  /** Como a loja combina entrega/retirada, nas palavras dela. */
+  deliveryNote: z.string().nullable(),
   createdAt: z.string(),
 });
 

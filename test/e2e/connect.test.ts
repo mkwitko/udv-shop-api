@@ -207,6 +207,8 @@ describe("connect — onboarding Stripe e subconta Woovi", () => {
       woovi: { connected: false, pixKeyMasked: null },
       // zero é o default desde o ADR-027: plataforma vive da mensalidade, não de comissão
       applicationFeeBps: 0,
+      // taxa do provedor não declarada no ambiente: a tela mostra o texto sem número
+      providerFees: { pix: null, card: null },
     });
     const persisted = await db.store.findUniqueOrThrow({ where: { id: store.id } });
     expect(persisted.stripeTransfersEnabled).toBe(true);

@@ -15,9 +15,13 @@ import { ConflictError } from "../../../shared/errors.js";
 const STALE_REFUND_CLAIM_MS = 15 * 60_000;
 
 const ORDER_INCLUDE = {
-  items: true,
+  // O produto entra pela data do evento: "meus ingressos" precisa saber QUANDO é a sessão
+  // que a pessoa comprou, e o item do pedido guarda só o nome congelado na venda.
+  items: { include: { product: { select: { slug: true, eventAt: true, eventLocation: true } } } },
   payment: true,
-  store: { select: { slug: true, name: true } },
+  // deliveryNote entra no include porque o recibo repete para quem comprou como a loja
+  // combina entrega — a promessa "combinado com a loja" precisava dizer o quê.
+  store: { select: { slug: true, name: true, deliveryNote: true } },
 } satisfies Prisma.OrderInclude;
 
 export type OrderWithDetails = Prisma.OrderGetPayload<{ include: typeof ORDER_INCLUDE }>;
@@ -183,8 +187,14 @@ export function createOrdersRepository(db: PrismaClient): OrdersRepository {
         });
         const orderWasPending = transitioned.count === 1;
         if (orderWasPending) {
-          await tx.outboxEvent.create({
-            data: { type: "order.paid", payload: { orderId: payment.orderId } },
+          // Dois eventos, não um: o aviso para quem comprou e o aviso para quem vende
+          // falham e são retentados separados. Num evento só, um erro no e-mail da loja
+          // reenviaria o do comprador no retry.
+          await tx.outboxEvent.createMany({
+            data: [
+              { type: "order.paid", payload: { orderId: payment.orderId } },
+              { type: "order.paid.store", payload: { orderId: payment.orderId } },
+            ],
           });
         } else {
           // Money captured for an order that is no longer pending (already cancelled/
@@ -345,9 +355,14 @@ export function toOrderResponse(order: OrderWithDetails) {
     createdAt: order.createdAt.toISOString(),
     items: order.items.map((i) => ({
       productId: i.productId,
+      productSlug: i.product.slug,
       name: i.name,
       priceCents: i.priceCents,
       qty: i.qty,
+      event: i.product.eventAt
+        ? { at: i.product.eventAt.toISOString(), location: i.product.eventLocation }
+        : null,
+      checkedInAt: i.checkedInAt?.toISOString() ?? null,
     })),
     payment: order.payment
       ? { provider: order.payment.provider, status: order.payment.status }

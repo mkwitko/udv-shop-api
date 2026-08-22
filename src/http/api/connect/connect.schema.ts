@@ -23,6 +23,15 @@ export const ConnectStatusResponse = z.object({
   /** Taxa da plataforma em pontos-base (500 = 5%). A tela mostra o número de verdade
    *  em vez de uma promessa de "sem taxa" — transparência é parte da marca. */
   applicationFeeBps: z.number().int(),
+  /**
+   * Taxa de Woovi e Stripe por transação, em texto ("0,99%"). Quem paga é a plataforma:
+   * o número está aqui para a loja saber que o custo existe, não para descontar da venda.
+   * `null` quando a plataforma ainda não declarou o valor.
+   */
+  providerFees: z.object({
+    pix: z.string().nullable(),
+    card: z.string().nullable(),
+  }),
 });
 
 export const OnboardingLinkResponse = z.object({ url: z.string() });

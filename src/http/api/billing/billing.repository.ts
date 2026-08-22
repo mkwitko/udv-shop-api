@@ -59,20 +59,25 @@ export function createBillingRepository(db: PrismaClient): BillingRepository {
           },
         });
 
-        // Ativação só sai de `pending`: uma loja `suspended` foi suspensa por decisão da
-        // plataforma (moderação, ADR-006), e assinatura em dia não desfaz isso — quem
-        // reativa é o platform_admin. Já o cancelamento tira do ar quem estava no ar.
+        // Assinatura em dia libera a loja sozinha: nunca houve aprovação manual no caminho
+        // felizid. Ela sai de `pending` (primeira assinatura) e volta de `suspended` quando
+        // foi a própria cobrança que a derrubou. Suspensão por decisão da plataforma
+        // (moderação, ADR-006) não é desfeita por pagamento — quem reativa é o
+        // platform_admin. Já o cancelamento tira do ar quem estava no ar.
         if (state.status === "active" || state.status === "trialing") {
           await tx.store.updateMany({
-            where: { id: state.storeId, status: "pending" },
-            data: { status: "active" },
+            where: {
+              id: state.storeId,
+              OR: [{ status: "pending" }, { status: "suspended", suspensionReason: "billing" }],
+            },
+            data: { status: "active", suspensionReason: null },
           });
           return;
         }
         if (state.status === "canceled") {
           await tx.store.updateMany({
             where: { id: state.storeId, status: "active" },
-            data: { status: "suspended" },
+            data: { status: "suspended", suspensionReason: "billing" },
           });
         }
         // `past_due` é carência: a loja segue no ar até o Stripe desistir e mandar

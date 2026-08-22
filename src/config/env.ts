@@ -70,6 +70,13 @@ const BaseEnvSchema = z.object({
   // consumimos três eventos (pago, expirado, estornado), aqui vão os três segredos
   // separados por vírgula — qualquer um que assine o corpo vale.
   WOOVI_WEBHOOK_HMAC_SECRET: z.string().default(""),
+  // Taxa que Woovi e Stripe cobram por transação, como texto ("0,99%", "3,99% + R$ 0,39").
+  // Quem paga é a plataforma (`fees.payer: application`, ADR-024), então isto não entra em
+  // cálculo nenhum: é declaração. Texto livre de propósito — número de contrato muda por
+  // acordo e por volume, e um percentual chumbado no código viraria mentira silenciosa.
+  // Vazio = a tela só diz que a taxa existe e é paga pela plataforma, sem número.
+  PROVIDER_FEE_PIX_TEXT: z.string().default(""),
+  PROVIDER_FEE_CARD_TEXT: z.string().default(""),
   // Liga o gateway Pix falso com autoconfirmação em ~8s — só para demo/desenvolvimento
   // local sem credenciais reais. Recusado em produção (ver superRefine abaixo).
   DEV_FAKE_PAYMENTS: z

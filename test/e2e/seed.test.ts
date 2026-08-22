@@ -21,7 +21,9 @@ describe("seed de desenvolvimento", () => {
 
     expect(await db.store.count()).toBe(1);
     expect(await db.user.count()).toBe(4);
-    expect(await db.product.count()).toBe(12);
+    // 12 produtos de vitrine + 2 eventos da agenda de demonstração
+    expect(await db.product.count()).toBe(14);
+    expect(await db.product.count({ where: { eventAt: { not: null } } })).toBe(2);
     // gavetas da vitrine, uma delas de propósito vazia
     expect(await db.productCategory.count()).toBe(5);
     // o pedido/doação de exemplo só entra na primeira execução

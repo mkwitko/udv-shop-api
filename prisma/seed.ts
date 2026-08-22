@@ -34,7 +34,13 @@ export async function seedDatabase(db: PrismaClient): Promise<string> {
 
   const store = await db.store.upsert({
     where: { slug: SEED_STORE_SLUG },
-    update: { status: "active", wooviPixKey: "demo@prospera.fake" },
+    update: {
+      status: "active",
+      wooviPixKey: "demo@colheita.fake",
+      whatsapp: "5511988887777",
+      deliveryNote:
+        "Retirada no núcleo, sábado de manhã. Entrega no bairro combinada por WhatsApp.",
+    },
     create: {
       slug: SEED_STORE_SLUG,
       name: "Núcleo Demonstração",
@@ -46,7 +52,10 @@ export async function seedDatabase(db: PrismaClient): Promise<string> {
       // no Stripe, com 502 na cara de quem tentava doar no cartão. A loja de exemplo
       // nasce como qualquer loja nova — cartão só depois do onboarding em Recebimento.
       // chave Pix fictícia: com DEV_FAKE_PAYMENTS=true o checkout Pix funciona inteiro
-      wooviPixKey: "demo@prospera.fake",
+      wooviPixKey: "demo@colheita.fake",
+      whatsapp: "5511988887777",
+      deliveryNote:
+        "Retirada no núcleo, sábado de manhã. Entrega no bairro combinada por WhatsApp.",
     },
   });
 
@@ -192,6 +201,33 @@ export async function seedDatabase(db: PrismaClient): Promise<string> {
       availability: "on_demand" as const,
       active: true,
       category: "sementes",
+    },
+    // Dois eventos na agenda de demonstração: um com hora de fim, um sem.
+    {
+      slug: "sessao-de-sabado",
+      name: "Sessão de sábado",
+      description: "Contribuição de participação. Chegue meia hora antes.",
+      priceCents: 5000,
+      stock: 40,
+      availability: "in_stock" as const,
+      active: true,
+      category: null,
+      eventAt: new Date(Date.now() + 6 * 24 * 60 * 60 * 1000),
+      eventEndsAt: new Date(Date.now() + 6 * 24 * 60 * 60 * 1000 + 4 * 60 * 60 * 1000),
+      eventLocation: "Salão do núcleo",
+    },
+    {
+      slug: "mutirao-da-horta",
+      name: "Mutirão da horta",
+      description: "Traga luva e chapéu. Almoço por conta do núcleo.",
+      priceCents: 1000,
+      stock: 15,
+      availability: "in_stock" as const,
+      active: true,
+      category: null,
+      eventAt: new Date(Date.now() + 20 * 24 * 60 * 60 * 1000),
+      eventEndsAt: null,
+      eventLocation: "Horta comunitária",
     },
     {
       slug: "vela-artesanal",

@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { db } from "../../../../infra/db/client.js";
+import { maskPhone } from "../../../../lib/mask.js";
 import { NotFoundError } from "../../../../shared/errors.js";
 import { strictLimit } from "../../../plugins/rate-limit.js";
 import { createOrdersRepository } from "../orders.repository.js";
@@ -38,6 +39,8 @@ export const orderReceiptRoute: FastifyPluginAsync = async (app) => {
         totalCents: order.totalCents,
         currency: order.currency,
         store: { slug: order.store.slug, name: order.store.name },
+        contactPhoneMasked: maskPhone(order.contactPhone),
+        deliveryNote: order.store.deliveryNote,
         items: order.items.map((i) => ({ name: i.name, qty: i.qty, priceCents: i.priceCents })),
         // A validade do Pix é a da reserva do pedido: é o mesmo relógio.
         pix:

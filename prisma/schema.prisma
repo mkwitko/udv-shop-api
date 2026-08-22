@@ -1,5 +1,5 @@
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
   /// `native` cobre a máquina de quem desenvolve. O alvo de produção é declarado explícito
   /// porque a detecção do Prisma depende da libssl presente no momento do `generate`: numa
   /// imagem slim sem openssl ele cai no default 1.1.x e o container sobe, migra e só então
@@ -83,6 +83,14 @@ enum StoreStatus {
   suspended
 }
 
+/// Por que a loja está suspensa. Sem isso, `suspended` é ambíguo: assinatura vencida e
+/// moderação da plataforma viram o mesmo estado, e a loja que volta a pagar fica presa
+/// fora do ar esperando um platform_admin.
+enum StoreSuspensionReason {
+  billing
+  platform
+}
+
 /// Espelha os status de Subscription do Stripe que nos interessam. `incomplete` é o
 /// estado entre o checkout iniciado e o primeiro pagamento confirmado.
 enum StoreSubscriptionStatus {
@@ -112,40 +120,49 @@ enum ProductInterestStatus {
 }
 
 model Store {
-  id                String      @id @default(uuid()) @db.Uuid
-  slug              String      @unique
-  name              String
-  description       String?
-  branding          Json?
-  status            StoreStatus @default(pending)
-  isPlatformOwner   Boolean     @default(false) @map("is_platform_owner")
+  id                     String                 @id @default(uuid()) @db.Uuid
+  slug                   String                 @unique
+  name                   String
+  description            String?
+  branding               Json?
+  status                 StoreStatus            @default(pending)
+  /// Só faz sentido junto de `status = suspended`; nula em qualquer outro estado.
+  suspensionReason       StoreSuspensionReason? @map("suspension_reason")
+  isPlatformOwner        Boolean                @default(false) @map("is_platform_owner")
   /// Taxa por venda em basis points. Zero desde 2026-08-19: a plataforma se sustenta pela
   /// mensalidade da loja, não por comissão (ADR-027). O campo continua existindo por loja
   /// para o caso de a decisão comercial voltar atrás sem migração de dados.
-  applicationFeeBps Int         @default(0) @map("application_fee_bps")
+  applicationFeeBps      Int                    @default(0) @map("application_fee_bps")
   /// Domínio próprio da loja (ex.: "loja.comunidade.org"), único na plataforma. Só
   /// resolve para a loja depois de verificado — antes disso é intenção, não endereço.
-  customDomain           String?   @unique @map("custom_domain")
-  customDomainVerifiedAt DateTime? @map("custom_domain_verified_at")
+  /// WhatsApp público da loja, só dígitos com DDI ("5548999995678"). É o caminho de volta
+  /// de quem compra: sem ele a pessoa pagava e não tinha como falar com quem vende.
+  whatsapp               String?                @map("whatsapp")
+  /// Como a loja entrega, na linguagem dela ("retirada no núcleo, sábado de manhã").
+  /// Texto livre porque combinação de entrega em comunidade não cabe em enum — e sem isso
+  /// a promessa "combinado com a loja" não dizia com quem nem como.
+  deliveryNote           String?                @map("delivery_note")
+  customDomain           String?                @unique @map("custom_domain")
+  customDomainVerifiedAt DateTime?              @map("custom_domain_verified_at")
 
-  stripeAccountId   String?     @unique @map("stripe_account_id")
-  wooviPixKey       String?     @map("woovi_pix_key")
-  createdAt         DateTime    @default(now()) @map("created_at")
-  updatedAt         DateTime    @updatedAt @map("updated_at")
+  stripeAccountId String?  @unique @map("stripe_account_id")
+  wooviPixKey     String?  @map("woovi_pix_key")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
 
   // Capacidades da conta conectada, espelhadas do webhook account.updated. Onboarding
   // iniciado não é onboarding concluído: só com stripeTransfersEnabled a loja pode vender.
   // Em destination charge quem cobra é a PLATAFORMA — chargesEnabled fala da conta do
   // núcleo cobrar direto, que não é o nosso fluxo. O que precisa estar ativo para o
   // dinheiro chegar no núcleo é a capability `transfers`.
-  stripeTransfersEnabled Boolean @default(false) @map("stripe_transfers_enabled")
+  stripeTransfersEnabled  Boolean @default(false) @map("stripe_transfers_enabled")
   /// Product da plataforma que representa "doação mensal desta loja". Nasce na primeira
   /// assinatura e é reusado nas seguintes — um Product por doação enchia a conta de lixo.
   stripeDonationProductId String? @map("stripe_donation_product_id")
-  stripeChargesEnabled   Boolean @default(false) @map("stripe_charges_enabled")
-  stripePayoutsEnabled   Boolean @default(false) @map("stripe_payouts_enabled")
-  stripeDetailsSubmitted Boolean @default(false) @map("stripe_details_submitted")
-  wooviSubaccountId      String? @map("woovi_subaccount_id")
+  stripeChargesEnabled    Boolean @default(false) @map("stripe_charges_enabled")
+  stripePayoutsEnabled    Boolean @default(false) @map("stripe_payouts_enabled")
+  stripeDetailsSubmitted  Boolean @default(false) @map("stripe_details_submitted")
+  wooviSubaccountId       String? @map("woovi_subaccount_id")
 
   roles        UserStoreRole[]
   products     Product[]
@@ -214,13 +231,21 @@ model Product {
   /// nada, e apagar uma categoria não pode apagar produto (SetNull).
   categoryId String? @map("category_id") @db.Uuid
 
+  /// Evento é produto com data: `eventAt` preenchido transforma o produto em ingresso e
+  /// ele passa a viver na Agenda em vez da vitrine. Reusa preço, estoque (= vagas), fila
+  /// de espera e o checkout inteiro — sessão, festa e mutirão não precisavam de máquina
+  /// nova, precisavam de data e lugar.
+  eventAt       DateTime? @map("event_at")
+  eventEndsAt   DateTime? @map("event_ends_at")
+  eventLocation String?   @map("event_location")
+
   /// Acordo de repasse vigente. Vale para vendas futuras: cada OrderItem congela o
   /// valor no momento da compra, então mudar o acordo não reescreve o passado.
   supplierId  String?     @map("supplier_id") @db.Uuid
   payoutKind  PayoutKind? @map("payout_kind")
   payoutValue Int?        @map("payout_value")
 
-  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  store      Store             @relation(fields: [storeId], references: [id], onDelete: Cascade)
   supplier   Supplier?         @relation(fields: [supplierId], references: [id], onDelete: SetNull)
   category   ProductCategory?  @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   orderItems OrderItem[]
@@ -232,6 +257,8 @@ model Product {
   @@index([storeId, categoryId, active, createdAt(sort: Desc), id(sort: Desc)])
   /// Ordenação por preço tem cursor próprio (priceCents + id) e precisa do índice dela.
   @@index([storeId, active, priceCents, id])
+  /// Agenda: eventos futuros da loja, em ordem de data.
+  @@index([storeId, active, eventAt])
   @@index([supplierId])
   @@map("products")
 }
@@ -406,6 +433,11 @@ model OrderItem {
   supplierId  String? @map("supplier_id") @db.Uuid
   payoutCents Int     @default(0) @map("payout_cents")
 
+  /// Presença confirmada na porta, quando o item comprado é ingresso de evento. Fica no
+  /// item e não no pedido porque a lista de presença é por evento: um pedido pode levar
+  /// ingresso de dois eventos diferentes.
+  checkedInAt DateTime? @map("checked_in_at")
+
   order    Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
   product  Product   @relation(fields: [productId], references: [id])
   supplier Supplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull)
@@ -534,30 +566,30 @@ model Campaign {
 }
 
 model Donation {
-  id                     String         @id @default(uuid()) @db.Uuid
-  storeId                String         @map("store_id") @db.Uuid
-  campaignId             String?        @map("campaign_id") @db.Uuid
-  userId                 String         @map("user_id") @db.Uuid
-  type                   DonationType   @default(one_time)
-  amountCents            Int            @map("amount_cents")
-  currency               String         @default("BRL")
-  status                 DonationStatus @default(pending_payment)
-  anonymous              Boolean        @default(false)
-  message                String?
-  subscriptionRef        String?        @map("subscription_ref")
-  providerInvoiceId      String?        @unique @map("provider_invoice_id")
-  subscriptionCancelledAt DateTime?     @map("subscription_cancelled_at")
-  raffleGranted          Boolean        @default(false) @map("raffle_granted")
+  id                      String         @id @default(uuid()) @db.Uuid
+  storeId                 String         @map("store_id") @db.Uuid
+  campaignId              String?        @map("campaign_id") @db.Uuid
+  userId                  String         @map("user_id") @db.Uuid
+  type                    DonationType   @default(one_time)
+  amountCents             Int            @map("amount_cents")
+  currency                String         @default("BRL")
+  status                  DonationStatus @default(pending_payment)
+  anonymous               Boolean        @default(false)
+  message                 String?
+  subscriptionRef         String?        @map("subscription_ref")
+  providerInvoiceId       String?        @unique @map("provider_invoice_id")
+  subscriptionCancelledAt DateTime?      @map("subscription_cancelled_at")
+  raffleGranted           Boolean        @default(false) @map("raffle_granted")
   /// Chave do recibo público. Preenchida só quando a doação nasce sem sessão: é como a tela
   /// de confirmação acompanha o Pix sem estar autenticada. Não é credencial de conta.
-  publicToken            String?        @unique @map("public_token")
+  publicToken             String?        @unique @map("public_token")
   /// Momento em que a doação virou `paid`. É o que decide a janela do sorteio —
   /// `createdAt` é quando o checkout abriu, e um Pix pago horas depois cairia na
   /// janela errada.
-  paidAt                 DateTime?      @map("paid_at")
-  expiresAt              DateTime?      @map("expires_at")
-  createdAt              DateTime       @default(now()) @map("created_at")
-  updatedAt              DateTime       @updatedAt @map("updated_at")
+  paidAt                  DateTime?      @map("paid_at")
+  expiresAt               DateTime?      @map("expires_at")
+  createdAt               DateTime       @default(now()) @map("created_at")
+  updatedAt               DateTime       @updatedAt @map("updated_at")
 
   store    Store         @relation(fields: [storeId], references: [id], onDelete: Cascade)
   campaign Campaign?     @relation(fields: [campaignId], references: [id], onDelete: Restrict)
@@ -574,8 +606,8 @@ model Donation {
 }
 
 model Raffle {
-  id         String @id @default(uuid()) @db.Uuid
-  campaignId String @map("campaign_id") @db.Uuid
+  id         String    @id @default(uuid()) @db.Uuid
+  campaignId String    @map("campaign_id") @db.Uuid
   /// Ordem dentro da campanha e identidade na URL. Atribuída pelo servidor.
   sequence   Int
   title      String
@@ -604,8 +636,8 @@ model Raffle {
 }
 
 model RafflePrize {
-  id            String  @id @default(uuid()) @db.Uuid
-  raffleId      String  @map("raffle_id") @db.Uuid
+  id            String   @id @default(uuid()) @db.Uuid
+  raffleId      String   @map("raffle_id") @db.Uuid
   position      Int
   title         String
   /// Prêmio é texto livre, não aponta para Product: sorteio costuma rifar coisa doada

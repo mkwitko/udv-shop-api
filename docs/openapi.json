@@ -47,6 +47,74 @@
         }
       }
     },
+    "/health/ready": {
+      "get": {
+        "operationId": "getHealthReady",
+        "tags": [
+          "health"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "ok"
+                      ]
+                    },
+                    "database": {
+                      "type": "string",
+                      "enum": [
+                        "up"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "database"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "degraded"
+                      ]
+                    },
+                    "database": {
+                      "type": "string",
+                      "enum": [
+                        "down"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "database"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/auth/register": {
       "post": {
         "operationId": "register",
@@ -638,6 +706,22 @@
                         "suspended"
                       ]
                     },
+                    "suspensionReason": {
+                      "nullable": true,
+                      "type": "string",
+                      "enum": [
+                        "billing",
+                        "platform"
+                      ]
+                    },
+                    "deliveryNote": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "whatsapp": {
+                      "nullable": true,
+                      "type": "string"
+                    },
                     "branding": {
                       "nullable": true,
                       "type": "object",
@@ -677,6 +761,9 @@
                     "name",
                     "description",
                     "status",
+                    "suspensionReason",
+                    "deliveryNote",
+                    "whatsapp",
                     "branding",
                     "createdAt"
                   ],
@@ -747,6 +834,22 @@
                               "suspended"
                             ]
                           },
+                          "suspensionReason": {
+                            "nullable": true,
+                            "type": "string",
+                            "enum": [
+                              "billing",
+                              "platform"
+                            ]
+                          },
+                          "deliveryNote": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "whatsapp": {
+                            "nullable": true,
+                            "type": "string"
+                          },
                           "branding": {
                             "nullable": true,
                             "type": "object",
@@ -786,6 +889,9 @@
                           "name",
                           "description",
                           "status",
+                          "suspensionReason",
+                          "deliveryNote",
+                          "whatsapp",
                           "branding",
                           "createdAt"
                         ],
@@ -958,6 +1064,22 @@
                               "suspended"
                             ]
                           },
+                          "suspensionReason": {
+                            "nullable": true,
+                            "type": "string",
+                            "enum": [
+                              "billing",
+                              "platform"
+                            ]
+                          },
+                          "deliveryNote": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "whatsapp": {
+                            "nullable": true,
+                            "type": "string"
+                          },
                           "branding": {
                             "nullable": true,
                             "type": "object",
@@ -997,6 +1119,9 @@
                           "name",
                           "description",
                           "status",
+                          "suspensionReason",
+                          "deliveryNote",
+                          "whatsapp",
                           "branding",
                           "createdAt"
                         ],
@@ -1065,6 +1190,22 @@
                               "suspended"
                             ]
                           },
+                          "suspensionReason": {
+                            "nullable": true,
+                            "type": "string",
+                            "enum": [
+                              "billing",
+                              "platform"
+                            ]
+                          },
+                          "deliveryNote": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "whatsapp": {
+                            "nullable": true,
+                            "type": "string"
+                          },
                           "branding": {
                             "nullable": true,
                             "type": "object",
@@ -1112,6 +1253,9 @@
                           "name",
                           "description",
                           "status",
+                          "suspensionReason",
+                          "deliveryNote",
+                          "whatsapp",
                           "branding",
                           "createdAt",
                           "role"
@@ -1176,6 +1320,22 @@
                         "suspended"
                       ]
                     },
+                    "suspensionReason": {
+                      "nullable": true,
+                      "type": "string",
+                      "enum": [
+                        "billing",
+                        "platform"
+                      ]
+                    },
+                    "deliveryNote": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "whatsapp": {
+                      "nullable": true,
+                      "type": "string"
+                    },
                     "branding": {
                       "nullable": true,
                       "type": "object",
@@ -1215,6 +1375,9 @@
                     "name",
                     "description",
                     "status",
+                    "suspensionReason",
+                    "deliveryNote",
+                    "whatsapp",
                     "branding",
                     "createdAt"
                   ],
@@ -1246,6 +1409,16 @@
                     "nullable": true,
                     "type": "string",
                     "maxLength": 2000
+                  },
+                  "deliveryNote": {
+                    "nullable": true,
+                    "type": "string",
+                    "maxLength": 280
+                  },
+                  "whatsapp": {
+                    "nullable": true,
+                    "type": "string",
+                    "maxLength": 20
                   },
                   "branding": {
                     "type": "object",
@@ -1313,6 +1486,22 @@
                         "suspended"
                       ]
                     },
+                    "suspensionReason": {
+                      "nullable": true,
+                      "type": "string",
+                      "enum": [
+                        "billing",
+                        "platform"
+                      ]
+                    },
+                    "deliveryNote": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "whatsapp": {
+                      "nullable": true,
+                      "type": "string"
+                    },
                     "branding": {
                       "nullable": true,
                       "type": "object",
@@ -1352,6 +1541,9 @@
                     "name",
                     "description",
                     "status",
+                    "suspensionReason",
+                    "deliveryNote",
+                    "whatsapp",
                     "branding",
                     "createdAt"
                   ],
@@ -1436,6 +1628,22 @@
                         "suspended"
                       ]
                     },
+                    "suspensionReason": {
+                      "nullable": true,
+                      "type": "string",
+                      "enum": [
+                        "billing",
+                        "platform"
+                      ]
+                    },
+                    "deliveryNote": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "whatsapp": {
+                      "nullable": true,
+                      "type": "string"
+                    },
                     "branding": {
                       "nullable": true,
                       "type": "object",
@@ -1475,6 +1683,9 @@
                     "name",
                     "description",
                     "status",
+                    "suspensionReason",
+                    "deliveryNote",
+                    "whatsapp",
                     "branding",
                     "createdAt"
                   ],
@@ -1696,12 +1907,31 @@
                       "type": "integer",
                       "minimum": -9007199254740991,
                       "maximum": 9007199254740991
+                    },
+                    "providerFees": {
+                      "type": "object",
+                      "properties": {
+                        "pix": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "card": {
+                          "nullable": true,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "pix",
+                        "card"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [
                     "stripe",
                     "woovi",
-                    "applicationFeeBps"
+                    "applicationFeeBps",
+                    "providerFees"
                   ],
                   "additionalProperties": false
                 }
@@ -1809,12 +2039,31 @@
                       "type": "integer",
                       "minimum": -9007199254740991,
                       "maximum": 9007199254740991
+                    },
+                    "providerFees": {
+                      "type": "object",
+                      "properties": {
+                        "pix": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "card": {
+                          "nullable": true,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "pix",
+                        "card"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [
                     "stripe",
                     "woovi",
-                    "applicationFeeBps"
+                    "applicationFeeBps",
+                    "providerFees"
                   ],
                   "additionalProperties": false
                 }
@@ -2552,6 +2801,23 @@
                     "format": "uuid",
                     "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                   },
+                  "eventAt": {
+                    "nullable": true,
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                  },
+                  "eventEndsAt": {
+                    "nullable": true,
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                  },
+                  "eventLocation": {
+                    "nullable": true,
+                    "type": "string",
+                    "maxLength": 200
+                  },
                   "supplierId": {
                     "nullable": true,
                     "type": "string",
@@ -2677,6 +2943,29 @@
                       ],
                       "additionalProperties": false
                     },
+                    "event": {
+                      "nullable": true,
+                      "type": "object",
+                      "properties": {
+                        "at": {
+                          "type": "string"
+                        },
+                        "endsAt": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "location": {
+                          "nullable": true,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "at",
+                        "endsAt",
+                        "location"
+                      ],
+                      "additionalProperties": false
+                    },
                     "payout": {
                       "nullable": true,
                       "type": "object",
@@ -2729,6 +3018,7 @@
                     "active",
                     "createdAt",
                     "category",
+                    "event",
                     "payout"
                   ],
                   "additionalProperties": false
@@ -2805,6 +3095,20 @@
             },
             "in": "query",
             "name": "sort",
+            "required": false
+          },
+          {
+            "schema": {
+              "default": "produto",
+              "type": "string",
+              "enum": [
+                "produto",
+                "evento",
+                "todos"
+              ]
+            },
+            "in": "query",
+            "name": "kind",
             "required": false
           },
           {
@@ -2901,6 +3205,29 @@
                             ],
                             "additionalProperties": false
                           },
+                          "event": {
+                            "nullable": true,
+                            "type": "object",
+                            "properties": {
+                              "at": {
+                                "type": "string"
+                              },
+                              "endsAt": {
+                                "nullable": true,
+                                "type": "string"
+                              },
+                              "location": {
+                                "nullable": true,
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "at",
+                              "endsAt",
+                              "location"
+                            ],
+                            "additionalProperties": false
+                          },
                           "payout": {
                             "nullable": true,
                             "type": "object",
@@ -2953,6 +3280,7 @@
                           "active",
                           "createdAt",
                           "category",
+                          "event",
                           "payout"
                         ],
                         "additionalProperties": false
@@ -3079,6 +3407,29 @@
                       ],
                       "additionalProperties": false
                     },
+                    "event": {
+                      "nullable": true,
+                      "type": "object",
+                      "properties": {
+                        "at": {
+                          "type": "string"
+                        },
+                        "endsAt": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "location": {
+                          "nullable": true,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "at",
+                        "endsAt",
+                        "location"
+                      ],
+                      "additionalProperties": false
+                    },
                     "payout": {
                       "nullable": true,
                       "type": "object",
@@ -3131,6 +3482,7 @@
                     "active",
                     "createdAt",
                     "category",
+                    "event",
                     "payout"
                   ],
                   "additionalProperties": false
@@ -3193,6 +3545,23 @@
                     "type": "string",
                     "format": "uuid",
                     "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "eventAt": {
+                    "nullable": true,
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                  },
+                  "eventEndsAt": {
+                    "nullable": true,
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                  },
+                  "eventLocation": {
+                    "nullable": true,
+                    "type": "string",
+                    "maxLength": 200
                   },
                   "supplierId": {
                     "nullable": true,
@@ -3322,6 +3691,29 @@
                       ],
                       "additionalProperties": false
                     },
+                    "event": {
+                      "nullable": true,
+                      "type": "object",
+                      "properties": {
+                        "at": {
+                          "type": "string"
+                        },
+                        "endsAt": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "location": {
+                          "nullable": true,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "at",
+                        "endsAt",
+                        "location"
+                      ],
+                      "additionalProperties": false
+                    },
                     "payout": {
                       "nullable": true,
                       "type": "object",
@@ -3374,6 +3766,7 @@
                     "active",
                     "createdAt",
                     "category",
+                    "event",
                     "payout"
                   ],
                   "additionalProperties": false
@@ -3539,6 +3932,29 @@
                       ],
                       "additionalProperties": false
                     },
+                    "event": {
+                      "nullable": true,
+                      "type": "object",
+                      "properties": {
+                        "at": {
+                          "type": "string"
+                        },
+                        "endsAt": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "location": {
+                          "nullable": true,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "at",
+                        "endsAt",
+                        "location"
+                      ],
+                      "additionalProperties": false
+                    },
                     "payout": {
                       "nullable": true,
                       "type": "object",
@@ -3591,6 +4007,7 @@
                     "active",
                     "createdAt",
                     "category",
+                    "event",
                     "payout"
                   ],
                   "additionalProperties": false
@@ -3672,6 +4089,433 @@
                   },
                   "required": [
                     "text"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/stores/{slug}/events": {
+      "get": {
+        "operationId": "listEvents",
+        "tags": [
+          "events"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "default": 20,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "slug",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "slug": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "priceCents": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "currency": {
+                            "type": "string"
+                          },
+                          "images": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "imageUrls": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "stock": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "availability": {
+                            "type": "string",
+                            "enum": [
+                              "in_stock",
+                              "on_demand"
+                            ]
+                          },
+                          "active": {
+                            "type": "boolean"
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          },
+                          "category": {
+                            "nullable": true,
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "slug": {
+                                "type": "string"
+                              },
+                              "name": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "slug",
+                              "name"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "event": {
+                            "nullable": true,
+                            "type": "object",
+                            "properties": {
+                              "at": {
+                                "type": "string"
+                              },
+                              "endsAt": {
+                                "nullable": true,
+                                "type": "string"
+                              },
+                              "location": {
+                                "nullable": true,
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "at",
+                              "endsAt",
+                              "location"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "payout": {
+                            "nullable": true,
+                            "type": "object",
+                            "properties": {
+                              "supplierId": {
+                                "type": "string"
+                              },
+                              "supplierName": {
+                                "type": "string"
+                              },
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "fixed_cents",
+                                  "percent_bps"
+                                ]
+                              },
+                              "value": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              "unitCents": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              }
+                            },
+                            "required": [
+                              "supplierId",
+                              "supplierName",
+                              "kind",
+                              "value",
+                              "unitCents"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "slug",
+                          "name",
+                          "description",
+                          "priceCents",
+                          "currency",
+                          "images",
+                          "imageUrls",
+                          "stock",
+                          "availability",
+                          "active",
+                          "createdAt",
+                          "category",
+                          "event",
+                          "payout"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/stores/{slug}/events/{productSlug}/attendees": {
+      "get": {
+        "operationId": "listEventAttendees",
+        "tags": [
+          "events"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "slug",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "productSlug",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "event": {
+                      "type": "object",
+                      "properties": {
+                        "slug": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "at": {
+                          "type": "string"
+                        },
+                        "location": {
+                          "nullable": true,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "slug",
+                        "name",
+                        "at",
+                        "location"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "soldQty": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "checkedInQty": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "remaining": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "orderItemId": {
+                            "type": "string"
+                          },
+                          "orderId": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "phone": {
+                            "type": "string"
+                          },
+                          "qty": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "paidCents": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "orderStatus": {
+                            "type": "string"
+                          },
+                          "checkedInAt": {
+                            "nullable": true,
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "orderItemId",
+                          "orderId",
+                          "name",
+                          "phone",
+                          "qty",
+                          "paidCents",
+                          "orderStatus",
+                          "checkedInAt"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "event",
+                    "soldQty",
+                    "checkedInQty",
+                    "remaining",
+                    "items"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/stores/{slug}/events/{productSlug}/attendees/{orderItemId}": {
+      "patch": {
+        "operationId": "checkInAttendee",
+        "tags": [
+          "events"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "present": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "present"
+                ]
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "slug",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "productSlug",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "in": "path",
+            "name": "orderItemId",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "checkedInAt": {
+                      "nullable": true,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "checkedInAt"
                   ],
                   "additionalProperties": false
                 }
@@ -9187,6 +10031,9 @@
                               "productId": {
                                 "type": "string"
                               },
+                              "productSlug": {
+                                "type": "string"
+                              },
                               "name": {
                                 "type": "string"
                               },
@@ -9199,13 +10046,38 @@
                                 "type": "integer",
                                 "minimum": -9007199254740991,
                                 "maximum": 9007199254740991
+                              },
+                              "event": {
+                                "nullable": true,
+                                "type": "object",
+                                "properties": {
+                                  "at": {
+                                    "type": "string"
+                                  },
+                                  "location": {
+                                    "nullable": true,
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "at",
+                                  "location"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "checkedInAt": {
+                                "nullable": true,
+                                "type": "string"
                               }
                             },
                             "required": [
                               "productId",
+                              "productSlug",
                               "name",
                               "priceCents",
-                              "qty"
+                              "qty",
+                              "event",
+                              "checkedInAt"
                             ],
                             "additionalProperties": false
                           }
@@ -9405,6 +10277,9 @@
                                 "productId": {
                                   "type": "string"
                                 },
+                                "productSlug": {
+                                  "type": "string"
+                                },
                                 "name": {
                                   "type": "string"
                                 },
@@ -9417,13 +10292,38 @@
                                   "type": "integer",
                                   "minimum": -9007199254740991,
                                   "maximum": 9007199254740991
+                                },
+                                "event": {
+                                  "nullable": true,
+                                  "type": "object",
+                                  "properties": {
+                                    "at": {
+                                      "type": "string"
+                                    },
+                                    "location": {
+                                      "nullable": true,
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "at",
+                                    "location"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                "checkedInAt": {
+                                  "nullable": true,
+                                  "type": "string"
                                 }
                               },
                               "required": [
                                 "productId",
+                                "productSlug",
                                 "name",
                                 "priceCents",
-                                "qty"
+                                "qty",
+                                "event",
+                                "checkedInAt"
                               ],
                               "additionalProperties": false
                             }
@@ -9561,6 +10461,9 @@
                           "productId": {
                             "type": "string"
                           },
+                          "productSlug": {
+                            "type": "string"
+                          },
                           "name": {
                             "type": "string"
                           },
@@ -9573,13 +10476,38 @@
                             "type": "integer",
                             "minimum": -9007199254740991,
                             "maximum": 9007199254740991
+                          },
+                          "event": {
+                            "nullable": true,
+                            "type": "object",
+                            "properties": {
+                              "at": {
+                                "type": "string"
+                              },
+                              "location": {
+                                "nullable": true,
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "at",
+                              "location"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "checkedInAt": {
+                            "nullable": true,
+                            "type": "string"
                           }
                         },
                         "required": [
                           "productId",
+                          "productSlug",
                           "name",
                           "priceCents",
-                          "qty"
+                          "qty",
+                          "event",
+                          "checkedInAt"
                         ],
                         "additionalProperties": false
                       }
@@ -9737,6 +10665,14 @@
                       ],
                       "additionalProperties": false
                     },
+                    "contactPhoneMasked": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "deliveryNote": {
+                      "nullable": true,
+                      "type": "string"
+                    },
                     "createdAt": {
                       "type": "string"
                     }
@@ -9749,6 +10685,8 @@
                     "store",
                     "items",
                     "pix",
+                    "contactPhoneMasked",
+                    "deliveryNote",
                     "createdAt"
                   ],
                   "additionalProperties": false
@@ -9879,6 +10817,9 @@
                                 "productId": {
                                   "type": "string"
                                 },
+                                "productSlug": {
+                                  "type": "string"
+                                },
                                 "name": {
                                   "type": "string"
                                 },
@@ -9891,13 +10832,38 @@
                                   "type": "integer",
                                   "minimum": -9007199254740991,
                                   "maximum": 9007199254740991
+                                },
+                                "event": {
+                                  "nullable": true,
+                                  "type": "object",
+                                  "properties": {
+                                    "at": {
+                                      "type": "string"
+                                    },
+                                    "location": {
+                                      "nullable": true,
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "at",
+                                    "location"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                "checkedInAt": {
+                                  "nullable": true,
+                                  "type": "string"
                                 }
                               },
                               "required": [
                                 "productId",
+                                "productSlug",
                                 "name",
                                 "priceCents",
-                                "qty"
+                                "qty",
+                                "event",
+                                "checkedInAt"
                               ],
                               "additionalProperties": false
                             }
@@ -10065,6 +11031,9 @@
                           "productId": {
                             "type": "string"
                           },
+                          "productSlug": {
+                            "type": "string"
+                          },
                           "name": {
                             "type": "string"
                           },
@@ -10077,13 +11046,38 @@
                             "type": "integer",
                             "minimum": -9007199254740991,
                             "maximum": 9007199254740991
+                          },
+                          "event": {
+                            "nullable": true,
+                            "type": "object",
+                            "properties": {
+                              "at": {
+                                "type": "string"
+                              },
+                              "location": {
+                                "nullable": true,
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "at",
+                              "location"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "checkedInAt": {
+                            "nullable": true,
+                            "type": "string"
                           }
                         },
                         "required": [
                           "productId",
+                          "productSlug",
                           "name",
                           "priceCents",
-                          "qty"
+                          "qty",
+                          "event",
+                          "checkedInAt"
                         ],
                         "additionalProperties": false
                       }
@@ -10217,6 +11211,9 @@
                           "productId": {
                             "type": "string"
                           },
+                          "productSlug": {
+                            "type": "string"
+                          },
                           "name": {
                             "type": "string"
                           },
@@ -10229,13 +11226,38 @@
                             "type": "integer",
                             "minimum": -9007199254740991,
                             "maximum": 9007199254740991
+                          },
+                          "event": {
+                            "nullable": true,
+                            "type": "object",
+                            "properties": {
+                              "at": {
+                                "type": "string"
+                              },
+                              "location": {
+                                "nullable": true,
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "at",
+                              "location"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "checkedInAt": {
+                            "nullable": true,
+                            "type": "string"
                           }
                         },
                         "required": [
                           "productId",
+                          "productSlug",
                           "name",
                           "priceCents",
-                          "qty"
+                          "qty",
+                          "event",
+                          "checkedInAt"
                         ],
                         "additionalProperties": false
                       }
@@ -10820,6 +11842,22 @@
                         "suspended"
                       ]
                     },
+                    "suspensionReason": {
+                      "nullable": true,
+                      "type": "string",
+                      "enum": [
+                        "billing",
+                        "platform"
+                      ]
+                    },
+                    "deliveryNote": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "whatsapp": {
+                      "nullable": true,
+                      "type": "string"
+                    },
                     "branding": {
                       "nullable": true,
                       "type": "object",
@@ -10859,6 +11897,9 @@
                     "name",
                     "description",
                     "status",
+                    "suspensionReason",
+                    "deliveryNote",
+                    "whatsapp",
                     "branding",
                     "createdAt"
                   ],

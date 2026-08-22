@@ -35,6 +35,13 @@ export function createCheckoutService(deps: CheckoutDeps) {
       const product = bySlug.get(i.productSlug);
       if (!product) throw new NotFoundError("product_not_found");
       if (product.availability !== "in_stock") throw new ValidationError("product_not_orderable");
+      // Ingresso de evento que já terminou não se vende: o link antigo continua circulando
+      // no grupo do WhatsApp muito depois da data, e cobrar por isso é pegar dinheiro por
+      // nada. O fim manda quando existe; sem ele, o início.
+      const eventOver = product.eventAt
+        ? (product.eventEndsAt ?? product.eventAt).getTime() < Date.now()
+        : false;
+      if (eventOver) throw new ValidationError("event_finished");
       return {
         productId: product.id,
         name: product.name,

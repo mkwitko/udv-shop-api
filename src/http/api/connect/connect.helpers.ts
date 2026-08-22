@@ -23,5 +23,11 @@ export function toConnectStatusResponse(store: Store) {
     },
     woovi: { connected: store.wooviPixKey !== null, pixKeyMasked: maskPixKey(store.wooviPixKey) },
     applicationFeeBps: store.applicationFeeBps,
+    // Declaração, não cálculo: a taxa do provedor é paga pela plataforma. Aparece para a
+    // loja saber que ela existe — "sem taxa nenhuma" seria propaganda, não transparência.
+    providerFees: {
+      pix: env.PROVIDER_FEE_PIX_TEXT || null,
+      card: env.PROVIDER_FEE_CARD_TEXT || null,
+    },
   };
 }

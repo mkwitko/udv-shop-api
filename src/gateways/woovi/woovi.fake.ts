@@ -57,7 +57,7 @@ export function createFakeWooviGateway(): WooviGateway {
 
       return {
         providerId,
-        brCode: `00020126DEMO.prospera.fake/${input.correlationID}6304ABCD`,
+        brCode: `00020126DEMO.colheita.fake/${input.correlationID}6304ABCD`,
         qrCodeImageUrl: fakeQrSvg(input.amountCents),
         expiresAt: new Date(Date.now() + input.expiresInSeconds * 1000).toISOString(),
       };

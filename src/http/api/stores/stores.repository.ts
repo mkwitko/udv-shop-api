@@ -54,6 +54,8 @@ export interface StoresRepository {
     data: {
       name?: string | undefined;
       description?: string | null | undefined;
+      deliveryNote?: string | null | undefined;
+      whatsapp?: string | null | undefined;
       branding?: StoreBrandingInput | undefined;
     },
   ): Promise<Store>;
@@ -138,6 +140,8 @@ export function createStoresRepository(db: PrismaClient): StoresRepository {
       const updateData: Prisma.StoreUpdateInput = {};
       if (data.name !== undefined) updateData.name = data.name;
       if (data.description !== undefined) updateData.description = data.description;
+      if (data.deliveryNote !== undefined) updateData.deliveryNote = data.deliveryNote;
+      if (data.whatsapp !== undefined) updateData.whatsapp = data.whatsapp;
       if (data.branding !== undefined) {
         const current = await db.store.findUniqueOrThrow({
           where: { id },
@@ -150,7 +154,13 @@ export function createStoresRepository(db: PrismaClient): StoresRepository {
       }
       return db.store.update({ where: { id }, data: updateData });
     },
-    setStatus: (id, status) => db.store.update({ where: { id }, data: { status } }),
+    // Quem chega aqui é o platform_admin. Suspender pela mão da plataforma marca o motivo,
+    // e é isso que impede a assinatura em dia de reabrir uma loja que foi moderada.
+    setStatus: (id, status) =>
+      db.store.update({
+        where: { id },
+        data: { status, suspensionReason: status === "suspended" ? "platform" : null },
+      }),
 
     attachStripeAccount: (id, stripeAccountId) =>
       db.store.update({ where: { id }, data: { stripeAccountId } }),
@@ -191,6 +201,9 @@ export function toStoreResponse(store: Store, publicUrl: (key: string) => string
     name: store.name,
     description: store.description,
     status: store.status,
+    suspensionReason: store.status === "suspended" ? store.suspensionReason : null,
+    deliveryNote: store.deliveryNote,
+    whatsapp: store.whatsapp,
     // chave é o que guardamos; URL é derivada, igual às fotos de produto
     branding: branding
       ? {

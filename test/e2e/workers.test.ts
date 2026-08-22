@@ -14,6 +14,10 @@ async function seed(expiresAt: Date) {
   const store = await db.store.create({
     data: { slug: "nucleo-a", name: "Núcleo A", status: "active" },
   });
+  const owner = await db.user.create({
+    data: { email: "dona@example.org", name: "Dona da Loja", passwordHash: "x" },
+  });
+  await db.userStoreRole.create({ data: { userId: owner.id, storeId: store.id, role: "owner" } });
   const product = await db.product.create({
     data: { storeId: store.id, slug: "mel", name: "Mel", priceCents: 2500, stock: 8 },
   });
@@ -28,7 +32,7 @@ async function seed(expiresAt: Date) {
       payment: { create: { provider: "woovi", amountCents: 5000, applicationFeeCents: 250 } },
     },
   });
-  return { user, order, product };
+  return { user, owner, store, order, product };
 }
 
 describe("workers", () => {
@@ -63,6 +67,21 @@ describe("workers", () => {
     expect(gateways.sentEmails[0]?.subject).toContain("Pagamento confirmado");
     const event = await db.outboxEvent.findFirstOrThrow();
     expect(event.status).toBe("processed");
+  });
+
+  it("relayOutbox avisa quem cuida da loja quando o pedido é pago", async () => {
+    const { order, owner } = await seed(new Date(Date.now() + 60_000));
+    await db.order.update({ where: { id: order.id }, data: { status: "paid" } });
+    await db.outboxEvent.create({
+      data: { type: "order.paid.store", payload: { orderId: order.id } },
+    });
+    const gateways = buildFakeGateways();
+    await relayOutbox({ db, email: gateways.email, woovi: gateways.woovi, log: logger });
+    expect(gateways.sentEmails).toHaveLength(1);
+    expect(gateways.sentEmails[0]?.to).toEqual([owner.email]);
+    expect(gateways.sentEmails[0]?.subject).toContain("Novo pedido pago");
+    // O telefone do cliente é o dado que faz a loja conseguir combinar a entrega.
+    expect(gateways.sentEmails[0]?.html).toContain("11999990000");
   });
 
   it("relayOutbox: erro incrementa attempts e marca failed após 5", async () => {

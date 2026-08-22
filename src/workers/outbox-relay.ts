@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { PrismaClient } from "@prisma/client";
 import type { FastifyBaseLogger } from "fastify";
+import { env } from "../config/env.js";
 import type { EmailGateway } from "../gateways/email/email.gateway.js";
 import type { WooviGateway } from "../gateways/woovi/woovi.gateway.js";
 import { createInterestsRepository } from "../http/api/interests/interests.repository.js";
@@ -8,6 +9,19 @@ import { createRafflesRepository } from "../http/api/raffles/raffles.repository.
 import { escapeHtml } from "../lib/html.js";
 
 const MAX_ATTEMPTS = 5;
+
+/**
+ * Quem recebe os avisos de venda da loja: dono e administradores. Equipe fica fora — o
+ * telefone do cliente e o valor da venda são dados de quem responde pelo negócio.
+ */
+async function storeInbox(db: PrismaClient, storeId: string): Promise<string[]> {
+  const rows = await db.userStoreRole.findMany({
+    where: { storeId, role: { in: ["owner", "admin"] } },
+    select: { user: { select: { email: true } } },
+  });
+  return rows.map((row) => row.user.email).filter((email): email is string => Boolean(email));
+}
+
 // A row claimed into "processing" that never reaches "processed"/"failed" (crash, shutdown,
 // or any throw between the claim and the per-row update) would otherwise be stuck forever —
 // every query here only looks at "pending". Past this window we treat the claim as abandoned
@@ -87,6 +101,65 @@ export async function relayOutbox(deps: {
               to: order.user.email,
               subject: `Pagamento confirmado — ${order.store.name}`,
               html: `<p>Olá, ${escapeHtml(order.user.name)}!</p><p>Recebemos o pagamento do seu pedido na loja ${escapeHtml(order.store.name)}. Quem cuida da loja vai entrar em contato pelo telefone informado para combinar a entrega.</p><ul>${lines}</ul><p>Total: R$ ${(order.totalCents / 100).toFixed(2)}</p><p>Obrigado por apoiar ${escapeHtml(order.store.name)}!</p>`,
+            });
+          }
+        }
+      } else if (event.type === "order.paid.store") {
+        const { orderId } = event.payload as { orderId: string };
+        const order = await deps.db.order.findUnique({
+          where: { id: orderId },
+          include: {
+            items: true,
+            user: { select: { name: true } },
+            store: { select: { slug: true, name: true } },
+          },
+        });
+        if (order) {
+          const to = await storeInbox(deps.db, order.storeId);
+          if (to.length === 0) {
+            deps.log.warn({ orderId }, "pedido pago sem ninguém com e-mail na loja para avisar");
+          } else {
+            const lines = order.items
+              .map(
+                (i) =>
+                  `<li>${i.qty}× ${escapeHtml(i.name)} — R$ ${(i.priceCents / 100).toFixed(2)}</li>`,
+              )
+              .join("");
+            const link = `${env.WEB_ORIGIN}/gestao/${order.store.slug}/pedidos`;
+            await deps.email.send({
+              to,
+              // O assunto é a notificação: quem lê no celular precisa saber que vendeu sem
+              // abrir o e-mail.
+              subject: `Novo pedido pago: R$ ${(order.totalCents / 100).toFixed(2)} — ${order.store.name}`,
+              html: `<p>Boa notícia: você vendeu.</p><ul>${lines}</ul><p>Total: <strong>R$ ${(order.totalCents / 100).toFixed(2)}</strong></p><p>Cliente: ${escapeHtml(order.user.name)} — telefone ${escapeHtml(order.contactPhone)}</p>${order.note ? `<p>Recado do cliente: ${escapeHtml(order.note)}</p>` : ""}<p><strong>Próximo passo:</strong> fale com essa pessoa para combinar a entrega.</p><p><a href="${link}">Abrir os pedidos da loja</a></p>`,
+            });
+          }
+        }
+      } else if (event.type === "donation.received.store") {
+        const { donationId } = event.payload as { donationId: string };
+        const donation = await deps.db.donation.findFirst({
+          where: { id: donationId, status: "paid" },
+          include: {
+            user: { select: { name: true } },
+            store: { select: { slug: true, name: true } },
+            campaign: { select: { title: true } },
+          },
+        });
+        if (donation) {
+          const to = await storeInbox(deps.db, donation.storeId);
+          if (to.length === 0) {
+            deps.log.warn({ donationId }, "doação recebida sem ninguém com e-mail na loja");
+          } else {
+            // Doação anônima é anônima também para quem recebe: o nome não entra.
+            const quem = donation.anonymous ? "Alguém (anônimo)" : escapeHtml(donation.user.name);
+            const destino = donation.campaign
+              ? ` para a campanha “${escapeHtml(donation.campaign.title)}”`
+              : "";
+            const link = `${env.WEB_ORIGIN}/gestao/${donation.store.slug}/doacoes`;
+            await deps.email.send({
+              to,
+              subject: `Nova doação: R$ ${(donation.amountCents / 100).toFixed(2)} — ${donation.store.name}`,
+              html: `<p>${quem} doou <strong>R$ ${(donation.amountCents / 100).toFixed(2)}</strong>${destino}.</p>${donation.message ? `<p>Mensagem: ${escapeHtml(donation.message)}</p>` : ""}<p><a href="${link}">Ver as doações da loja</a></p>`,
             });
           }
         }

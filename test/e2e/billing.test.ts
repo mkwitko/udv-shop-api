@@ -168,10 +168,41 @@ describe("billing — assinatura SaaS na conta da plataforma", () => {
 
     const suspended = await db.store.findUniqueOrThrow({ where: { id: store.id } });
     expect(suspended.status).toBe("suspended");
+    expect(suspended.suspensionReason).toBe("billing");
     const subscription = await db.storeSubscription.findUniqueOrThrow({
       where: { storeId: store.id },
     });
     expect(subscription.status).toBe("canceled");
+  });
+
+  it("loja suspensa por cobrança volta ao ar quando a assinatura é retomada", async () => {
+    const store = await seedStore();
+    await subscriptionEvent(app, {
+      eventId: "evt_r1",
+      type: "customer.subscription.created",
+      storeId: store.id,
+      status: "active",
+    });
+    await subscriptionEvent(app, {
+      eventId: "evt_r2",
+      type: "customer.subscription.deleted",
+      storeId: store.id,
+      status: "active",
+    });
+    expect((await db.store.findUniqueOrThrow({ where: { id: store.id } })).status).toBe(
+      "suspended",
+    );
+
+    await subscriptionEvent(app, {
+      eventId: "evt_r3",
+      type: "customer.subscription.updated",
+      storeId: store.id,
+      status: "active",
+    });
+
+    const back = await db.store.findUniqueOrThrow({ where: { id: store.id } });
+    expect(back.status).toBe("active");
+    expect(back.suspensionReason).toBeNull();
   });
 
   it("past_due não tira a loja do ar", async () => {
@@ -193,7 +224,10 @@ describe("billing — assinatura SaaS na conta da plataforma", () => {
 
   it("loja suspensa pela plataforma não é reativada por assinatura ativa", async () => {
     const store = await seedStore();
-    await db.store.update({ where: { id: store.id }, data: { status: "suspended" } });
+    await db.store.update({
+      where: { id: store.id },
+      data: { status: "suspended", suspensionReason: "platform" },
+    });
     await subscriptionEvent(app, {
       eventId: "evt_sus",
       type: "customer.subscription.created",

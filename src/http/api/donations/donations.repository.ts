@@ -170,13 +170,20 @@ export function createDonationsRepository(db: PrismaClient): DonationsRepository
           data: { status: "paid", paidAt: new Date() },
         });
         const donationWasPending = transitioned.count === 1;
-        await tx.outboxEvent.create({
+        // Dois avisos independentes quando a doação entra: um para quem doou, um para a
+        // loja. Eventos separados para o retry de um não reenviar o outro.
+        await tx.outboxEvent.createMany({
           data: donationWasPending
-            ? { type: "donation.received", payload: { donationId: payment.donationId } }
-            : {
-                type: "payment.orphaned",
-                payload: { donationId: payment.donationId, paymentId: payment.id },
-              },
+            ? [
+                { type: "donation.received", payload: { donationId: payment.donationId } },
+                { type: "donation.received.store", payload: { donationId: payment.donationId } },
+              ]
+            : [
+                {
+                  type: "payment.orphaned",
+                  payload: { donationId: payment.donationId, paymentId: payment.id },
+                },
+              ],
         });
         return { donationId: payment.donationId, donationWasPending };
       }),
@@ -294,8 +301,11 @@ export function createDonationsRepository(db: PrismaClient): DonationsRepository
             where: { donationId: anchor.id, status: { in: ["pending", "failed", "expired"] } },
             data: { status: "succeeded", providerId: invoiceId },
           });
-          await tx.outboxEvent.create({
-            data: { type: "donation.received", payload: { donationId: anchor.id } },
+          await tx.outboxEvent.createMany({
+            data: [
+              { type: "donation.received", payload: { donationId: anchor.id } },
+              { type: "donation.received.store", payload: { donationId: anchor.id } },
+            ],
           });
           return { donationId: anchor.id, created: false };
         });
@@ -334,8 +344,11 @@ export function createDonationsRepository(db: PrismaClient): DonationsRepository
               },
             },
           });
-          await tx.outboxEvent.create({
-            data: { type: "donation.received", payload: { donationId: child.id } },
+          await tx.outboxEvent.createMany({
+            data: [
+              { type: "donation.received", payload: { donationId: child.id } },
+              { type: "donation.received.store", payload: { donationId: child.id } },
+            ],
           });
           return { donationId: child.id, created: true };
         });
