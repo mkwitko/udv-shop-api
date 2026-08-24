@@ -105,6 +105,11 @@ export interface OrdersRepository {
     provider: "stripe" | "woovi";
     providerId: string | null;
     status: string;
+    amountCents: number;
+    /** Taxa do provedor; `null` em pagamento anterior ao ADR-029, quando a plataforma pagou. */
+    providerFeeCents: number | null;
+    /** Transfer do repasse; `null` quando o repasse ainda não saiu. */
+    stripeTransferId: string | null;
   } | null>;
 }
 
@@ -359,7 +364,15 @@ export function createOrdersRepository(db: PrismaClient): OrdersRepository {
     findPaymentByOrderId: async (orderId) => {
       const p = await db.payment.findUnique({ where: { orderId } });
       return p
-        ? { id: p.id, provider: p.provider, providerId: p.providerId, status: p.status }
+        ? {
+            id: p.id,
+            provider: p.provider,
+            providerId: p.providerId,
+            status: p.status,
+            amountCents: p.amountCents,
+            providerFeeCents: p.providerFeeCents,
+            stripeTransferId: p.stripeTransferId,
+          }
         : null;
     },
   };

@@ -337,26 +337,76 @@ describe("createAccountSession", () => {
 });
 
 describe("refundPaymentIntent", () => {
-  it("reverte o transfer e a application fee: em destination charge o dinheiro já saiu para o núcleo", async () => {
+  it("reverte o líquido repassado e só depois reembolsa o comprador", async () => {
+    stripeMock.transfersCreateReversal.mockResolvedValue({ id: "trr_1" });
     stripeMock.refundsCreate.mockResolvedValue({ id: "re_1" });
-    await gw().refundPaymentIntent("pi_1", "refund-pay-1");
 
-    expect(stripeMock.refundsCreate).toHaveBeenCalledWith(
-      {
-        payment_intent: "pi_1",
-        reverse_transfer: true,
-        refund_application_fee: true,
-      },
-      { idempotencyKey: "refund-pay-1" },
+    await expect(
+      gw().refundPaymentIntent({
+        providerId: "pi_1",
+        transferId: "tr_1",
+        netCents: 4761,
+        idempotencyKey: "refund-pay-1",
+      }),
+    ).resolves.toEqual({ reversalFailed: false });
+
+    // Reverte o LÍQUIDO: o Stripe não devolve a taxa de processamento, e quem fica com esse
+    // custo é a loja — a taxa é dela (ADR-029).
+    expect(stripeMock.transfersCreateReversal).toHaveBeenCalledWith(
+      "tr_1",
+      { amount: 4761 },
+      { idempotencyKey: "reversal:refund-pay-1" },
     );
+    const payload = stripeMock.refundsCreate.mock.calls[0]?.[0];
+    expect(payload).toMatchObject({ payment_intent: "pi_1" });
+    // Sem destination charge estes dois não existem mais; mandá-los é erro de API.
+    expect(payload).not.toHaveProperty("reverse_transfer");
+    expect(payload).not.toHaveProperty("refund_application_fee");
   });
 
-  it("erro do provider vira 502 payment_provider_error", async () => {
-    stripeMock.refundsCreate.mockRejectedValue(new Error("network"));
-    await expect(gw().refundPaymentIntent("pi_1", "refund-pay-1")).rejects.toMatchObject({
-      statusCode: 502,
-      message: "payment_provider_error",
+  it("reembolsa sem reverter quando o repasse ainda não saiu", async () => {
+    stripeMock.refundsCreate.mockResolvedValue({ id: "re_2" });
+
+    await gw().refundPaymentIntent({
+      providerId: "pi_2",
+      transferId: null,
+      netCents: 4761,
+      idempotencyKey: "refund-pay-2",
     });
+
+    expect(stripeMock.transfersCreateReversal).not.toHaveBeenCalled();
+    expect(stripeMock.refundsCreate).toHaveBeenCalled();
+  });
+
+  it("reembolsa o comprador mesmo se o reversal falhar por saldo da loja", async () => {
+    // A loja já sacou. Prender o reembolso do comprador ao caixa da loja seria punir quem
+    // não tem nada a ver com isso; a pendência volta para quem chamou registrar.
+    stripeMock.transfersCreateReversal.mockRejectedValue(
+      Object.assign(new Error("insufficient"), { code: "balance_insufficient" }),
+    );
+    stripeMock.refundsCreate.mockResolvedValue({ id: "re_3" });
+
+    await expect(
+      gw().refundPaymentIntent({
+        providerId: "pi_3",
+        transferId: "tr_3",
+        netCents: 4761,
+        idempotencyKey: "refund-pay-3",
+      }),
+    ).resolves.toEqual({ reversalFailed: true });
+    expect(stripeMock.refundsCreate).toHaveBeenCalled();
+  });
+
+  it("erro do provider no reembolso vira 502 payment_provider_error", async () => {
+    stripeMock.refundsCreate.mockRejectedValue(new Error("network"));
+    await expect(
+      gw().refundPaymentIntent({
+        providerId: "pi_1",
+        transferId: null,
+        netCents: 4761,
+        idempotencyKey: "refund-pay-1",
+      }),
+    ).rejects.toMatchObject({ statusCode: 502, message: "payment_provider_error" });
   });
 });
 

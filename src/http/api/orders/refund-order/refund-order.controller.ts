@@ -47,12 +47,38 @@ export const refundOrderRoute: FastifyPluginAsync = async (app) => {
       if (!claimed) throw new ConflictError("refund_already_requested");
       try {
         if (payment.provider === "stripe") {
+          // Reembolso antes do repasse ter saído: matar o evento pendente, senão o relay
+          // repassa depois o dinheiro de um pedido que não existe mais (ADR-029).
+          if (!payment.stripeTransferId) {
+            await db.outboxEvent.updateMany({
+              where: {
+                type: "stripe.transfer",
+                status: "pending",
+                payload: { path: ["paymentId"], equals: payment.id },
+              },
+              data: { status: "processed" },
+            });
+          }
+          // O que volta é o LÍQUIDO repassado, não o bruto: a taxa do provedor é da loja e
+          // não é devolvida pelo Stripe. `providerFeeCents` nulo é pagamento do modelo
+          // antigo, em que a plataforma pagou a taxa — aí o líquido é o bruto mesmo.
+          const netCents = payment.amountCents - (payment.providerFeeCents ?? 0);
           // Same deterministic key pattern as the Woovi branch below: a fresh key per retry
           // would make every retry a distinct refund.
-          await app.gateways.stripe.refundPaymentIntent(
-            payment.providerId as string,
-            `refund-${payment.id}`,
-          );
+          const { reversalFailed } = await app.gateways.stripe.refundPaymentIntent({
+            providerId: payment.providerId as string,
+            transferId: payment.stripeTransferId,
+            netCents,
+            idempotencyKey: `refund-${payment.id}`,
+          });
+          if (reversalFailed) {
+            // Dinheiro que a loja recebeu e não voltou. Registrado alto porque o acerto é
+            // humano: o comprador já foi reembolsado pelo saldo da plataforma.
+            req.log.error(
+              { paymentId: payment.id, orderId: id, netCents },
+              "reversal do repasse falhou: loja deve o líquido do pedido reembolsado",
+            );
+          }
         } else {
           await app.gateways.woovi.refundCharge({
             chargeCorrelationID: payment.id,

@@ -17,6 +17,15 @@ export type CreatePaymentIntentInput = {
   metadata: Record<string, string>;
 };
 
+export type RefundInput = {
+  providerId: string;
+  /** Transfer do repasse. `null` = o repasse ainda não saiu, não há o que reverter. */
+  transferId: string | null;
+  /** Líquido que foi repassado — é ele que volta, não o bruto. */
+  netCents: number;
+  idempotencyKey: string;
+};
+
 export type CreateTransferInput = {
   amountCents: number;
   currency: string;
@@ -59,7 +68,7 @@ export interface StripeGateway {
   createPaymentIntent(
     input: CreatePaymentIntentInput,
   ): Promise<{ providerId: string; clientSecret: string }>;
-  refundPaymentIntent(providerId: string, idempotencyKey: string): Promise<void>;
+  refundPaymentIntent(input: RefundInput): Promise<{ reversalFailed: boolean }>;
   retrieveChargeFee(
     chargeId: string,
   ): Promise<{ amountCents: number; feeCents: number; currency: string }>;
@@ -209,29 +218,40 @@ export function createStripeGateway(cfg: {
         throw badGateway("payment_provider_error", err);
       }
     },
-    async refundPaymentIntent(providerId, idempotencyKey) {
+    async refundPaymentIntent(input) {
+      // Ordem importa: reverter antes de reembolsar. Reembolsar primeiro e falhar no
+      // reversal deixaria a plataforma no negativo sem registro do porquê.
+      let reversalFailed = false;
+      if (input.transferId) {
+        try {
+          // Reverte o LÍQUIDO, não o bruto: o Stripe não devolve a taxa de processamento no
+          // reembolso, e quem fica com esse custo é a loja — a taxa é dela, e a venda
+          // existiu de verdade até ser desfeita (ADR-029).
+          await stripe().transfers.createReversal(
+            input.transferId,
+            { amount: input.netCents },
+            { idempotencyKey: `reversal:${input.idempotencyKey}` },
+          );
+        } catch {
+          // Loja já sacou o dinheiro: o Stripe não puxa de conta vazia. O comprador não pode
+          // ficar preso ao caixa da loja, então o reembolso segue e a pendência volta para
+          // quem chamou — que tem logger e contexto do pagamento para registrá-la.
+          reversalFailed = true;
+        }
+      }
       try {
         // Deterministic idempotency key: a network failure after Stripe has already accepted
         // the refund must not turn a retry into a second refund attempt (or, combined with
         // releaseRefundClaim on throw, a "charge_already_refunded" 502 on every subsequent
         // retry once the claim is released back to "succeeded").
         await stripe().refunds.create(
-          {
-            payment_intent: providerId,
-            // Destination charge: the money already left for the connected account when the
-            // charge succeeded. Refunding without reversing takes the whole amount out of the
-            // PLATFORM's balance while the store keeps its share — the platform eats the loss.
-            // reverse_transfer pulls the store's share back, refund_application_fee gives the
-            // buyer's fee portion back too instead of leaving it as platform revenue on a sale
-            // that no longer exists.
-            reverse_transfer: true,
-            refund_application_fee: true,
-          },
-          { idempotencyKey },
+          { payment_intent: input.providerId },
+          { idempotencyKey: input.idempotencyKey },
         );
       } catch (err) {
         throw badGateway("payment_provider_error", err);
       }
+      return { reversalFailed };
     },
     async createDonationSubscription(input) {
       // Destination charge, igual à doação única: customer, product e subscription nascem

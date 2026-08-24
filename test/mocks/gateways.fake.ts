@@ -37,6 +37,8 @@ export type FakeGateways = Gateways & {
   stripeTransfers: CreateTransferInput[];
   /** Reversals pedidos, por transfer. */
   stripeReversals: Array<{ transferId: string; amountCents: number }>;
+  /** Transfers cujo reversal falha — a loja já sacou, e o Stripe não puxa de conta vazia. */
+  stripeReversalFails: Set<string>;
   /**
    * Taxa que a cobrança falsa devolve, por charge. Sem entrada, a taxa é
    * FAKE_STRIPE_FEE_CENTS sobre um valor igual ao do último intent criado.
@@ -97,6 +99,7 @@ export function buildFakeGateways(overrides: Partial<Gateways> = {}): FakeGatewa
   const stripeRefunds: string[] = [];
   const stripeTransfers: FakeGateways["stripeTransfers"] = [];
   const stripeReversals: FakeGateways["stripeReversals"] = [];
+  const stripeReversalFails: FakeGateways["stripeReversalFails"] = new Set();
   const stripeChargeFees: FakeGateways["stripeChargeFees"] = new Map();
   const stripeInvoiceCharges: FakeGateways["stripeInvoiceCharges"] = new Map();
   const stripeSubscriptions: FakeGateways["stripeSubscriptions"] = [];
@@ -138,6 +141,7 @@ export function buildFakeGateways(overrides: Partial<Gateways> = {}): FakeGatewa
     stripeRefunds,
     stripeTransfers,
     stripeReversals,
+    stripeReversalFails,
     stripeChargeFees,
     stripeInvoiceCharges,
     stripeSubscriptions,
@@ -201,8 +205,13 @@ export function buildFakeGateways(overrides: Partial<Gateways> = {}): FakeGatewa
         stripeIntents.push(input);
         return { providerId: `pi_fake_${stripeIntents.length}`, clientSecret: "cs_fake" };
       },
-      async refundPaymentIntent(providerId, _idempotencyKey) {
-        stripeRefunds.push(providerId);
+      async refundPaymentIntent(input) {
+        stripeRefunds.push(input.providerId);
+        if (input.transferId) {
+          if (stripeReversalFails.has(input.transferId)) return { reversalFailed: true };
+          stripeReversals.push({ transferId: input.transferId, amountCents: input.netCents });
+        }
+        return { reversalFailed: false };
       },
       async retrieveChargeFee(chargeId) {
         return (
