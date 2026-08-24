@@ -14,9 +14,16 @@ export type StripeWebhookEvent = {
 export type CreatePaymentIntentInput = {
   amountCents: number;
   currency: string;
-  applicationFeeCents: number;
-  destinationAccountId: string;
   metadata: Record<string, string>;
+};
+
+export type CreateTransferInput = {
+  amountCents: number;
+  currency: string;
+  destinationAccountId: string;
+  /** Charge de origem: é ela que libera o dinheiro, em vez do saldo da plataforma. */
+  chargeId: string;
+  idempotencyKey: string;
 };
 
 export type CreateDonationSubscriptionInput = {
@@ -53,6 +60,17 @@ export interface StripeGateway {
     input: CreatePaymentIntentInput,
   ): Promise<{ providerId: string; clientSecret: string }>;
   refundPaymentIntent(providerId: string, idempotencyKey: string): Promise<void>;
+  retrieveChargeFee(
+    chargeId: string,
+  ): Promise<{ amountCents: number; feeCents: number; currency: string }>;
+  createTransfer(input: CreateTransferInput): Promise<{ transferId: string }>;
+  reverseTransfer(input: {
+    transferId: string;
+    amountCents: number;
+    idempotencyKey: string;
+  }): Promise<void>;
+  /** Charge que pagou a fatura, ou null se a fatura não gerou cobrança. */
+  retrieveInvoiceChargeId(invoiceId: string): Promise<string | null>;
   createDonationSubscription(
     input: CreateDonationSubscriptionInput,
   ): Promise<{ subscriptionId: string; clientSecret: string; productId: string }>;
@@ -106,18 +124,16 @@ export function createStripeGateway(cfg: {
   };
   return {
     async createPaymentIntent(input) {
+      // Separate charges and transfers (ADR-029): a cobrança nasce inteira na plataforma,
+      // SEM `transfer_data`. O repasse sai depois, já descontada a taxa real que o
+      // `balance_transaction` só revela quando a cobrança é aprovada — `transfer_data` e
+      // `application_fee_amount` são fixados aqui, quando essa taxa ainda não existe.
+      // Sem `on_behalf_of`: a plataforma continua sendo o merchant of record (ADR-025).
       const intent = await stripe()
         .paymentIntents.create({
           amount: input.amountCents,
           currency: input.currency.toLowerCase(),
           automatic_payment_methods: { enabled: true },
-          // Sem comissão por venda (ADR-027) o campo é omitido em vez de mandado zerado:
-          // `application_fee_amount: 0` cria ApplicationFee de R$ 0 em todo pagamento e
-          // sujaria o relatório da plataforma sem significar nada.
-          ...(input.applicationFeeCents > 0
-            ? { application_fee_amount: input.applicationFeeCents }
-            : {}),
-          transfer_data: { destination: input.destinationAccountId },
           metadata: input.metadata,
         })
         .catch((err: unknown) => {
@@ -125,6 +141,73 @@ export function createStripeGateway(cfg: {
         });
       if (!intent.client_secret) throw new Error("stripe_missing_client_secret");
       return { providerId: intent.id, clientSecret: intent.client_secret };
+    },
+    async retrieveChargeFee(chargeId) {
+      try {
+        const charge = await stripe().charges.retrieve(chargeId, {
+          expand: ["balance_transaction"],
+        });
+        const txn = charge.balance_transaction;
+        // String aqui significa que o expand não veio. Assumir taxa zero repassaria o bruto
+        // e a plataforma pagaria a taxa em silêncio — o oposto da decisão.
+        if (!txn || typeof txn === "string") {
+          throw new Error("stripe_balance_transaction_not_expanded");
+        }
+        return { amountCents: charge.amount, feeCents: txn.fee, currency: charge.currency };
+      } catch (err) {
+        throw badGateway("payment_provider_error", err);
+      }
+    },
+    async createTransfer(input) {
+      try {
+        // `source_transaction` amarra o repasse à cobrança que o financia: sem ele o Stripe
+        // saca do saldo disponível da plataforma, e um dia de volume alto derruba tudo em
+        // `balance_insufficient`. A chave de idempotência vem do pagamento: reprocessar o
+        // evento de outbox não pode repassar duas vezes.
+        const transfer = await stripe().transfers.create(
+          {
+            amount: input.amountCents,
+            currency: input.currency.toLowerCase(),
+            destination: input.destinationAccountId,
+            source_transaction: input.chargeId,
+          },
+          { idempotencyKey: input.idempotencyKey },
+        );
+        return { transferId: transfer.id };
+      } catch (err) {
+        throw stripeFailure(err);
+      }
+    },
+    async reverseTransfer(input) {
+      try {
+        await stripe().transfers.createReversal(
+          input.transferId,
+          { amount: input.amountCents },
+          { idempotencyKey: input.idempotencyKey },
+        );
+      } catch (err) {
+        throw badGateway("payment_provider_error", err);
+      }
+    },
+    async retrieveInvoiceChargeId(invoiceId) {
+      try {
+        // `invoice.charge` e `invoice.payment_intent` não existem mais nesta versão da API:
+        // a cobrança vive em `payments.data[].payment.charge`. O limite de 4 níveis de
+        // expand impede puxar o `balance_transaction` na mesma chamada — daí o
+        // `retrieveChargeFee` separado.
+        const invoice = await stripe().invoices.retrieve(invoiceId, {
+          expand: ["payments.data.payment.charge"],
+        });
+        const charge = (
+          invoice as unknown as {
+            payments?: { data?: Array<{ payment?: { charge?: string | { id: string } } }> };
+          }
+        ).payments?.data?.[0]?.payment?.charge;
+        if (!charge) return null;
+        return typeof charge === "string" ? charge : charge.id;
+      } catch (err) {
+        throw badGateway("payment_provider_error", err);
+      }
     },
     async refundPaymentIntent(providerId, idempotencyKey) {
       try {
