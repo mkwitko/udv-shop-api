@@ -5,9 +5,10 @@ credenciais).
 
 ## Stripe
 
-Processamento de pagamento por cartão de crédito/débito via Stripe, com
-suporte a **destination charges** (cobrança na conta de um parceiro com fee
-aplicada na plataforma).
+Processamento de pagamento por cartão de crédito/débito via Stripe, em
+**separate charges and transfers**: a cobrança nasce na conta da plataforma e o
+repasse para o núcleo sai depois, já com a taxa real do Stripe descontada
+(ADR-029).
 
 ### Configuração
 

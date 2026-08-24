@@ -293,7 +293,7 @@ describe("createConnectedAccount", () => {
       country: "BR",
       email: "nucleo@example.org",
       controller: {
-        // destination charge: o negativo cai no saldo da plataforma, então é ela a dona
+        // cobrança na plataforma: o negativo cai no saldo dela, então é ela a dona
         losses: { payments: "application" },
         fees: { payer: "application" },
         requirement_collection: "stripe",
@@ -408,7 +408,7 @@ describe("refundPaymentIntent", () => {
 });
 
 describe("retrieveAccountStatus", () => {
-  it("lê a capability transfers, que é o que libera a destination charge", async () => {
+  it("lê a capability transfers, que é o que libera o repasse", async () => {
     stripeMock.accountsRetrieve.mockResolvedValue({
       capabilities: { transfers: "active", card_payments: "inactive" },
       charges_enabled: true,

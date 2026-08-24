@@ -46,7 +46,7 @@ export type CreateDonationSubscriptionInput = {
 };
 
 export type ConnectedAccountStatus = {
-  /** Capability `transfers` ativa: é ela que permite a destination charge chegar no núcleo. */
+  /** Capability `transfers` ativa: é ela que permite o repasse chegar no núcleo. */
   transfersEnabled: boolean;
   chargesEnabled: boolean;
   payoutsEnabled: boolean;
@@ -304,7 +304,7 @@ export function createStripeGateway(cfg: {
     async createConnectedAccount(input) {
       try {
         // Controller properties equivalentes a Express, sem o parâmetro `type` (legado).
-        // Em destination charge quem cobra é a plataforma: o negativo de refund e de
+        // Quem cobra é a plataforma (a cobrança nasce nela): o negativo de refund e de
         // disputa cai no saldo dela, então ela é obrigatoriamente a dona das perdas — e
         // `losses.payments: application` exige `fees.payer: application`. A capability
         // `transfers` é o que permite o dinheiro chegar no núcleo — ver ADR-024.

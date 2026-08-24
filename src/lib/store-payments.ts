@@ -17,9 +17,9 @@ export function wooviCanReceive(store: Store): boolean {
 
 /**
  * Barra antes de criar pedido ou doação. Ter conta conectada não é o mesmo que poder
- * receber: no Stripe, até a capability `transfers` ficar ativa a destination charge é
- * recusada já com o comprador na tela de pagamento; no Pix, chave sem posse provada não
- * recebe. Nos dois casos, deixar passar aqui produz um pendente que ninguém pode pagar.
+ * receber: no Stripe, até a capability `transfers` ficar ativa o repasse é recusado e o
+ * dinheiro fica preso na plataforma; no Pix, chave sem posse provada não recebe. Nos dois
+ * casos, deixar passar aqui produz venda cujo dinheiro não chega em quem vendeu.
  */
 export function assertProviderConfigured(store: Store, provider: "stripe" | "woovi"): void {
   const configured =

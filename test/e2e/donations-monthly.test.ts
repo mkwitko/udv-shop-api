@@ -46,7 +46,7 @@ function donateMonthly(app: FastifyInstance, token: string, payload: Record<stri
 }
 
 /**
- * Assinatura de doação é destination charge: nasce na conta da PLATAFORMA, então o evento
+ * Assinatura de doação nasce na conta da PLATAFORMA, então o evento
  * chega sem `account` — igual ao da assinatura SaaS da loja, com os mesmos tipos. Quem
  * separa os dois é o lookup do subscriptionRef no webhook (ADR-025), e é justamente isso
  * que estes testes exercitam ao não mandar `account`.
