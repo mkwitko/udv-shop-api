@@ -11,6 +11,7 @@ import {
   cancelPaymentAggregate,
   enqueueWooviWithdraw,
   markPaymentPaid,
+  recordProviderFee,
   refundPaymentByPaymentId,
   refundPaymentByProviderId,
 } from "./payment-routing.js";
@@ -60,7 +61,8 @@ type StripePayload = {
   data?: { object?: StripeObject };
 };
 type WooviPayload = {
-  charge?: { correlationID?: string };
+  /** `charge.fee` é a taxa que a Woovi cobrou nesta cobrança, em centavos (ADR-029). */
+  charge?: { correlationID?: string; fee?: number };
   /** `pix.payer` é quem pagou de verdade — é o que prova posse da chave na verificação. */
   pix?: { payer?: { name?: string; taxID?: { taxID?: string } } };
 };
@@ -212,6 +214,16 @@ export async function processWebhookEvents(deps: {
               },
             });
             if (!verificacao) {
+              // A taxa real por cima da de contrato: o split já reteve
+              // WOOVI_FEE_FIXED_CENTS, e este é o número que o extrato mostra. Se a Woovi
+              // mudar de tabela, a diferença entre os dois é o que denuncia (ADR-029).
+              if (typeof payload.charge?.fee === "number") {
+                await recordProviderFee({
+                  db: deps.db,
+                  paymentId,
+                  providerFeeCents: payload.charge.fee,
+                });
+              }
               await markPaymentPaid({ db: deps.db, log: deps.log, paymentId, providerId: null });
               // O split já creditou a subconta, mas subconta é saldo virtual dentro da conta
               // da plataforma: sem o saque o dinheiro do núcleo não sai daqui.

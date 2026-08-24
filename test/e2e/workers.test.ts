@@ -4,6 +4,7 @@ import { logger } from "../../src/infra/observability/logger.js";
 import { expireDonations } from "../../src/workers/expire-donations.js";
 import { expireReservations } from "../../src/workers/expire-reservations.js";
 import { relayOutbox } from "../../src/workers/outbox-relay.js";
+import { processWebhookEvents } from "../../src/workers/webhook-processor.js";
 import { resetDb } from "../helpers/db.js";
 import { buildFakeGateways } from "../mocks/gateways.fake.js";
 
@@ -37,6 +38,50 @@ async function seed(expiresAt: Date) {
 
 describe("workers", () => {
   beforeEach(resetDb);
+
+  it("grava a taxa real da Woovi que vem no webhook, por cima do valor de contrato", async () => {
+    const { order } = await seed(new Date(Date.now() + 600_000));
+    const payment = await db.payment.update({
+      where: { orderId: order.id },
+      data: { applicationFeeCents: 0, providerFeeCents: 85 },
+    });
+    await db.webhookEvent.create({
+      data: {
+        provider: "woovi",
+        eventId: "evt_taxa_real",
+        type: "OPENPIX:CHARGE_COMPLETED",
+        // A Woovi mudou a tabela: cobrou 90 centavos, não os 85 do contrato.
+        payload: { charge: { correlationID: payment.id, fee: 90 } },
+      },
+    });
+
+    await processWebhookEvents({ db, log: logger });
+
+    const depois = await db.payment.findUniqueOrThrow({ where: { id: payment.id } });
+    expect(depois.providerFeeCents).toBe(90);
+    expect(depois.status).toBe("succeeded");
+  });
+
+  it("mantém a taxa de contrato quando o webhook não traz fee", async () => {
+    const { order } = await seed(new Date(Date.now() + 600_000));
+    const payment = await db.payment.update({
+      where: { orderId: order.id },
+      data: { applicationFeeCents: 0, providerFeeCents: 85 },
+    });
+    await db.webhookEvent.create({
+      data: {
+        provider: "woovi",
+        eventId: "evt_sem_fee",
+        type: "OPENPIX:CHARGE_COMPLETED",
+        payload: { charge: { correlationID: payment.id } },
+      },
+    });
+
+    await processWebhookEvents({ db, log: logger });
+
+    const depois = await db.payment.findUniqueOrThrow({ where: { id: payment.id } });
+    expect(depois.providerFeeCents).toBe(85);
+  });
 
   it("expireReservations cancela pedido vencido e devolve estoque", async () => {
     const { order, product } = await seed(new Date(Date.now() - 60_000));

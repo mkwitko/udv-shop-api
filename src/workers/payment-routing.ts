@@ -105,6 +105,21 @@ export async function refundPaymentByProviderId(deps: {
 }
 
 /**
+ * Grava a taxa que o provedor cobrou de fato nesta transação. Chamado com o mesmo valor em
+ * cada reprocessamento do webhook — é idempotente por ser escrita de valor, não incremento.
+ */
+export async function recordProviderFee(deps: {
+  db: PrismaClient;
+  paymentId: string;
+  providerFeeCents: number;
+}): Promise<void> {
+  await deps.db.payment.updateMany({
+    where: { id: deps.paymentId },
+    data: { providerFeeCents: deps.providerFeeCents },
+  });
+}
+
+/**
  * Enfileira o saque da subconta Woovi da loja. Split para subconta é VIRTUAL: o valor
  * fica reservado dentro da conta da plataforma e só sai no saque, então sem esta chamada
  * o dinheiro do núcleo nunca chega na conta dele.
