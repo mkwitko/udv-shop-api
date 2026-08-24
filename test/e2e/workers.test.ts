@@ -104,6 +104,66 @@ describe("workers", () => {
     expect(gateways.stripeTransfers).toEqual([]);
   });
 
+  it("repasse de ciclo de assinatura acha o charge pela fatura", async () => {
+    const gateways = buildFakeGateways();
+    const { store, order } = await seed(new Date(Date.now() + 600_000));
+    await db.store.update({ where: { id: store.id }, data: { stripeAccountId: "acct_nucleo" } });
+    const payment = await db.payment.update({
+      where: { orderId: order.id },
+      data: { provider: "stripe", providerId: "in_1", applicationFeeCents: 0, status: "succeeded" },
+    });
+    await db.outboxEvent.create({
+      data: { type: "stripe.transfer", payload: { paymentId: payment.id, invoiceId: "in_1" } },
+    });
+    gateways.stripeInvoiceCharges.set("in_1", "ch_inv");
+    gateways.stripeChargeFees.set("ch_inv", { amountCents: 3000, feeCents: 159, currency: "brl" });
+
+    await relayOutbox({
+      db,
+      email: gateways.email,
+      woovi: gateways.woovi,
+      stripe: gateways.stripe,
+      log: logger,
+    });
+
+    expect(gateways.stripeTransfers).toEqual([
+      {
+        amountCents: 3000 - 159,
+        currency: "brl",
+        destinationAccountId: "acct_nucleo",
+        chargeId: "ch_inv",
+        idempotencyKey: `transfer:${payment.id}`,
+      },
+    ]);
+    const depois = await db.payment.findUniqueOrThrow({ where: { id: payment.id } });
+    expect(depois.providerFeeCents).toBe(159);
+  });
+
+  it("fatura sem cobrança (valor zero) não repassa nada e não trava o outbox", async () => {
+    const gateways = buildFakeGateways();
+    const { store, order } = await seed(new Date(Date.now() + 600_000));
+    await db.store.update({ where: { id: store.id }, data: { stripeAccountId: "acct_nucleo" } });
+    const payment = await db.payment.update({
+      where: { orderId: order.id },
+      data: { provider: "stripe", providerId: "in_0", applicationFeeCents: 0, status: "succeeded" },
+    });
+    await db.outboxEvent.create({
+      data: { type: "stripe.transfer", payload: { paymentId: payment.id, invoiceId: "in_0" } },
+    });
+
+    await relayOutbox({
+      db,
+      email: gateways.email,
+      woovi: gateways.woovi,
+      stripe: gateways.stripe,
+      log: logger,
+    });
+
+    expect(gateways.stripeTransfers).toEqual([]);
+    const evento = await db.outboxEvent.findFirstOrThrow({ where: { type: "stripe.transfer" } });
+    expect(evento.status).toBe("processed");
+  });
+
   it("loja sem conta conectada: dinheiro fica na plataforma em vez de sumir", async () => {
     const gateways = buildFakeGateways();
     const { order } = await seed(new Date(Date.now() + 600_000));

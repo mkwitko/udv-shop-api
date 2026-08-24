@@ -142,6 +142,29 @@ export async function enqueueStripeTransfer(deps: {
 }
 
 /**
+ * Repasse do ciclo de uma doação mensal. Diferente do pagamento único, aqui não temos o
+ * charge: a fatura é que o conhece, e achá-lo custa uma chamada ao Stripe — que o relay faz,
+ * não este worker.
+ */
+export async function enqueueStripeTransferForInvoice(deps: {
+  db: PrismaClient;
+  invoiceId: string;
+}): Promise<void> {
+  // O Payment do ciclo guarda o id da FATURA em providerId (ver markSubscriptionInvoicePaid).
+  const payment = await deps.db.payment.findFirst({
+    where: { providerId: deps.invoiceId },
+    select: { id: true },
+  });
+  if (!payment) return;
+  await deps.db.outboxEvent.create({
+    data: {
+      type: "stripe.transfer",
+      payload: { paymentId: payment.id, invoiceId: deps.invoiceId },
+    },
+  });
+}
+
+/**
  * Enfileira o saque da subconta Woovi da loja. Split para subconta é VIRTUAL: o valor
  * fica reservado dentro da conta da plataforma e só sai no saque, então sem esta chamada
  * o dinheiro do núcleo nunca chega na conta dele.

@@ -38,8 +38,6 @@ export type CreateTransferInput = {
 export type CreateDonationSubscriptionInput = {
   amountCents: number;
   currency: string;
-  applicationFeePercent: number;
-  destinationAccountId: string;
   customerEmail: string;
   productName: string;
   /** Product da plataforma reusado entre doações da mesma loja; null cria um novo. */
@@ -254,10 +252,12 @@ export function createStripeGateway(cfg: {
       return { reversalFailed };
     },
     async createDonationSubscription(input) {
-      // Destination charge, igual à doação única: customer, product e subscription nascem
-      // na PLATAFORMA, e `transfer_data` manda o líquido para o núcleo. Sem `on_behalf_of`
-      // — a plataforma é o merchant of record (plataforma e núcleos todos no BR, então não
-      // cai na exceção cross-border que obrigaria o parâmetro) — ver ADR-025.
+      // Separate charges and transfers (ADR-029): customer, product e subscription nascem
+      // na PLATAFORMA e a cobrança de cada ciclo fica inteira aqui. O repasse sai por fatura
+      // paga, com a taxa real daquele ciclo — `transfer_data` na subscription repassaria o
+      // bruto todo mês. Sem `on_behalf_of`: a plataforma é o merchant of record (plataforma
+      // e núcleos todos no BR, então não cai na exceção cross-border que obrigaria o
+      // parâmetro) — ver ADR-025.
       try {
         const customer = await stripe().customers.create({ email: input.customerEmail });
         // `price_data` de subscription exige um Product já existente: ao contrário do
@@ -277,11 +277,6 @@ export function createStripeGateway(cfg: {
               },
             },
           ],
-          transfer_data: { destination: input.destinationAccountId },
-          // Mesmo motivo do PaymentIntent: fee zero é fee ausente (ADR-027).
-          ...(input.applicationFeePercent > 0
-            ? { application_fee_percent: input.applicationFeePercent }
-            : {}),
           payment_behavior: "default_incomplete",
           payment_settings: { save_default_payment_method: "on_subscription" },
           expand: ["latest_invoice.confirmation_secret"],

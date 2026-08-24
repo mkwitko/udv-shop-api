@@ -249,7 +249,11 @@ export async function relayOutbox(deps: {
       } else if (event.type === "stripe.transfer") {
         // Repasse do líquido: bruto menos a taxa que o Stripe cobrou de fato nesta cobrança.
         // É aqui que a taxa deixa de ser da plataforma e passa a ser da loja (ADR-029).
-        const { paymentId, chargeId } = event.payload as { paymentId: string; chargeId: string };
+        const { paymentId, chargeId, invoiceId } = event.payload as {
+          paymentId: string;
+          chargeId?: string;
+          invoiceId?: string;
+        };
         const payment = await deps.db.payment.findUnique({
           where: { id: paymentId },
           select: {
@@ -273,22 +277,36 @@ export async function relayOutbox(deps: {
             "repasse Stripe sem conta conectada: dinheiro retido na plataforma",
           );
         } else {
-          const fee = await deps.stripe.retrieveChargeFee(chargeId);
-          const transfer = await deps.stripe.createTransfer({
-            amountCents: fee.amountCents - fee.feeCents,
-            currency: fee.currency,
-            destinationAccountId: store.stripeAccountId,
-            chargeId,
-            idempotencyKey: `transfer:${paymentId}`,
-          });
-          await deps.db.payment.update({
-            where: { id: paymentId },
-            data: { providerFeeCents: fee.feeCents, stripeTransferId: transfer.transferId },
-          });
-          deps.log.info(
-            { paymentId, storeId: store.id, feeCents: fee.feeCents },
-            "repasse Stripe feito com a taxa real descontada",
-          );
+          // Pagamento único traz o charge no próprio evento; ciclo de assinatura traz a
+          // fatura, e o charge dela sai de uma chamada ao Stripe — `invoice.charge` e
+          // `invoice.payment_intent` não existem mais nesta versão da API.
+          const resolvedChargeId =
+            chargeId ?? (invoiceId ? await deps.stripe.retrieveInvoiceChargeId(invoiceId) : null);
+          if (!resolvedChargeId) {
+            // Fatura de valor zero (cupom, crédito) não gera cobrança: não há taxa nem
+            // repasse, e isso não é erro de ninguém.
+            deps.log.warn(
+              { paymentId, invoiceId },
+              "repasse Stripe sem cobrança: fatura paga sem charge, nada a repassar",
+            );
+          } else {
+            const fee = await deps.stripe.retrieveChargeFee(resolvedChargeId);
+            const transfer = await deps.stripe.createTransfer({
+              amountCents: fee.amountCents - fee.feeCents,
+              currency: fee.currency,
+              destinationAccountId: store.stripeAccountId,
+              chargeId: resolvedChargeId,
+              idempotencyKey: `transfer:${paymentId}`,
+            });
+            await deps.db.payment.update({
+              where: { id: paymentId },
+              data: { providerFeeCents: fee.feeCents, stripeTransferId: transfer.transferId },
+            });
+            deps.log.info(
+              { paymentId, storeId: store.id, feeCents: fee.feeCents },
+              "repasse Stripe feito com a taxa real descontada",
+            );
+          }
         }
       } else if (event.type === "woovi.withdraw") {
         // Tira o saldo virtual da subconta e manda para a chave Pix do núcleo. É o passo

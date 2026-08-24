@@ -220,8 +220,6 @@ describe("createDonationSubscription", () => {
   const input = {
     amountCents: 3000,
     currency: "BRL",
-    applicationFeePercent: 5,
-    destinationAccountId: "acct_nucleo",
     customerEmail: "doador@example.org",
     productName: "Doação mensal — Núcleo A",
     productId: null,
@@ -237,14 +235,15 @@ describe("createDonationSubscription", () => {
     });
   });
 
-  it("omite application_fee_percent quando não há comissão", async () => {
-    await gw().createDonationSubscription({ ...input, applicationFeePercent: 0 });
-    expect(stripeMock.subscriptionsCreate.mock.calls[0]?.[0]).not.toHaveProperty(
-      "application_fee_percent",
-    );
+  it("não manda transfer_data: o repasse é por fatura paga, com a taxa real do ciclo", async () => {
+    await gw().createDonationSubscription(input);
+    const payload = stripeMock.subscriptionsCreate.mock.calls[0]?.[0];
+    // transfer_data na subscription repassaria o BRUTO todo mês (ADR-029).
+    expect(payload).not.toHaveProperty("transfer_data");
+    expect(payload).not.toHaveProperty("application_fee_percent");
   });
 
-  it("cria na plataforma com transfer_data, sem header de conta conectada e sem on_behalf_of", async () => {
+  it("cria na plataforma, sem header de conta conectada e sem on_behalf_of", async () => {
     await expect(gw().createDonationSubscription(input)).resolves.toEqual({
       subscriptionId: "sub_1",
       clientSecret: "cs_1",
@@ -254,8 +253,6 @@ describe("createDonationSubscription", () => {
     const [payload, opts] = stripeMock.subscriptionsCreate.mock.calls[0] ?? [];
     expect(payload).toMatchObject({
       customer: "cus_1",
-      transfer_data: { destination: "acct_nucleo" },
-      application_fee_percent: 5,
       payment_behavior: "default_incomplete",
     });
     // on_behalf_of faria do núcleo o settlement merchant — a plataforma é o MoR

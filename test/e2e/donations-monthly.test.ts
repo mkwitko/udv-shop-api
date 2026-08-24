@@ -92,17 +92,19 @@ describe("doação mensal — assinatura Stripe", () => {
     expect(donation.status).toBe("pending_payment");
     expect(donation.subscriptionRef).toBe(json.payment.subscriptionId);
 
+    // A assinatura não leva comissão nem conta de destino: cada ciclo é repassado depois,
+    // com a taxa real daquela fatura descontada (ADR-029).
     const subscription = gateways.stripeSubscriptions.at(-1);
-    expect(subscription?.applicationFeePercent).toBe(store.applicationFeeBps / 100);
+    expect(subscription).not.toHaveProperty("applicationFeePercent");
+    expect(subscription).not.toHaveProperty("destinationAccountId");
   });
 
-  it("destination charge: manda a conta do núcleo em destinationAccountId e reusa o Product da loja entre doações", async () => {
+  it("reusa o Product da loja entre doações da mesma loja", async () => {
     const store = await seedStore();
     const token = await customerToken(app, "m1b@example.org");
 
     const first = await donateMonthly(app, token);
     expect(first.statusCode).toBe(201);
-    expect(gateways.stripeSubscriptions.at(-1)?.destinationAccountId).toBe("acct_1");
     // primeira assinatura não tem Product ainda; o id volta do gateway e fica na loja
     expect(gateways.stripeSubscriptions.at(-1)?.productId).toBeNull();
     const afterFirst = await db.store.findUniqueOrThrow({ where: { id: store.id } });
@@ -200,6 +202,34 @@ describe("doação mensal — assinatura Stripe", () => {
     const payment = await db.payment.findFirstOrThrow({ where: { donationId } });
     expect(payment.status).toBe("succeeded");
     expect(await db.outboxEvent.count({ where: { type: "donation.received" } })).toBe(1);
+  });
+
+  it("enfileira um repasse por fatura paga, com a fatura no payload", async () => {
+    await seedStore();
+    const token = await customerToken(app, "m2-rep@example.org");
+    const res = await donateMonthly(app, token);
+    const donationId = res.json().donation.id as string;
+    const subscriptionId = res.json().payment.subscriptionId as string;
+
+    await stripeEvent(app, {
+      id: "evt_inv_rep",
+      type: "invoice.paid",
+      data: {
+        object: {
+          id: "in_rep",
+          parent: { subscription_details: { subscription: subscriptionId } },
+          amount_paid: 3000,
+          billing_reason: "subscription_create",
+        },
+      },
+    });
+
+    const payment = await db.payment.findFirstOrThrow({ where: { donationId } });
+    const eventos = await db.outboxEvent.findMany({ where: { type: "stripe.transfer" } });
+    // O charge da fatura não vem no webhook: o repasse resolve com uma chamada ao Stripe,
+    // porque `invoice.charge` não existe mais nesta versão da API (ADR-029).
+    expect(eventos).toHaveLength(1);
+    expect(eventos[0]?.payload).toMatchObject({ paymentId: payment.id, invoiceId: "in_rep" });
   });
 
   it("reprocessar o mesmo invoice.paid (outro event_id, mesmo invoice.id): nenhuma doação nova, nenhum outbox novo", async () => {

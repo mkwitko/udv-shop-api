@@ -10,6 +10,7 @@ import {
 import {
   cancelPaymentAggregate,
   enqueueStripeTransfer,
+  enqueueStripeTransferForInvoice,
   enqueueWooviWithdraw,
   markPaymentPaid,
   recordProviderFee,
@@ -183,6 +184,9 @@ export async function processWebhookEvents(deps: {
             invoiceId: invoice.id,
             amountCents: invoice.amount_paid,
           });
+          // Um repasse por ciclo, com a taxa real daquela cobrança. A assinatura não leva
+          // mais `transfer_data`, que repassaria o bruto todo mês (ADR-029).
+          await enqueueStripeTransferForInvoice({ db: deps.db, invoiceId: invoice.id });
         } else if (
           event.type === "customer.subscription.deleted" &&
           object.id &&

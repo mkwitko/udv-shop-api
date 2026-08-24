@@ -88,13 +88,11 @@ export function createDonationService(deps: CreateDonationDeps) {
     let instructions: DonationPaymentInstructions;
     try {
       if (input.type === "monthly") {
-        // Destination charge na plataforma, igual à doação única (ver ADR-025).
+        // Cobrança na plataforma; o repasse de cada ciclo sai por fatura paga, já com a
+        // taxa real daquele ciclo descontada (ADR-029).
         const subscription = await deps.stripe.createDonationSubscription({
           amountCents: input.amountCents,
           currency: donation.currency,
-          // bps → percentual (500 bps = 5%). Stripe aceita até 2 casas.
-          applicationFeePercent: store.applicationFeeBps / 100,
-          destinationAccountId: store.stripeAccountId as string,
           // Chamado de novo porque o narrowing da guarda acima não atravessa este bloco.
           customerEmail: requireSubscriberEmail(input.userEmail),
           productName: `Doação mensal — ${store.name}`.slice(0, 140),
