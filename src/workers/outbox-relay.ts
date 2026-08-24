@@ -113,6 +113,7 @@ export async function relayOutbox(deps: {
           where: { id: orderId },
           include: {
             items: true,
+            payment: { select: { providerFeeCents: true } },
             user: { select: { name: true } },
             store: { select: { slug: true, name: true } },
           },
@@ -129,12 +130,22 @@ export async function relayOutbox(deps: {
               )
               .join("");
             const link = `${env.WEB_ORIGIN}/gestao/${order.store.slug}/pedidos`;
+            // A taxa do provedor sai do que a loja recebe (ADR-029), e a loja precisa ver
+            // isso no aviso da venda, não descobrir no extrato. No cartão ela ainda pode não
+            // estar gravada quando este e-mail sai (chega junto com o repasse): aí o e-mail
+            // fala só do total — prometer um líquido errado é pior que não falar dele.
+            const feeCents = order.payment?.providerFeeCents ?? null;
+            const brl = (cents: number) => `R$ ${(cents / 100).toFixed(2)}`;
+            const liquido =
+              feeCents === null
+                ? ""
+                : `<p>Taxa de pagamento: −${brl(feeCents)} · <strong>Você recebe ${brl(order.totalCents - feeCents)}</strong></p>`;
             await deps.email.send({
               to,
               // O assunto é a notificação: quem lê no celular precisa saber que vendeu sem
               // abrir o e-mail.
               subject: `Novo pedido pago: R$ ${(order.totalCents / 100).toFixed(2)} — ${order.store.name}`,
-              html: `<p>Boa notícia: você vendeu.</p><ul>${lines}</ul><p>Total: <strong>R$ ${(order.totalCents / 100).toFixed(2)}</strong></p><p>Cliente: ${escapeHtml(order.user.name)} — telefone ${escapeHtml(order.contactPhone)}</p>${order.note ? `<p>Recado do cliente: ${escapeHtml(order.note)}</p>` : ""}<p><strong>Próximo passo:</strong> fale com essa pessoa para combinar a entrega.</p><p><a href="${link}">Abrir os pedidos da loja</a></p>`,
+              html: `<p>Boa notícia: você vendeu.</p><ul>${lines}</ul><p>Total: <strong>R$ ${(order.totalCents / 100).toFixed(2)}</strong></p>${liquido}<p>Cliente: ${escapeHtml(order.user.name)} — telefone ${escapeHtml(order.contactPhone)}</p>${order.note ? `<p>Recado do cliente: ${escapeHtml(order.note)}</p>` : ""}<p><strong>Próximo passo:</strong> fale com essa pessoa para combinar a entrega.</p><p><a href="${link}">Abrir os pedidos da loja</a></p>`,
             });
           }
         }

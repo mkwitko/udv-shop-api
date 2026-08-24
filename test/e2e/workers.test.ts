@@ -39,6 +39,58 @@ async function seed(expiresAt: Date) {
 describe("workers", () => {
   beforeEach(resetDb);
 
+  it("aviso de venda diz o líquido: bruto, taxa e o que a loja recebe", async () => {
+    const gateways = buildFakeGateways();
+    const { store, order, owner } = await seed(new Date(Date.now() + 600_000));
+    await db.payment.update({
+      where: { orderId: order.id },
+      data: { applicationFeeCents: 0, providerFeeCents: 85 },
+    });
+    await db.outboxEvent.create({
+      data: { type: "order.paid.store", payload: { orderId: order.id } },
+    });
+
+    await relayOutbox({
+      db,
+      email: gateways.email,
+      woovi: gateways.woovi,
+      stripe: gateways.stripe,
+      log: logger,
+    });
+
+    const aviso = gateways.sentEmails.at(-1);
+    expect(aviso?.to).toEqual([owner.email]);
+    expect(aviso?.html).toContain("Taxa de pagamento: −R$ 0.85");
+    // R$ 50,00 menos R$ 0,85: a loja vê o número que vai cair na conta dela.
+    expect(aviso?.html).toContain("Você recebe R$ 49.15");
+    expect(store.id).toBeTruthy();
+  });
+
+  it("aviso de venda omite o líquido quando a taxa ainda não foi gravada", async () => {
+    const gateways = buildFakeGateways();
+    const { order } = await seed(new Date(Date.now() + 600_000));
+    // Cartão: a taxa real chega junto com o repasse, depois deste aviso.
+    await db.payment.update({
+      where: { orderId: order.id },
+      data: { applicationFeeCents: 0, providerFeeCents: null },
+    });
+    await db.outboxEvent.create({
+      data: { type: "order.paid.store", payload: { orderId: order.id } },
+    });
+
+    await relayOutbox({
+      db,
+      email: gateways.email,
+      woovi: gateways.woovi,
+      stripe: gateways.stripe,
+      log: logger,
+    });
+
+    const aviso = gateways.sentEmails.at(-1);
+    expect(aviso?.html).not.toContain("Você recebe");
+    expect(aviso?.html).toContain("Total:");
+  });
+
   it("repassa o líquido ao núcleo: bruto menos a taxa real da Stripe", async () => {
     const gateways = buildFakeGateways();
     const { store, order } = await seed(new Date(Date.now() + 600_000));
