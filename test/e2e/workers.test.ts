@@ -39,6 +39,95 @@ async function seed(expiresAt: Date) {
 describe("workers", () => {
   beforeEach(resetDb);
 
+  it("repassa o líquido ao núcleo: bruto menos a taxa real da Stripe", async () => {
+    const gateways = buildFakeGateways();
+    const { store, order } = await seed(new Date(Date.now() + 600_000));
+    await db.store.update({ where: { id: store.id }, data: { stripeAccountId: "acct_nucleo" } });
+    const payment = await db.payment.update({
+      where: { orderId: order.id },
+      data: { provider: "stripe", providerId: "pi_1", applicationFeeCents: 0, status: "succeeded" },
+    });
+    await db.outboxEvent.create({
+      data: { type: "stripe.transfer", payload: { paymentId: payment.id, chargeId: "ch_1" } },
+    });
+    gateways.stripeChargeFees.set("ch_1", { amountCents: 5000, feeCents: 239, currency: "brl" });
+
+    await relayOutbox({
+      db,
+      email: gateways.email,
+      woovi: gateways.woovi,
+      stripe: gateways.stripe,
+      log: logger,
+    });
+
+    expect(gateways.stripeTransfers).toEqual([
+      {
+        amountCents: 5000 - 239,
+        currency: "brl",
+        destinationAccountId: "acct_nucleo",
+        chargeId: "ch_1",
+        idempotencyKey: `transfer:${payment.id}`,
+      },
+    ]);
+    const depois = await db.payment.findUniqueOrThrow({ where: { id: payment.id } });
+    expect(depois.providerFeeCents).toBe(239);
+    expect(depois.stripeTransferId).toBe("tr_fake_1");
+  });
+
+  it("não repassa duas vezes: evento reprocessado com transfer já gravado é no-op", async () => {
+    const gateways = buildFakeGateways();
+    const { store, order } = await seed(new Date(Date.now() + 600_000));
+    await db.store.update({ where: { id: store.id }, data: { stripeAccountId: "acct_nucleo" } });
+    const payment = await db.payment.update({
+      where: { orderId: order.id },
+      data: {
+        provider: "stripe",
+        providerId: "pi_2",
+        applicationFeeCents: 0,
+        providerFeeCents: 239,
+        stripeTransferId: "tr_ja_feito",
+        status: "succeeded",
+      },
+    });
+    await db.outboxEvent.create({
+      data: { type: "stripe.transfer", payload: { paymentId: payment.id, chargeId: "ch_2" } },
+    });
+
+    await relayOutbox({
+      db,
+      email: gateways.email,
+      woovi: gateways.woovi,
+      stripe: gateways.stripe,
+      log: logger,
+    });
+
+    expect(gateways.stripeTransfers).toEqual([]);
+  });
+
+  it("loja sem conta conectada: dinheiro fica na plataforma em vez de sumir", async () => {
+    const gateways = buildFakeGateways();
+    const { order } = await seed(new Date(Date.now() + 600_000));
+    const payment = await db.payment.update({
+      where: { orderId: order.id },
+      data: { provider: "stripe", providerId: "pi_3", applicationFeeCents: 0, status: "succeeded" },
+    });
+    await db.outboxEvent.create({
+      data: { type: "stripe.transfer", payload: { paymentId: payment.id, chargeId: "ch_3" } },
+    });
+
+    await relayOutbox({
+      db,
+      email: gateways.email,
+      woovi: gateways.woovi,
+      stripe: gateways.stripe,
+      log: logger,
+    });
+
+    expect(gateways.stripeTransfers).toEqual([]);
+    const depois = await db.payment.findUniqueOrThrow({ where: { id: payment.id } });
+    expect(depois.stripeTransferId).toBeNull();
+  });
+
   it("grava a taxa real da Woovi que vem no webhook, por cima do valor de contrato", async () => {
     const { order } = await seed(new Date(Date.now() + 600_000));
     const payment = await db.payment.update({
@@ -105,7 +194,13 @@ describe("workers", () => {
     await db.order.update({ where: { id: order.id }, data: { status: "paid" } });
     await db.outboxEvent.create({ data: { type: "order.paid", payload: { orderId: order.id } } });
     const gateways = buildFakeGateways();
-    const n = await relayOutbox({ db, email: gateways.email, woovi: gateways.woovi, log: logger });
+    const n = await relayOutbox({
+      db,
+      email: gateways.email,
+      woovi: gateways.woovi,
+      stripe: gateways.stripe,
+      log: logger,
+    });
     expect(n).toBe(1);
     expect(gateways.sentEmails).toHaveLength(1);
     expect(gateways.sentEmails[0]?.to).toBe(user.email);
@@ -121,7 +216,13 @@ describe("workers", () => {
       data: { type: "order.paid.store", payload: { orderId: order.id } },
     });
     const gateways = buildFakeGateways();
-    await relayOutbox({ db, email: gateways.email, woovi: gateways.woovi, log: logger });
+    await relayOutbox({
+      db,
+      email: gateways.email,
+      woovi: gateways.woovi,
+      stripe: gateways.stripe,
+      log: logger,
+    });
     expect(gateways.sentEmails).toHaveLength(1);
     expect(gateways.sentEmails[0]?.to).toEqual([owner.email]);
     expect(gateways.sentEmails[0]?.subject).toContain("Novo pedido pago");
@@ -141,7 +242,13 @@ describe("workers", () => {
         },
       },
     });
-    await relayOutbox({ db, email: gateways.email, woovi: gateways.woovi, log: logger });
+    await relayOutbox({
+      db,
+      email: gateways.email,
+      woovi: gateways.woovi,
+      stripe: gateways.stripe,
+      log: logger,
+    });
     const event = await db.outboxEvent.findFirstOrThrow();
     expect(event.attempts).toBe(5);
     expect(event.status).toBe("failed");
@@ -160,7 +267,13 @@ describe("workers", () => {
       },
     });
     const gateways = buildFakeGateways();
-    const n = await relayOutbox({ db, email: gateways.email, woovi: gateways.woovi, log: logger });
+    const n = await relayOutbox({
+      db,
+      email: gateways.email,
+      woovi: gateways.woovi,
+      stripe: gateways.stripe,
+      log: logger,
+    });
     expect(n).toBe(1);
     expect(gateways.sentEmails).toHaveLength(1);
     expect(gateways.sentEmails[0]?.to).toBe(user.email);
@@ -182,7 +295,13 @@ describe("workers", () => {
       },
     });
     const gateways = buildFakeGateways();
-    const n = await relayOutbox({ db, email: gateways.email, woovi: gateways.woovi, log: logger });
+    const n = await relayOutbox({
+      db,
+      email: gateways.email,
+      woovi: gateways.woovi,
+      stripe: gateways.stripe,
+      log: logger,
+    });
     expect(n).toBe(0);
     expect(gateways.sentEmails).toHaveLength(0);
     const fresh = await db.outboxEvent.findUniqueOrThrow({ where: { id: event.id } });
@@ -224,6 +343,7 @@ describe("workers", () => {
       db,
       email: gateways.email,
       woovi: gateways.woovi,
+      stripe: gateways.stripe,
       log: logger,
     });
 
@@ -269,6 +389,7 @@ describe("workers", () => {
       db,
       email: gateways.email,
       woovi: gateways.woovi,
+      stripe: gateways.stripe,
       log: logger,
     });
 
@@ -314,6 +435,7 @@ describe("workers", () => {
       db,
       email: gateways.email,
       woovi: gateways.woovi,
+      stripe: gateways.stripe,
       log: logger,
     });
 
@@ -381,7 +503,13 @@ describe("workers", () => {
     await db.outboxEvent.create({ data: { type: "order.paid", payload: { orderId: order.id } } });
 
     const gateways = buildFakeGateways();
-    await relayOutbox({ db, email: gateways.email, woovi: gateways.woovi, log: logger });
+    await relayOutbox({
+      db,
+      email: gateways.email,
+      woovi: gateways.woovi,
+      stripe: gateways.stripe,
+      log: logger,
+    });
 
     expect((await db.interest.findUniqueOrThrow({ where: { id: mine.id } })).status).toBe(
       "converted",
@@ -429,7 +557,13 @@ describe("workers", () => {
     await db.outboxEvent.create({ data: { type: "order.paid", payload: { orderId: order.id } } });
 
     const gateways = buildFakeGateways();
-    await relayOutbox({ db, email: gateways.email, woovi: gateways.woovi, log: logger });
+    await relayOutbox({
+      db,
+      email: gateways.email,
+      woovi: gateways.woovi,
+      stripe: gateways.stripe,
+      log: logger,
+    });
 
     expect((await db.interest.findUniqueOrThrow({ where: { id: cancelled.id } })).status).toBe(
       "cancelled",
@@ -491,7 +625,13 @@ describe("relayOutbox: doação", () => {
       data: { type: "donation.received", payload: { donationId: donation.id } },
     });
     const gateways = buildFakeGateways();
-    const n = await relayOutbox({ db, email: gateways.email, woovi: gateways.woovi, log: logger });
+    const n = await relayOutbox({
+      db,
+      email: gateways.email,
+      woovi: gateways.woovi,
+      stripe: gateways.stripe,
+      log: logger,
+    });
     expect(n).toBe(1);
     expect(gateways.sentEmails).toHaveLength(1);
     expect(gateways.sentEmails[0]?.to).toBe(user.email);
@@ -506,7 +646,13 @@ describe("relayOutbox: doação", () => {
       data: { type: "donation.received", payload: { donationId: donation.id } },
     });
     const gateways = buildFakeGateways();
-    const n = await relayOutbox({ db, email: gateways.email, woovi: gateways.woovi, log: logger });
+    const n = await relayOutbox({
+      db,
+      email: gateways.email,
+      woovi: gateways.woovi,
+      stripe: gateways.stripe,
+      log: logger,
+    });
     expect(n).toBe(1);
     expect(gateways.sentEmails).toHaveLength(0);
     const event = await db.outboxEvent.findFirstOrThrow();
@@ -560,7 +706,13 @@ describe("relayOutbox: concessão de números do sorteio", () => {
       data: { type: "donation.received", payload: { donationId: donation.id } },
     });
     const gateways = buildFakeGateways();
-    await relayOutbox({ db, email: gateways.email, woovi: gateways.woovi, log: logger });
+    await relayOutbox({
+      db,
+      email: gateways.email,
+      woovi: gateways.woovi,
+      stripe: gateways.stripe,
+      log: logger,
+    });
 
     const entries = await db.raffleEntry.findMany({
       where: { donationId: donation.id },
@@ -577,13 +729,25 @@ describe("relayOutbox: concessão de números do sorteio", () => {
       data: { type: "donation.received", payload: { donationId: donation.id } },
     });
     const gateways = buildFakeGateways();
-    await relayOutbox({ db, email: gateways.email, woovi: gateways.woovi, log: logger });
+    await relayOutbox({
+      db,
+      email: gateways.email,
+      woovi: gateways.woovi,
+      stripe: gateways.stripe,
+      log: logger,
+    });
 
     // Reenfileira o mesmo evento à mão e roda o relay de novo.
     await db.outboxEvent.create({
       data: { type: "donation.received", payload: { donationId: donation.id } },
     });
-    await relayOutbox({ db, email: gateways.email, woovi: gateways.woovi, log: logger });
+    await relayOutbox({
+      db,
+      email: gateways.email,
+      woovi: gateways.woovi,
+      stripe: gateways.stripe,
+      log: logger,
+    });
 
     const entries = await db.raffleEntry.findMany({ where: { donationId: donation.id } });
     expect(entries).toHaveLength(2);
@@ -610,7 +774,13 @@ describe("relayOutbox: concessão de números do sorteio", () => {
       data: { type: "donation.received", payload: { donationId: donation2.id } },
     });
     const gateways = buildFakeGateways();
-    await relayOutbox({ db, email: gateways.email, woovi: gateways.woovi, log: logger });
+    await relayOutbox({
+      db,
+      email: gateways.email,
+      woovi: gateways.woovi,
+      stripe: gateways.stripe,
+      log: logger,
+    });
 
     const entries1 = await db.raffleEntry.findMany({
       where: { donationId: donation1.id },
@@ -634,7 +804,13 @@ describe("relayOutbox: concessão de números do sorteio", () => {
       data: { type: "donation.received", payload: { donationId: comSorteio.id } },
     });
     const gateways = buildFakeGateways();
-    await relayOutbox({ db, email: gateways.email, woovi: gateways.woovi, log: logger });
+    await relayOutbox({
+      db,
+      email: gateways.email,
+      woovi: gateways.woovi,
+      stripe: gateways.stripe,
+      log: logger,
+    });
 
     expect(await db.raffleEntry.count()).toBe(0);
   });
@@ -645,7 +821,13 @@ describe("relayOutbox: concessão de números do sorteio", () => {
       data: { type: "donation.received", payload: { donationId: donation.id } },
     });
     const gateways = buildFakeGateways();
-    await relayOutbox({ db, email: gateways.email, woovi: gateways.woovi, log: logger });
+    await relayOutbox({
+      db,
+      email: gateways.email,
+      woovi: gateways.woovi,
+      stripe: gateways.stripe,
+      log: logger,
+    });
 
     expect(await db.raffleEntry.count({ where: { donationId: donation.id } })).toBe(0);
     expect(gateways.sentEmails).toHaveLength(1);

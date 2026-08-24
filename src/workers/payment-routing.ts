@@ -120,6 +120,28 @@ export async function recordProviderFee(deps: {
 }
 
 /**
+ * Enfileira o repasse do líquido para a conta conectada da loja. Só faz sentido em separate
+ * charges and transfers (ADR-029): em destination charge o dinheiro já saía na própria
+ * cobrança. O evento carrega o charge porque é dele que sai a taxa real e é ele que financia
+ * o transfer.
+ *
+ * Vai pelo outbox e não direto, pelo mesmo motivo do saque Woovi: o Stripe pode estar fora
+ * do ar no instante do webhook, e perder o repasse é perder dinheiro de outra pessoa.
+ */
+export async function enqueueStripeTransfer(deps: {
+  db: PrismaClient;
+  paymentId: string;
+  chargeId: string;
+}): Promise<void> {
+  await deps.db.outboxEvent.create({
+    data: {
+      type: "stripe.transfer",
+      payload: { paymentId: deps.paymentId, chargeId: deps.chargeId },
+    },
+  });
+}
+
+/**
  * Enfileira o saque da subconta Woovi da loja. Split para subconta é VIRTUAL: o valor
  * fica reservado dentro da conta da plataforma e só sai no saque, então sem esta chamada
  * o dinheiro do núcleo nunca chega na conta dele.

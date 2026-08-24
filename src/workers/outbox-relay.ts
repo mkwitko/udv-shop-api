@@ -3,6 +3,7 @@ import type { PrismaClient } from "@prisma/client";
 import type { FastifyBaseLogger } from "fastify";
 import { env } from "../config/env.js";
 import type { EmailGateway } from "../gateways/email/email.gateway.js";
+import type { StripeGateway } from "../gateways/stripe/stripe.gateway.js";
 import type { WooviGateway } from "../gateways/woovi/woovi.gateway.js";
 import { createInterestsRepository } from "../http/api/interests/interests.repository.js";
 import { createRafflesRepository } from "../http/api/raffles/raffles.repository.js";
@@ -32,6 +33,7 @@ export async function relayOutbox(deps: {
   db: PrismaClient;
   email: EmailGateway;
   woovi: WooviGateway;
+  stripe: StripeGateway;
   log: FastifyBaseLogger;
 }): Promise<number> {
   // Reap stale claims before doing anything else so an abandoned row is eligible for
@@ -244,6 +246,50 @@ export async function relayOutbox(deps: {
           { orderId, donationId, paymentId },
           "pagamento órfão: pagamento capturado para agregado não pendente, reembolso manual necessário",
         );
+      } else if (event.type === "stripe.transfer") {
+        // Repasse do líquido: bruto menos a taxa que o Stripe cobrou de fato nesta cobrança.
+        // É aqui que a taxa deixa de ser da plataforma e passa a ser da loja (ADR-029).
+        const { paymentId, chargeId } = event.payload as { paymentId: string; chargeId: string };
+        const payment = await deps.db.payment.findUnique({
+          where: { id: paymentId },
+          select: {
+            stripeTransferId: true,
+            order: { select: { store: { select: { id: true, stripeAccountId: true } } } },
+            donation: { select: { store: { select: { id: true, stripeAccountId: true } } } },
+          },
+        });
+        const store = payment?.order?.store ?? payment?.donation?.store;
+        if (!payment) {
+          deps.log.error({ paymentId }, "repasse Stripe de pagamento inexistente");
+        } else if (payment.stripeTransferId) {
+          // Já repassado. A chave de idempotência do Stripe também protegeria, mas sair
+          // antes evita uma chamada de rede em todo reprocessamento.
+          deps.log.info({ paymentId }, "repasse Stripe já feito, nada a fazer");
+        } else if (!store?.stripeAccountId) {
+          // O dinheiro fica na plataforma esperando, que é o lugar certo para ele esperar:
+          // o comprador não pode ser penalizado por problema de Connect da loja.
+          deps.log.error(
+            { paymentId, storeId: store?.id },
+            "repasse Stripe sem conta conectada: dinheiro retido na plataforma",
+          );
+        } else {
+          const fee = await deps.stripe.retrieveChargeFee(chargeId);
+          const transfer = await deps.stripe.createTransfer({
+            amountCents: fee.amountCents - fee.feeCents,
+            currency: fee.currency,
+            destinationAccountId: store.stripeAccountId,
+            chargeId,
+            idempotencyKey: `transfer:${paymentId}`,
+          });
+          await deps.db.payment.update({
+            where: { id: paymentId },
+            data: { providerFeeCents: fee.feeCents, stripeTransferId: transfer.transferId },
+          });
+          deps.log.info(
+            { paymentId, storeId: store.id, feeCents: fee.feeCents },
+            "repasse Stripe feito com a taxa real descontada",
+          );
+        }
       } else if (event.type === "woovi.withdraw") {
         // Tira o saldo virtual da subconta e manda para a chave Pix do núcleo. É o passo
         // que faz a promessa "o dinheiro vai direto para quem organiza" ser verdade no

@@ -10,6 +10,7 @@ import type {
   CreateDonationSubscriptionInput,
   CreatePaymentIntentInput,
   CreateSaasCheckoutInput,
+  CreateTransferInput,
 } from "../../src/gateways/stripe/stripe.gateway.js";
 import type {
   CreateChargeInput,
@@ -19,11 +20,30 @@ import type {
 } from "../../src/gateways/woovi/woovi.gateway.js";
 import type { Gateways } from "../../src/types/fastify.js";
 
+/**
+ * Taxa e valor que a cobrança Stripe falsa devolve quando o teste não diz outra coisa.
+ * R$ 50,00 com R$ 2,39 de taxa é a ordem de grandeza real do cartão no BR — número redondo
+ * demais esconderia erro de arredondamento no líquido.
+ */
+const FAKE_CHARGE_AMOUNT_CENTS = 5000;
+const FAKE_STRIPE_FEE_CENTS = 239;
+
 export type FakeGateways = Gateways & {
   sentEmails: Array<{ to: string | string[]; subject: string; html: string }>;
   googleProfile: GoogleProfile;
   stripeIntents: CreatePaymentIntentInput[];
   stripeRefunds: string[];
+  /** Repasses pedidos ao Stripe, na ordem — o líquido de cada cobrança. */
+  stripeTransfers: CreateTransferInput[];
+  /** Reversals pedidos, por transfer. */
+  stripeReversals: Array<{ transferId: string; amountCents: number }>;
+  /**
+   * Taxa que a cobrança falsa devolve, por charge. Sem entrada, a taxa é
+   * FAKE_STRIPE_FEE_CENTS sobre um valor igual ao do último intent criado.
+   */
+  stripeChargeFees: Map<string, { amountCents: number; feeCents: number; currency: string }>;
+  /** Charge que cada fatura falsa aponta. Sem entrada, a fatura não gerou cobrança. */
+  stripeInvoiceCharges: Map<string, string>;
   stripeSubscriptions: CreateDonationSubscriptionInput[];
   stripeCancelledSubscriptions: string[];
   stripeConnectedAccounts: Array<{ email: string; storeName: string }>;
@@ -75,6 +95,10 @@ export function buildFakeGateways(overrides: Partial<Gateways> = {}): FakeGatewa
   };
   const stripeIntents: FakeGateways["stripeIntents"] = [];
   const stripeRefunds: string[] = [];
+  const stripeTransfers: FakeGateways["stripeTransfers"] = [];
+  const stripeReversals: FakeGateways["stripeReversals"] = [];
+  const stripeChargeFees: FakeGateways["stripeChargeFees"] = new Map();
+  const stripeInvoiceCharges: FakeGateways["stripeInvoiceCharges"] = new Map();
   const stripeSubscriptions: FakeGateways["stripeSubscriptions"] = [];
   const stripeCancelledSubscriptions: string[] = [];
   const stripeConnectedAccounts: FakeGateways["stripeConnectedAccounts"] = [];
@@ -112,6 +136,10 @@ export function buildFakeGateways(overrides: Partial<Gateways> = {}): FakeGatewa
     googleProfile,
     stripeIntents,
     stripeRefunds,
+    stripeTransfers,
+    stripeReversals,
+    stripeChargeFees,
+    stripeInvoiceCharges,
     stripeSubscriptions,
     stripeCancelledSubscriptions,
     stripeConnectedAccounts,
@@ -175,6 +203,25 @@ export function buildFakeGateways(overrides: Partial<Gateways> = {}): FakeGatewa
       },
       async refundPaymentIntent(providerId, _idempotencyKey) {
         stripeRefunds.push(providerId);
+      },
+      async retrieveChargeFee(chargeId) {
+        return (
+          stripeChargeFees.get(chargeId) ?? {
+            amountCents: FAKE_CHARGE_AMOUNT_CENTS,
+            feeCents: FAKE_STRIPE_FEE_CENTS,
+            currency: "brl",
+          }
+        );
+      },
+      async createTransfer(input) {
+        stripeTransfers.push(input);
+        return { transferId: `tr_fake_${stripeTransfers.length}` };
+      },
+      async reverseTransfer(input) {
+        stripeReversals.push({ transferId: input.transferId, amountCents: input.amountCents });
+      },
+      async retrieveInvoiceChargeId(invoiceId) {
+        return stripeInvoiceCharges.get(invoiceId) ?? null;
       },
       async createDonationSubscription(input) {
         stripeSubscriptions.push(input);

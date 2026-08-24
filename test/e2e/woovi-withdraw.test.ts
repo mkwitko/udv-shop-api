@@ -186,7 +186,13 @@ describe("saldo e saque da subconta Woovi", () => {
     const enfileirado = await db.outboxEvent.findFirst({ where: { type: "woovi.withdraw" } });
     expect(enfileirado).not.toBeNull();
 
-    await relayOutbox({ db, email: gateways.email, woovi: gateways.woovi, log: logger });
+    await relayOutbox({
+      db,
+      email: gateways.email,
+      woovi: gateways.woovi,
+      stripe: gateways.stripe,
+      log: logger,
+    });
 
     expect(gateways.wooviWithdrawals).toEqual([PIX]);
     const depois = await db.outboxEvent.findFirstOrThrow({ where: { type: "woovi.withdraw" } });
@@ -201,7 +207,13 @@ describe("saldo e saque da subconta Woovi", () => {
       data: { type: "woovi.withdraw", payload: { storeId: store.id, pixKey: PIX } },
     });
 
-    await relayOutbox({ db, email: gateways.email, woovi: gateways.woovi, log: logger });
+    await relayOutbox({
+      db,
+      email: gateways.email,
+      woovi: gateways.woovi,
+      stripe: gateways.stripe,
+      log: logger,
+    });
 
     // "blocked" é decisão da Woovi, não falha nossa: o evento fecha e fica no log
     const row = await db.outboxEvent.findFirstOrThrow({ where: { type: "woovi.withdraw" } });

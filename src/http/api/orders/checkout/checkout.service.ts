@@ -124,9 +124,6 @@ export function createCheckoutService(deps: CheckoutDeps) {
         const intent = await deps.stripe.createPaymentIntent({
           amountCents: totalCents,
           currency: order.currency,
-          applicationFeeCents,
-          // assertProviderConfigured garante não-nulo
-          destinationAccountId: store.stripeAccountId as string,
           metadata: { orderId: order.id, paymentId },
         });
         await deps.orders.attachProviderId(paymentId, intent.providerId);

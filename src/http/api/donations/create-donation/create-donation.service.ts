@@ -115,8 +115,6 @@ export function createDonationService(deps: CreateDonationDeps) {
         const intent = await deps.stripe.createPaymentIntent({
           amountCents: input.amountCents,
           currency: donation.currency,
-          applicationFeeCents,
-          destinationAccountId: store.stripeAccountId as string,
           metadata: { donationId: donation.id, paymentId },
         });
         await deps.donations.attachProviderId(paymentId, intent.providerId);

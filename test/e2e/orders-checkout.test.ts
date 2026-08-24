@@ -74,8 +74,10 @@ describe("POST /orders", () => {
     expect(fresh.stock).toBe(8);
     const intent = gateways.stripeIntents.at(-1);
     expect(intent?.amountCents).toBe(5000);
-    expect(intent?.applicationFeeCents).toBe(250);
-    expect(intent?.destinationAccountId).toBe("acct_1");
+    // A intent não leva conta de destino nem comissão: o repasse é separado, e é ele que
+    // desconta a taxa real do Stripe do valor que chega no núcleo (ADR-029).
+    expect(intent).not.toHaveProperty("destinationAccountId");
+    expect(intent).not.toHaveProperty("applicationFeeCents");
     const payment = await db.payment.findFirstOrThrow();
     expect(payment.providerId).toMatch(/^pi_fake_/);
   });

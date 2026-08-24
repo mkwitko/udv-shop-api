@@ -33,6 +33,7 @@ export function startWorkers(deps: {
           db: deps.db,
           email: deps.gateways.email,
           woovi: deps.gateways.woovi,
+          stripe: deps.gateways.stripe,
           log: deps.log,
         }),
       ),

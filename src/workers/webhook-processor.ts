@@ -9,6 +9,7 @@ import {
 } from "./billing-webhook.js";
 import {
   cancelPaymentAggregate,
+  enqueueStripeTransfer,
   enqueueWooviWithdraw,
   markPaymentPaid,
   recordProviderFee,
@@ -34,6 +35,8 @@ const uuidSchema = z.string().uuid();
 type StripeObject = {
   id?: string;
   payment_intent?: string;
+  /** Cobrança que a intent gerou: é dela que sai a taxa real e é ela que financia o repasse. */
+  latest_charge?: string;
   invoice?: string;
   subscription?: string;
   amount_paid?: number;
@@ -135,6 +138,22 @@ export async function processWebhookEvents(deps: {
             paymentId,
             providerId: object.id ?? null,
           });
+          // O repasse vai por outbox, não aqui: a taxa real exige uma chamada ao Stripe, e
+          // este worker não tem gateway. Vai por fila também pelo motivo do saque Woovi — o
+          // Stripe pode estar fora do ar agora, e perder o repasse é perder dinheiro de
+          // outra pessoa (ADR-029).
+          if (typeof object.latest_charge === "string") {
+            await enqueueStripeTransfer({
+              db: deps.db,
+              paymentId,
+              chargeId: object.latest_charge,
+            });
+          } else {
+            deps.log.error(
+              { paymentId },
+              "payment_intent.succeeded sem latest_charge: repasse não enfileirado",
+            );
+          }
         } else if (event.type === "payment_intent.canceled" && paymentId) {
           // Só "canceled" é terminal. "payment_intent.payment_failed" dispara em toda
           // tentativa recusada e a mesma intent pode ser retentada e depois aprovada —
