@@ -79,8 +79,10 @@ describe("doação mensal — assinatura Stripe", () => {
   afterAll(() => app.close());
   beforeEach(resetDb);
 
-  it("POST /donations mensal: 201, payment.provider stripe_subscription, subscriptionId presente, doação pending_payment com subscriptionRef, applicationFeePercent = applicationFeeBps/100", async () => {
-    const store = await seedStore({ applicationFeeBps: 750 });
+  it("POST /donations mensal: 201, payment.provider stripe_subscription, subscriptionId presente, doação pending_payment com subscriptionRef, e assinatura sem comissão nem destino", async () => {
+    // Comissão configurada de propósito: nem assim a assinatura leva fee ou destino, porque
+    // o repasse de cada ciclo é separado (ADR-029).
+    await seedStore({ applicationFeeBps: 750 });
     const token = await customerToken(app, "m1@example.org");
     const res = await donateMonthly(app, token);
     expect(res.statusCode).toBe(201);

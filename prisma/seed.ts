@@ -353,6 +353,9 @@ export async function seedDatabase(db: PrismaClient): Promise<string> {
         providerId: "pi_seed_order",
         amountCents: order.totalCents,
         applicationFeeCents: Math.round((order.totalCents * store.applicationFeeBps) / 10_000),
+        // Ordem de grandeza real do cartão no BR (3,99% + R$ 0,39), para o extrato do
+        // ambiente de desenvolvimento mostrar a coluna com número em vez de zero.
+        providerFeeCents: Math.round(order.totalCents * 0.0399) + 39,
         status: "succeeded",
       },
     });
@@ -377,6 +380,7 @@ export async function seedDatabase(db: PrismaClient): Promise<string> {
         providerId: "pi_seed_donation",
         amountCents: donation.amountCents,
         applicationFeeCents: 0,
+        providerFeeCents: Math.round(donation.amountCents * 0.0399) + 39,
         status: "succeeded",
       },
     });

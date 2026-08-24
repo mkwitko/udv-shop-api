@@ -491,7 +491,7 @@ formalmente dona do risco, então Radar for Platforms deixa de ser opcional; (d)
 não converte o tipo de uma conta existente: migrar é criar conta nova e refazer o
 onboarding, guardando o id antigo em `metadata.migrated_from_account_id`.
 
-## ADR-025: doação mensal também é destination charge na plataforma
+## ADR-025: doação mensal também é destination charge na plataforma — SUPERSEDED pelo ADR-029
 
 **Contexto:** o ADR-016 pôs a assinatura de doação como direct charge dentro da conta do
 núcleo, enquanto pedido e doação única seguiam destination charge na plataforma. A mesma
@@ -621,3 +621,45 @@ próximo vai abrir, em vez de mentir que as vagas acabaram; (d) apagar lote com 
 recusado (`event_batch_has_sales`): apagar levaria embora de onde veio o ingresso de alguém;
 (e) a reserva e a devolução de vaga passam a acontecer no lote, não no evento, e o item do
 pedido guarda o nome com o lote ("Festa junina — 1º lote") porque é o que o recibo tem de dizer.
+
+## ADR-029: a taxa do provedor é da loja, descontada do repasse
+
+**Contexto:** a plataforma cobra mensalidade e não comissão (ADR-027), e com destination
+charge e `fees.payer: application` (ADR-024) a taxa da Stripe saía do saldo da plataforma. Na
+Woovi, o split de 100% deixava a taxa do Pix na conta master. "Comissão zero" tinha virado
+também "taxa do provedor zero para a loja": acima de ~R$ 4,7 mil de GMV por mês, a taxa comia
+a mensalidade inteira.
+
+**Decisão:** a taxa do provedor é custo da venda, e custo da venda é da loja. O comprador
+continua pagando o preço de vitrine; o que chega na loja é o líquido.
+
+No Stripe isso obrigou a trocar destination charge por **separate charges and transfers**:
+`transfer_data` e `application_fee_amount` são fixados na criação da cobrança, quando a taxa
+real ainda não existe. A cobrança agora nasce inteira na plataforma, e o repasse
+(`total − balance_transaction.fee`) sai depois por evento de outbox, com `source_transaction`
+amarrando o dinheiro à cobrança que o financia. Doação mensal segue o mesmo caminho, um
+transfer por fatura paga — e o charge da fatura sai de uma chamada à parte, porque
+`invoice.charge` e `invoice.payment_intent` não existem mais nesta versão da API e o limite
+de 4 níveis de expand impede puxar o `balance_transaction` junto.
+
+Na Woovi não existe alavanca para a taxa real: o split é fixado na criação e o saque da
+subconta só leva o saldo inteiro. O split retém `WOOVI_FEE_FIXED_CENTS` (R$ 0,85 de contrato)
+e `charge.fee` do webhook grava a taxa real em `Payment.providerFeeCents`.
+
+No reembolso, `reverse_transfer` deixa de existir junto com a destination charge: reverte-se o
+**líquido** repassado e reembolsa-se o comprador pelo cheio. A Stripe não devolve a taxa de
+processamento, e quem fica com esse custo é a loja — a taxa é dela, e a venda existiu.
+
+**Consequências:** (a) `Payment.providerFeeCents` é nullable e `null` significa "pagamento do
+modelo antigo, a plataforma pagou" — diferente de `0`, e nunca preenchido retroativamente;
+(b) `applicationFeeCents` continua existindo e continua zero, mostrado separado no extrato de
+propósito: juntar as duas colunas diria à loja que cobramos comissão; (c) o dinheiro passa
+alguns segundos no saldo da plataforma, entre a cobrança aprovada e o webhook do repasse;
+(d) o repasse passa a poder falhar de forma visível e ficar preso no outbox — mais seguro
+para o comprador, e exige que a fila falhada seja olhada; (e) se o reversal falhar porque a
+loja já sacou, o comprador é reembolsado assim mesmo e a dívida da loja fica registrada em
+log para acerto humano — risco que já existia com `reverse_transfer`; (f) se a Woovi mudar de
+tabela sem atualizarmos a constante, a plataforma volta a pagar a diferença em silêncio, e o
+que denuncia é a diferença entre o retido e `providerFeeCents`; (g) Pix abaixo de R$ 0,86 tem
+a retenção limitada a `valor − 1` porque a Woovi recusa split igual ao valor da cobrança — a
+plataforma absorve esses centavos.
