@@ -175,6 +175,54 @@ describe("gestão de pedidos", () => {
     expect(fresh.status).toBe("paid");
   });
 
+  it("reembolso reverte o LÍQUIDO repassado: a taxa do provedor fica com a loja", async () => {
+    const { store, order } = await seed("paid");
+    await db.payment.update({
+      where: { orderId: order.id },
+      data: { applicationFeeCents: 0, providerFeeCents: 239, stripeTransferId: "tr_1" },
+    });
+    const admin = await staffToken(app, "s6-liq@example.org", store.id, "admin");
+
+    const res = await app.inject({
+      method: "POST",
+      url: `/stores/nucleo-a/orders/${order.id}/refund`,
+      headers: { authorization: `Bearer ${admin}` },
+    });
+
+    expect(res.statusCode).toBe(202);
+    // R$ 50,00 menos os R$ 2,39 de taxa: o comprador recebe o cheio, e a taxa que o Stripe
+    // não devolve sai de quem vendeu, não da plataforma (ADR-029).
+    expect(gateways.stripeReversals).toContainEqual({
+      transferId: "tr_1",
+      amountCents: 5000 - 239,
+    });
+  });
+
+  it("reembolso antes do repasse: nada a reverter e o evento pendente é cancelado", async () => {
+    const { store, order } = await seed("paid");
+    const payment = await db.payment.update({
+      where: { orderId: order.id },
+      data: { applicationFeeCents: 0, stripeTransferId: null },
+    });
+    await db.outboxEvent.create({
+      data: { type: "stripe.transfer", payload: { paymentId: payment.id, chargeId: "ch_1" } },
+    });
+    const admin = await staffToken(app, "s6-sem@example.org", store.id, "admin");
+    const reversalsAntes = gateways.stripeReversals.length;
+
+    const res = await app.inject({
+      method: "POST",
+      url: `/stores/nucleo-a/orders/${order.id}/refund`,
+      headers: { authorization: `Bearer ${admin}` },
+    });
+
+    expect(res.statusCode).toBe(202);
+    expect(gateways.stripeReversals).toHaveLength(reversalsAntes);
+    // Sem isso o relay repassaria depois o dinheiro de um pedido que não existe mais.
+    const evento = await db.outboxEvent.findFirstOrThrow({ where: { type: "stripe.transfer" } });
+    expect(evento.status).toBe("processed");
+  });
+
   it("dois reembolsos consecutivos → segundo 409 e gateway chamado uma vez só", async () => {
     const { store, order } = await seed("paid");
     const admin = await staffToken(app, "s6b@example.org", store.id, "admin");

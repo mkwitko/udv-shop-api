@@ -41,6 +41,8 @@ export interface DonationsRepository {
     type: "one_time" | "monthly";
     amountCents: number;
     applicationFeeCents: number;
+    /** Taxa do provedor retida no split (Woovi) ou 0 quando ela só é conhecida depois (Stripe). */
+    providerFeeCents: number;
     anonymous: boolean;
     message: string | null;
     /** Chave do recibo público. Só vem preenchida quando a doação nasce sem sessão. */
@@ -119,6 +121,7 @@ export function createDonationsRepository(db: PrismaClient): DonationsRepository
               provider: input.provider,
               amountCents: input.amountCents,
               applicationFeeCents: input.applicationFeeCents,
+              providerFeeCents: input.providerFeeCents,
             },
           },
         },

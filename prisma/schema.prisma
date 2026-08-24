@@ -638,7 +638,17 @@ model Payment {
   pixBrCode           String?         @map("pix_br_code")
   pixQrCodeUrl        String?         @map("pix_qr_code_url")
   amountCents         Int             @map("amount_cents")
+  /// Comissão da plataforma sobre a venda. Zero em toda loja: o modelo é mensalidade, não
+  /// comissão (ADR-027). Fica no schema porque o extrato mostra o zero de propósito.
   applicationFeeCents Int             @map("application_fee_cents")
+  /// Taxa que o provedor cobrou nesta transação, descontada do repasse da loja (ADR-029).
+  /// Nullable de propósito: `null` é "pagamento anterior à mudança, a plataforma comeu a
+  /// taxa", informação diferente de `0` ("não houve taxa"). Nunca fazer backfill.
+  providerFeeCents    Int?            @map("provider_fee_cents")
+  /// Transfer do repasse no Stripe. Guardado porque o reembolso precisa reverter ESTE
+  /// transfer: sem destination charge não existe mais `reverse_transfer` para fazer isso
+  /// sozinho. `null` num pagamento Stripe pago = repasse ainda não saiu.
+  stripeTransferId    String?         @map("stripe_transfer_id")
   status              PaymentStatus   @default(pending)
   createdAt           DateTime        @default(now()) @map("created_at")
   updatedAt           DateTime        @updatedAt @map("updated_at")

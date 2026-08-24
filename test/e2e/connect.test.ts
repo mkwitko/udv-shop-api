@@ -237,7 +237,7 @@ describe("connect — onboarding Stripe e subconta Woovi", () => {
     expect(res.statusCode).toBe(200);
 
     const persisted = await db.store.findUniqueOrThrow({ where: { id: store.id } });
-    // transfers é a capacidade que libera a loja a vender por destination charge
+    // transfers é a capacidade que libera o repasse da venda chegar na loja
     expect(persisted.stripeTransfersEnabled).toBe(true);
     expect(persisted.stripeChargesEnabled).toBe(true);
     expect(persisted.stripePayoutsEnabled).toBe(true);

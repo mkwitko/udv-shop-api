@@ -62,8 +62,9 @@ export function toConnectStatusResponse(store: Store) {
       ownerName: store.wooviPixKeyOwnerName,
     },
     applicationFeeBps: store.applicationFeeBps,
-    // Declaração, não cálculo: a taxa do provedor é paga pela plataforma. Aparece para a
-    // loja saber que ela existe — "sem taxa nenhuma" seria propaganda, não transparência.
+    // Declaração, não cálculo: a taxa do provedor é DESCONTADA DO REPASSE da loja
+    // (ADR-029). Aparece aqui porque a loja tem de saber por que recebeu menos que o preço
+    // que vendeu — descobrir isso pelo extrato, depois, seria pegadinha.
     providerFees: {
       pix: env.PROVIDER_FEE_PIX_TEXT || null,
       card: env.PROVIDER_FEE_CARD_TEXT || null,

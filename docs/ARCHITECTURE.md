@@ -366,12 +366,11 @@ recorrente (mensal, ancorada no dia de criação) vinculado a uma campanha. Cada
 ciclo gera uma **doação filha** (`Donation`) com status `pending_invoice` e uma
 invoice criada no Stripe Billing ou manualmente rastreada.
 
-Diferença fundamental de agregado:
-- **Doação única** (`Donation` sem `subscriptionId`): usa `destination charge`
-  (fee é `application_fee_amount` lump-sum na transação).
-- **Doação mensal** (nascida de `DonationSubscription`): usa `direct charge` na
-  conta conectada (fee é `application_fee_percent` da invoice, pois Stripe Billing
-  exige; restrição de design em D3).
+Doação única e doação mensal usam o **mesmo** caminho de dinheiro desde o ADR-029:
+cobrança na conta da plataforma, sem `transfer_data` e sem `application_fee_*`, e o
+repasse do líquido saindo depois por evento de outbox `stripe.transfer`. A diferença
+é só o gatilho: a única repassa no `payment_intent.succeeded`, a mensal repassa uma
+vez por `invoice.paid` — um transfer por ciclo, com a taxa real daquela cobrança.
 
 Ciclo:
 1. `POST /campaigns/:id/subscriptions` cria `DonationSubscription` com `status:
@@ -574,11 +573,11 @@ no escopo do plugin `webhooksRoutes`).
 plataforma e das contas conectadas (o endpoint precisa estar registrado com
 `connect: true` no Stripe para receber os últimos). Tipos como
 `customer.subscription.deleted` existem nos dois mundos e significam coisas diferentes —
-cancelar a doação mensal de um doador, ou tirar a loja do ar. O que decide é o campo
-`account` do evento, presente só quando ele nasce numa conta conectada: os ramos de
-doação exigem `account` presente, os de billing exigem ausente. Cobrança de pedido e
-doação única não entram nessa conta porque são *destination charges*, criadas na conta da
-plataforma — os eventos delas chegam sem `account`, como sempre chegaram.
+cancelar a doação mensal de um doador, ou tirar a loja do ar. O que decide é o lookup do
+`subscriptionRef` nas doações — **não** o campo `account` do evento. Desde o
+ADR-025 as duas assinaturas nascem na conta da plataforma e chegam sem `account`, então
+ele deixou de separar qualquer coisa aqui. Cobrança de pedido e doação única também
+nascem na plataforma (ADR-029) e chegam sem `account`, como sempre chegaram.
 
 ### Woovi
 

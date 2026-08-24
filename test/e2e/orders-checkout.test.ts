@@ -74,13 +74,15 @@ describe("POST /orders", () => {
     expect(fresh.stock).toBe(8);
     const intent = gateways.stripeIntents.at(-1);
     expect(intent?.amountCents).toBe(5000);
-    expect(intent?.applicationFeeCents).toBe(250);
-    expect(intent?.destinationAccountId).toBe("acct_1");
+    // A intent não leva conta de destino nem comissão: o repasse é separado, e é ele que
+    // desconta a taxa real do Stripe do valor que chega no núcleo (ADR-029).
+    expect(intent).not.toHaveProperty("destinationAccountId");
+    expect(intent).not.toHaveProperty("applicationFeeCents");
     const payment = await db.payment.findFirstOrThrow();
     expect(payment.providerId).toMatch(/^pi_fake_/);
   });
 
-  it("woovi: retorna brCode e faz split de total - fee para a subconta", async () => {
+  it("woovi: retorna brCode e faz split de total - comissão - taxa do Pix", async () => {
     await seedStore();
     const token = await customerToken(app, "c2@example.org");
     const res = await checkout(app, token, { provider: "woovi" });
@@ -88,24 +90,26 @@ describe("POST /orders", () => {
     expect(res.json().payment.brCode).toBe("000201fake");
     const charge = gateways.wooviCharges.at(-1);
     expect(charge?.amountCents).toBe(5000);
-    expect(charge?.splitValueCents).toBe(4750);
+    // 5% de comissão desta loja de teste (250) + R$ 0,85 de taxa do Pix (85)
+    expect(charge?.splitValueCents).toBe(5000 - 250 - 85);
     expect(charge?.splitPixKey).toBe("pix@nucleo.org");
     const payment = await db.payment.findFirstOrThrow();
     expect(charge?.correlationID).toBe(payment.id);
   });
 
-  // A Woovi devolve 400 quando o split iguala o valor da cobrança, e loja sem comissão
-  // (o padrão hoje: a plataforma vive de mensalidade) cairia exatamente nesse caso.
-  it("woovi com loja sem comissão: retém 1 centavo em vez de tentar split de 100%", async () => {
+  // A taxa do provedor é da loja (ADR-029): o split retém a taxa fixa da Woovi, e é isso
+  // que a loja recebe de menos — não a plataforma que paga por ela.
+  it("woovi com loja sem comissão: retém a taxa do Pix, e nada de comissão", async () => {
     await seedStore({ applicationFeeBps: 0 });
     const token = await customerToken(app, "c-fee0@example.org");
     const res = await checkout(app, token, { provider: "woovi" });
     expect(res.statusCode).toBe(201);
     const charge = gateways.wooviCharges.at(-1);
     expect(charge?.amountCents).toBe(5000);
-    expect(charge?.splitValueCents).toBe(4999);
+    expect(charge?.splitValueCents).toBe(5000 - 85);
     const payment = await db.payment.findFirstOrThrow();
-    expect(payment.applicationFeeCents).toBe(1);
+    expect(payment.applicationFeeCents).toBe(0);
+    expect(payment.providerFeeCents).toBe(85);
   });
 
   it("estoque insuficiente → 409 e nada persiste", async () => {

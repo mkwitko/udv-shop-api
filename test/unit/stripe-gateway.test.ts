@@ -12,6 +12,10 @@ const stripeMock = vi.hoisted(() => ({
   subscriptionsCancel: vi.fn(),
   accountSessionsCreate: vi.fn(),
   constructEvent: vi.fn(),
+  chargesRetrieve: vi.fn(),
+  transfersCreate: vi.fn(),
+  transfersCreateReversal: vi.fn(),
+  invoicesRetrieve: vi.fn(),
 }));
 
 vi.mock("stripe", () => ({
@@ -30,6 +34,12 @@ vi.mock("stripe", () => ({
       cancel: stripeMock.subscriptionsCancel,
     };
     accountSessions = { create: stripeMock.accountSessionsCreate };
+    charges = { retrieve: stripeMock.chargesRetrieve };
+    transfers = {
+      create: stripeMock.transfersCreate,
+      createReversal: stripeMock.transfersCreateReversal,
+    };
+    invoices = { retrieve: stripeMock.invoicesRetrieve };
     webhooks = { constructEvent: stripeMock.constructEvent };
   },
 }));
@@ -55,24 +65,31 @@ beforeEach(() => {
   stripeMock.subscriptionsCancel.mockReset();
   stripeMock.accountSessionsCreate.mockReset();
   stripeMock.constructEvent.mockReset();
+  stripeMock.chargesRetrieve.mockReset();
+  stripeMock.transfersCreate.mockReset();
+  stripeMock.transfersCreateReversal.mockReset();
+  stripeMock.invoicesRetrieve.mockReset();
 });
 
-describe("createPaymentIntent", () => {
+describe("createPaymentIntent (separate charges and transfers)", () => {
   const input = {
     amountCents: 5000,
     currency: "BRL",
-    destinationAccountId: "acct_nucleo",
     metadata: { orderId: "o1", paymentId: "p1" },
   };
 
-  it("omite application_fee_amount quando não há comissão, em vez de mandar zero", async () => {
+  it("não manda transfer_data: o repasse sai depois, com a taxa real descontada", async () => {
     stripeMock.paymentIntentsCreate.mockResolvedValue({ id: "pi_1", client_secret: "cs_1" });
-    await gw().createPaymentIntent({ ...input, applicationFeeCents: 0 });
+    await gw().createPaymentIntent(input);
 
     const payload = stripeMock.paymentIntentsCreate.mock.calls[0]?.[0];
-    expect(payload).toMatchObject({ transfer_data: { destination: "acct_nucleo" } });
-    // fee zero mandado explicitamente criaria ApplicationFee de R$ 0 em todo pagamento
+    expect(payload).toMatchObject({ amount: 5000, currency: "brl" });
+    // transfer_data e application_fee_amount são fixados aqui, quando a taxa real que o
+    // balance_transaction só revela depois ainda não existe — por isso saíram (ADR-029).
+    expect(payload).not.toHaveProperty("transfer_data");
     expect(payload).not.toHaveProperty("application_fee_amount");
+    // on_behalf_of faria do núcleo o settlement merchant — a plataforma é o MoR
+    expect(payload).not.toHaveProperty("on_behalf_of");
   });
 
   it("conta conectada inválida vira erro acionável, não 502 genérico", async () => {
@@ -83,9 +100,10 @@ describe("createPaymentIntent", () => {
       Object.assign(new Error("does not have access to account"), { code: "account_invalid" }),
     );
 
-    await expect(
-      gw().createPaymentIntent({ ...input, applicationFeeCents: 0 }),
-    ).rejects.toMatchObject({ message: "store_stripe_account_invalid", statusCode: 409 });
+    await expect(gw().createPaymentIntent(input)).rejects.toMatchObject({
+      message: "store_stripe_account_invalid",
+      statusCode: 409,
+    });
   });
 
   it("outros erros do Stripe continuam 502", async () => {
@@ -93,18 +111,108 @@ describe("createPaymentIntent", () => {
       Object.assign(new Error("api down"), { code: "api_error" }),
     );
 
-    await expect(
-      gw().createPaymentIntent({ ...input, applicationFeeCents: 0 }),
-    ).rejects.toMatchObject({ message: "payment_provider_error", statusCode: 502 });
+    await expect(gw().createPaymentIntent(input)).rejects.toMatchObject({
+      message: "payment_provider_error",
+      statusCode: 502,
+    });
+  });
+});
+
+describe("retrieveChargeFee", () => {
+  it("lê a taxa do balance_transaction expandido", async () => {
+    stripeMock.chargesRetrieve.mockResolvedValue({
+      amount: 5000,
+      currency: "brl",
+      balance_transaction: { fee: 239 },
+    });
+
+    await expect(gw().retrieveChargeFee("ch_1")).resolves.toEqual({
+      amountCents: 5000,
+      feeCents: 239,
+      currency: "brl",
+    });
+    expect(stripeMock.chargesRetrieve).toHaveBeenCalledWith("ch_1", {
+      expand: ["balance_transaction"],
+    });
   });
 
-  it("manda a comissão quando ela existe (o campo continua por loja)", async () => {
-    stripeMock.paymentIntentsCreate.mockResolvedValue({ id: "pi_1", client_secret: "cs_1" });
-    await gw().createPaymentIntent({ ...input, applicationFeeCents: 250 });
-
-    expect(stripeMock.paymentIntentsCreate.mock.calls[0]?.[0]).toMatchObject({
-      application_fee_amount: 250,
+  it("falha alto quando o balance_transaction não veio expandido", async () => {
+    // Um id em string aqui significaria repassar o bruto e a plataforma comer a taxa —
+    // silenciosamente. Melhor 502 e o outbox tentar de novo.
+    stripeMock.chargesRetrieve.mockResolvedValue({
+      amount: 5000,
+      currency: "brl",
+      balance_transaction: "txn_1",
     });
+
+    await expect(gw().retrieveChargeFee("ch_1")).rejects.toMatchObject({ statusCode: 502 });
+  });
+});
+
+describe("createTransfer", () => {
+  it("repassa amarrado à cobrança, para não adiantar do saldo da plataforma", async () => {
+    stripeMock.transfersCreate.mockResolvedValue({ id: "tr_1" });
+
+    await expect(
+      gw().createTransfer({
+        amountCents: 4761,
+        currency: "brl",
+        destinationAccountId: "acct_nucleo",
+        chargeId: "ch_1",
+        idempotencyKey: "transfer:p1",
+      }),
+    ).resolves.toEqual({ transferId: "tr_1" });
+
+    expect(stripeMock.transfersCreate).toHaveBeenCalledWith(
+      {
+        amount: 4761,
+        currency: "brl",
+        destination: "acct_nucleo",
+        source_transaction: "ch_1",
+      },
+      { idempotencyKey: "transfer:p1" },
+    );
+  });
+
+  it("conta conectada inválida no repasse também vira erro acionável", async () => {
+    stripeMock.transfersCreate.mockRejectedValue(
+      Object.assign(new Error("no such destination"), { code: "account_invalid" }),
+    );
+
+    await expect(
+      gw().createTransfer({
+        amountCents: 4761,
+        currency: "brl",
+        destinationAccountId: "acct_sumiu",
+        chargeId: "ch_1",
+        idempotencyKey: "transfer:p1",
+      }),
+    ).rejects.toMatchObject({ message: "store_stripe_account_invalid", statusCode: 409 });
+  });
+});
+
+describe("retrieveInvoiceChargeId", () => {
+  it("acha o charge pelo array payments: invoice.charge não existe mais nesta API", async () => {
+    stripeMock.invoicesRetrieve.mockResolvedValue({
+      payments: { data: [{ payment: { charge: { id: "ch_inv" } } }] },
+    });
+
+    await expect(gw().retrieveInvoiceChargeId("in_1")).resolves.toBe("ch_inv");
+    expect(stripeMock.invoicesRetrieve).toHaveBeenCalledWith("in_1", {
+      expand: ["payments.data.payment.charge"],
+    });
+  });
+
+  it("aceita o charge como id solto, não só expandido", async () => {
+    stripeMock.invoicesRetrieve.mockResolvedValue({
+      payments: { data: [{ payment: { charge: "ch_str" } }] },
+    });
+    await expect(gw().retrieveInvoiceChargeId("in_1")).resolves.toBe("ch_str");
+  });
+
+  it("devolve null quando a fatura não gerou cobrança (valor zero, crédito)", async () => {
+    stripeMock.invoicesRetrieve.mockResolvedValue({ payments: { data: [] } });
+    await expect(gw().retrieveInvoiceChargeId("in_1")).resolves.toBeNull();
   });
 });
 
@@ -112,8 +220,6 @@ describe("createDonationSubscription", () => {
   const input = {
     amountCents: 3000,
     currency: "BRL",
-    applicationFeePercent: 5,
-    destinationAccountId: "acct_nucleo",
     customerEmail: "doador@example.org",
     productName: "Doação mensal — Núcleo A",
     productId: null,
@@ -129,14 +235,15 @@ describe("createDonationSubscription", () => {
     });
   });
 
-  it("omite application_fee_percent quando não há comissão", async () => {
-    await gw().createDonationSubscription({ ...input, applicationFeePercent: 0 });
-    expect(stripeMock.subscriptionsCreate.mock.calls[0]?.[0]).not.toHaveProperty(
-      "application_fee_percent",
-    );
+  it("não manda transfer_data: o repasse é por fatura paga, com a taxa real do ciclo", async () => {
+    await gw().createDonationSubscription(input);
+    const payload = stripeMock.subscriptionsCreate.mock.calls[0]?.[0];
+    // transfer_data na subscription repassaria o BRUTO todo mês (ADR-029).
+    expect(payload).not.toHaveProperty("transfer_data");
+    expect(payload).not.toHaveProperty("application_fee_percent");
   });
 
-  it("cria na plataforma com transfer_data, sem header de conta conectada e sem on_behalf_of", async () => {
+  it("cria na plataforma, sem header de conta conectada e sem on_behalf_of", async () => {
     await expect(gw().createDonationSubscription(input)).resolves.toEqual({
       subscriptionId: "sub_1",
       clientSecret: "cs_1",
@@ -146,8 +253,6 @@ describe("createDonationSubscription", () => {
     const [payload, opts] = stripeMock.subscriptionsCreate.mock.calls[0] ?? [];
     expect(payload).toMatchObject({
       customer: "cus_1",
-      transfer_data: { destination: "acct_nucleo" },
-      application_fee_percent: 5,
       payment_behavior: "default_incomplete",
     });
     // on_behalf_of faria do núcleo o settlement merchant — a plataforma é o MoR
@@ -188,7 +293,7 @@ describe("createConnectedAccount", () => {
       country: "BR",
       email: "nucleo@example.org",
       controller: {
-        // destination charge: o negativo cai no saldo da plataforma, então é ela a dona
+        // cobrança na plataforma: o negativo cai no saldo dela, então é ela a dona
         losses: { payments: "application" },
         fees: { payer: "application" },
         requirement_collection: "stripe",
@@ -229,31 +334,81 @@ describe("createAccountSession", () => {
 });
 
 describe("refundPaymentIntent", () => {
-  it("reverte o transfer e a application fee: em destination charge o dinheiro já saiu para o núcleo", async () => {
+  it("reverte o líquido repassado e só depois reembolsa o comprador", async () => {
+    stripeMock.transfersCreateReversal.mockResolvedValue({ id: "trr_1" });
     stripeMock.refundsCreate.mockResolvedValue({ id: "re_1" });
-    await gw().refundPaymentIntent("pi_1", "refund-pay-1");
 
-    expect(stripeMock.refundsCreate).toHaveBeenCalledWith(
-      {
-        payment_intent: "pi_1",
-        reverse_transfer: true,
-        refund_application_fee: true,
-      },
-      { idempotencyKey: "refund-pay-1" },
+    await expect(
+      gw().refundPaymentIntent({
+        providerId: "pi_1",
+        transferId: "tr_1",
+        netCents: 4761,
+        idempotencyKey: "refund-pay-1",
+      }),
+    ).resolves.toEqual({ reversalFailed: false });
+
+    // Reverte o LÍQUIDO: o Stripe não devolve a taxa de processamento, e quem fica com esse
+    // custo é a loja — a taxa é dela (ADR-029).
+    expect(stripeMock.transfersCreateReversal).toHaveBeenCalledWith(
+      "tr_1",
+      { amount: 4761 },
+      { idempotencyKey: "reversal:refund-pay-1" },
     );
+    const payload = stripeMock.refundsCreate.mock.calls[0]?.[0];
+    expect(payload).toMatchObject({ payment_intent: "pi_1" });
+    // Sem destination charge estes dois não existem mais; mandá-los é erro de API.
+    expect(payload).not.toHaveProperty("reverse_transfer");
+    expect(payload).not.toHaveProperty("refund_application_fee");
   });
 
-  it("erro do provider vira 502 payment_provider_error", async () => {
-    stripeMock.refundsCreate.mockRejectedValue(new Error("network"));
-    await expect(gw().refundPaymentIntent("pi_1", "refund-pay-1")).rejects.toMatchObject({
-      statusCode: 502,
-      message: "payment_provider_error",
+  it("reembolsa sem reverter quando o repasse ainda não saiu", async () => {
+    stripeMock.refundsCreate.mockResolvedValue({ id: "re_2" });
+
+    await gw().refundPaymentIntent({
+      providerId: "pi_2",
+      transferId: null,
+      netCents: 4761,
+      idempotencyKey: "refund-pay-2",
     });
+
+    expect(stripeMock.transfersCreateReversal).not.toHaveBeenCalled();
+    expect(stripeMock.refundsCreate).toHaveBeenCalled();
+  });
+
+  it("reembolsa o comprador mesmo se o reversal falhar por saldo da loja", async () => {
+    // A loja já sacou. Prender o reembolso do comprador ao caixa da loja seria punir quem
+    // não tem nada a ver com isso; a pendência volta para quem chamou registrar.
+    stripeMock.transfersCreateReversal.mockRejectedValue(
+      Object.assign(new Error("insufficient"), { code: "balance_insufficient" }),
+    );
+    stripeMock.refundsCreate.mockResolvedValue({ id: "re_3" });
+
+    await expect(
+      gw().refundPaymentIntent({
+        providerId: "pi_3",
+        transferId: "tr_3",
+        netCents: 4761,
+        idempotencyKey: "refund-pay-3",
+      }),
+    ).resolves.toEqual({ reversalFailed: true });
+    expect(stripeMock.refundsCreate).toHaveBeenCalled();
+  });
+
+  it("erro do provider no reembolso vira 502 payment_provider_error", async () => {
+    stripeMock.refundsCreate.mockRejectedValue(new Error("network"));
+    await expect(
+      gw().refundPaymentIntent({
+        providerId: "pi_1",
+        transferId: null,
+        netCents: 4761,
+        idempotencyKey: "refund-pay-1",
+      }),
+    ).rejects.toMatchObject({ statusCode: 502, message: "payment_provider_error" });
   });
 });
 
 describe("retrieveAccountStatus", () => {
-  it("lê a capability transfers, que é o que libera a destination charge", async () => {
+  it("lê a capability transfers, que é o que libera o repasse", async () => {
     stripeMock.accountsRetrieve.mockResolvedValue({
       capabilities: { transfers: "active", card_payments: "inactive" },
       charges_enabled: true,

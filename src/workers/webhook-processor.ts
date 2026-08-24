@@ -9,8 +9,11 @@ import {
 } from "./billing-webhook.js";
 import {
   cancelPaymentAggregate,
+  enqueueStripeTransfer,
+  enqueueStripeTransferForInvoice,
   enqueueWooviWithdraw,
   markPaymentPaid,
+  recordProviderFee,
   refundPaymentByPaymentId,
   refundPaymentByProviderId,
 } from "./payment-routing.js";
@@ -33,6 +36,8 @@ const uuidSchema = z.string().uuid();
 type StripeObject = {
   id?: string;
   payment_intent?: string;
+  /** Cobrança que a intent gerou: é dela que sai a taxa real e é ela que financia o repasse. */
+  latest_charge?: string;
   invoice?: string;
   subscription?: string;
   amount_paid?: number;
@@ -60,7 +65,8 @@ type StripePayload = {
   data?: { object?: StripeObject };
 };
 type WooviPayload = {
-  charge?: { correlationID?: string };
+  /** `charge.fee` é a taxa que a Woovi cobrou nesta cobrança, em centavos (ADR-029). */
+  charge?: { correlationID?: string; fee?: number };
   /** `pix.payer` é quem pagou de verdade — é o que prova posse da chave na verificação. */
   pix?: { payer?: { name?: string; taxID?: { taxID?: string } } };
 };
@@ -133,6 +139,22 @@ export async function processWebhookEvents(deps: {
             paymentId,
             providerId: object.id ?? null,
           });
+          // O repasse vai por outbox, não aqui: a taxa real exige uma chamada ao Stripe, e
+          // este worker não tem gateway. Vai por fila também pelo motivo do saque Woovi — o
+          // Stripe pode estar fora do ar agora, e perder o repasse é perder dinheiro de
+          // outra pessoa (ADR-029).
+          if (typeof object.latest_charge === "string") {
+            await enqueueStripeTransfer({
+              db: deps.db,
+              paymentId,
+              chargeId: object.latest_charge,
+            });
+          } else {
+            deps.log.error(
+              { paymentId },
+              "payment_intent.succeeded sem latest_charge: repasse não enfileirado",
+            );
+          }
         } else if (event.type === "payment_intent.canceled" && paymentId) {
           // Só "canceled" é terminal. "payment_intent.payment_failed" dispara em toda
           // tentativa recusada e a mesma intent pode ser retentada e depois aprovada —
@@ -162,6 +184,9 @@ export async function processWebhookEvents(deps: {
             invoiceId: invoice.id,
             amountCents: invoice.amount_paid,
           });
+          // Um repasse por ciclo, com a taxa real daquela cobrança. A assinatura não leva
+          // mais `transfer_data`, que repassaria o bruto todo mês (ADR-029).
+          await enqueueStripeTransferForInvoice({ db: deps.db, invoiceId: invoice.id });
         } else if (
           event.type === "customer.subscription.deleted" &&
           object.id &&
@@ -212,6 +237,16 @@ export async function processWebhookEvents(deps: {
               },
             });
             if (!verificacao) {
+              // A taxa real por cima da de contrato: o split já reteve
+              // WOOVI_FEE_FIXED_CENTS, e este é o número que o extrato mostra. Se a Woovi
+              // mudar de tabela, a diferença entre os dois é o que denuncia (ADR-029).
+              if (typeof payload.charge?.fee === "number") {
+                await recordProviderFee({
+                  db: deps.db,
+                  paymentId,
+                  providerFeeCents: payload.charge.fee,
+                });
+              }
               await markPaymentPaid({ db: deps.db, log: deps.log, paymentId, providerId: null });
               // O split já creditou a subconta, mas subconta é saldo virtual dentro da conta
               // da plataforma: sem o saque o dinheiro do núcleo não sai daqui.

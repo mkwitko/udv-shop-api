@@ -1,6 +1,7 @@
+import { env } from "../../../../config/env.js";
 import type { StripeGateway } from "../../../../gateways/stripe/stripe.gateway.js";
 import type { WooviGateway } from "../../../../gateways/woovi/woovi.gateway.js";
-import { wooviApplicationFeeCents } from "../../../../lib/application-fee.js";
+import { wooviRetainedFeeCents } from "../../../../lib/provider-fee.js";
 import { assertProviderConfigured } from "../../../../lib/store-payments.js";
 import { badGateway, NotFoundError, ValidationError } from "../../../../shared/errors.js";
 import {
@@ -53,13 +54,16 @@ export function createDonationService(deps: CreateDonationDeps) {
       campaignId = campaign.id;
     }
 
-    const storeFeeCents = Math.floor((input.amountCents * store.applicationFeeBps) / 10000);
-    // A Woovi recusa split de 100%, então o Pix retém ao menos 1 centavo. Grava-se o valor
-    // efetivo, não o da loja: o extrato precisa bater com o que a subconta recebeu.
-    const applicationFeeCents =
+    // Comissão da plataforma: zero em toda loja (ADR-027), e separada da taxa do provedor
+    // de propósito — juntar as duas diria que estamos cobrando comissão quando não estamos.
+    const applicationFeeCents = Math.floor((input.amountCents * store.applicationFeeBps) / 10000);
+    // Taxa do provedor (ADR-029). No Pix é retida no split agora, porque o split é fixado
+    // na criação da cobrança. No cartão só existe depois da cobrança aprovada, e quem a
+    // grava é o repasse — inclusive em cada ciclo da assinatura mensal.
+    const providerFeeCents =
       input.provider === "woovi"
-        ? wooviApplicationFeeCents(input.amountCents, storeFeeCents)
-        : storeFeeCents;
+        ? wooviRetainedFeeCents(input.amountCents, env.WOOVI_FEE_FIXED_CENTS)
+        : 0;
     // Mensal não tem TTL: a assinatura fica incompleta no Stripe até o cartão confirmar.
     const expiresAt =
       input.type === "one_time" ? new Date(Date.now() + DONATION_TTL_MINUTES * 60 * 1000) : null;
@@ -72,6 +76,7 @@ export function createDonationService(deps: CreateDonationDeps) {
       type: input.type,
       amountCents: input.amountCents,
       applicationFeeCents,
+      providerFeeCents,
       anonymous: input.anonymous,
       message: input.message ?? null,
       publicToken: input.publicToken,
@@ -83,13 +88,11 @@ export function createDonationService(deps: CreateDonationDeps) {
     let instructions: DonationPaymentInstructions;
     try {
       if (input.type === "monthly") {
-        // Destination charge na plataforma, igual à doação única (ver ADR-025).
+        // Cobrança na plataforma; o repasse de cada ciclo sai por fatura paga, já com a
+        // taxa real daquele ciclo descontada (ADR-029).
         const subscription = await deps.stripe.createDonationSubscription({
           amountCents: input.amountCents,
           currency: donation.currency,
-          // bps → percentual (500 bps = 5%). Stripe aceita até 2 casas.
-          applicationFeePercent: store.applicationFeeBps / 100,
-          destinationAccountId: store.stripeAccountId as string,
           // Chamado de novo porque o narrowing da guarda acima não atravessa este bloco.
           customerEmail: requireSubscriberEmail(input.userEmail),
           productName: `Doação mensal — ${store.name}`.slice(0, 140),
@@ -110,8 +113,6 @@ export function createDonationService(deps: CreateDonationDeps) {
         const intent = await deps.stripe.createPaymentIntent({
           amountCents: input.amountCents,
           currency: donation.currency,
-          applicationFeeCents,
-          destinationAccountId: store.stripeAccountId as string,
           metadata: { donationId: donation.id, paymentId },
         });
         await deps.donations.attachProviderId(paymentId, intent.providerId);
@@ -122,7 +123,7 @@ export function createDonationService(deps: CreateDonationDeps) {
           correlationID: paymentId,
           expiresInSeconds: DONATION_TTL_MINUTES * 60,
           splitPixKey: store.wooviPixKey as string,
-          splitValueCents: input.amountCents - applicationFeeCents,
+          splitValueCents: input.amountCents - applicationFeeCents - providerFeeCents,
           comment: `Doação — ${store.name}`.slice(0, 140),
         });
         await deps.donations.attachProviderId(paymentId, charge.providerId);

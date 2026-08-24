@@ -3,6 +3,7 @@ import type { PrismaClient } from "@prisma/client";
 import type { FastifyBaseLogger } from "fastify";
 import { env } from "../config/env.js";
 import type { EmailGateway } from "../gateways/email/email.gateway.js";
+import type { StripeGateway } from "../gateways/stripe/stripe.gateway.js";
 import type { WooviGateway } from "../gateways/woovi/woovi.gateway.js";
 import { createInterestsRepository } from "../http/api/interests/interests.repository.js";
 import { createRafflesRepository } from "../http/api/raffles/raffles.repository.js";
@@ -32,6 +33,7 @@ export async function relayOutbox(deps: {
   db: PrismaClient;
   email: EmailGateway;
   woovi: WooviGateway;
+  stripe: StripeGateway;
   log: FastifyBaseLogger;
 }): Promise<number> {
   // Reap stale claims before doing anything else so an abandoned row is eligible for
@@ -111,6 +113,7 @@ export async function relayOutbox(deps: {
           where: { id: orderId },
           include: {
             items: true,
+            payment: { select: { providerFeeCents: true } },
             user: { select: { name: true } },
             store: { select: { slug: true, name: true } },
           },
@@ -127,12 +130,22 @@ export async function relayOutbox(deps: {
               )
               .join("");
             const link = `${env.WEB_ORIGIN}/gestao/${order.store.slug}/pedidos`;
+            // A taxa do provedor sai do que a loja recebe (ADR-029), e a loja precisa ver
+            // isso no aviso da venda, não descobrir no extrato. No cartão ela ainda pode não
+            // estar gravada quando este e-mail sai (chega junto com o repasse): aí o e-mail
+            // fala só do total — prometer um líquido errado é pior que não falar dele.
+            const feeCents = order.payment?.providerFeeCents ?? null;
+            const brl = (cents: number) => `R$ ${(cents / 100).toFixed(2)}`;
+            const liquido =
+              feeCents === null
+                ? ""
+                : `<p>Taxa de pagamento: −${brl(feeCents)} · <strong>Você recebe ${brl(order.totalCents - feeCents)}</strong></p>`;
             await deps.email.send({
               to,
               // O assunto é a notificação: quem lê no celular precisa saber que vendeu sem
               // abrir o e-mail.
               subject: `Novo pedido pago: R$ ${(order.totalCents / 100).toFixed(2)} — ${order.store.name}`,
-              html: `<p>Boa notícia: você vendeu.</p><ul>${lines}</ul><p>Total: <strong>R$ ${(order.totalCents / 100).toFixed(2)}</strong></p><p>Cliente: ${escapeHtml(order.user.name)} — telefone ${escapeHtml(order.contactPhone)}</p>${order.note ? `<p>Recado do cliente: ${escapeHtml(order.note)}</p>` : ""}<p><strong>Próximo passo:</strong> fale com essa pessoa para combinar a entrega.</p><p><a href="${link}">Abrir os pedidos da loja</a></p>`,
+              html: `<p>Boa notícia: você vendeu.</p><ul>${lines}</ul><p>Total: <strong>R$ ${(order.totalCents / 100).toFixed(2)}</strong></p>${liquido}<p>Cliente: ${escapeHtml(order.user.name)} — telefone ${escapeHtml(order.contactPhone)}</p>${order.note ? `<p>Recado do cliente: ${escapeHtml(order.note)}</p>` : ""}<p><strong>Próximo passo:</strong> fale com essa pessoa para combinar a entrega.</p><p><a href="${link}">Abrir os pedidos da loja</a></p>`,
             });
           }
         }
@@ -244,6 +257,68 @@ export async function relayOutbox(deps: {
           { orderId, donationId, paymentId },
           "pagamento órfão: pagamento capturado para agregado não pendente, reembolso manual necessário",
         );
+      } else if (event.type === "stripe.transfer") {
+        // Repasse do líquido: bruto menos a taxa que o Stripe cobrou de fato nesta cobrança.
+        // É aqui que a taxa deixa de ser da plataforma e passa a ser da loja (ADR-029).
+        const { paymentId, chargeId, invoiceId } = event.payload as {
+          paymentId: string;
+          chargeId?: string;
+          invoiceId?: string;
+        };
+        const payment = await deps.db.payment.findUnique({
+          where: { id: paymentId },
+          select: {
+            stripeTransferId: true,
+            order: { select: { store: { select: { id: true, stripeAccountId: true } } } },
+            donation: { select: { store: { select: { id: true, stripeAccountId: true } } } },
+          },
+        });
+        const store = payment?.order?.store ?? payment?.donation?.store;
+        if (!payment) {
+          deps.log.error({ paymentId }, "repasse Stripe de pagamento inexistente");
+        } else if (payment.stripeTransferId) {
+          // Já repassado. A chave de idempotência do Stripe também protegeria, mas sair
+          // antes evita uma chamada de rede em todo reprocessamento.
+          deps.log.info({ paymentId }, "repasse Stripe já feito, nada a fazer");
+        } else if (!store?.stripeAccountId) {
+          // O dinheiro fica na plataforma esperando, que é o lugar certo para ele esperar:
+          // o comprador não pode ser penalizado por problema de Connect da loja.
+          deps.log.error(
+            { paymentId, storeId: store?.id },
+            "repasse Stripe sem conta conectada: dinheiro retido na plataforma",
+          );
+        } else {
+          // Pagamento único traz o charge no próprio evento; ciclo de assinatura traz a
+          // fatura, e o charge dela sai de uma chamada ao Stripe — `invoice.charge` e
+          // `invoice.payment_intent` não existem mais nesta versão da API.
+          const resolvedChargeId =
+            chargeId ?? (invoiceId ? await deps.stripe.retrieveInvoiceChargeId(invoiceId) : null);
+          if (!resolvedChargeId) {
+            // Fatura de valor zero (cupom, crédito) não gera cobrança: não há taxa nem
+            // repasse, e isso não é erro de ninguém.
+            deps.log.warn(
+              { paymentId, invoiceId },
+              "repasse Stripe sem cobrança: fatura paga sem charge, nada a repassar",
+            );
+          } else {
+            const fee = await deps.stripe.retrieveChargeFee(resolvedChargeId);
+            const transfer = await deps.stripe.createTransfer({
+              amountCents: fee.amountCents - fee.feeCents,
+              currency: fee.currency,
+              destinationAccountId: store.stripeAccountId,
+              chargeId: resolvedChargeId,
+              idempotencyKey: `transfer:${paymentId}`,
+            });
+            await deps.db.payment.update({
+              where: { id: paymentId },
+              data: { providerFeeCents: fee.feeCents, stripeTransferId: transfer.transferId },
+            });
+            deps.log.info(
+              { paymentId, storeId: store.id, feeCents: fee.feeCents },
+              "repasse Stripe feito com a taxa real descontada",
+            );
+          }
+        }
       } else if (event.type === "woovi.withdraw") {
         // Tira o saldo virtual da subconta e manda para a chave Pix do núcleo. É o passo
         // que faz a promessa "o dinheiro vai direto para quem organiza" ser verdade no

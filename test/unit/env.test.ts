@@ -83,3 +83,15 @@ describe("WOOVI_BASE_URL", () => {
     expect(() => EnvSchema.parse({ ...base, WOOVI_BASE_URL: "api.woovi.com" })).toThrow();
   });
 });
+
+describe("WOOVI_FEE_FIXED_CENTS", () => {
+  it("vale 85 por padrão: é a taxa de contrato da Woovi, R$ 0,85 por Pix", () => {
+    expect(EnvSchema.parse(base).WOOVI_FEE_FIXED_CENTS).toBe(85);
+  });
+
+  it("aceita override numérico vindo do ambiente como string", () => {
+    expect(EnvSchema.parse({ ...base, WOOVI_FEE_FIXED_CENTS: "99" }).WOOVI_FEE_FIXED_CENTS).toBe(
+      99,
+    );
+  });
+});

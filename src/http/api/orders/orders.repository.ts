@@ -53,6 +53,8 @@ export interface OrdersRepository {
     items: NewOrderItem[];
     totalCents: number;
     applicationFeeCents: number;
+    /** Taxa do provedor retida no split (Woovi) ou 0 quando ela só é conhecida depois (Stripe). */
+    providerFeeCents: number;
     contactPhone: string;
     note: string | null;
     /** Chave do recibo público. Só vem preenchida quando o pedido nasce sem sessão. */
@@ -103,6 +105,11 @@ export interface OrdersRepository {
     provider: "stripe" | "woovi";
     providerId: string | null;
     status: string;
+    amountCents: number;
+    /** Taxa do provedor; `null` em pagamento anterior ao ADR-029, quando a plataforma pagou. */
+    providerFeeCents: number | null;
+    /** Transfer do repasse; `null` quando o repasse ainda não saiu. */
+    stripeTransferId: string | null;
   } | null>;
 }
 
@@ -176,6 +183,7 @@ export function createOrdersRepository(db: PrismaClient): OrdersRepository {
                 provider: input.provider,
                 amountCents: input.totalCents,
                 applicationFeeCents: input.applicationFeeCents,
+                providerFeeCents: input.providerFeeCents,
               },
             },
           },
@@ -356,7 +364,15 @@ export function createOrdersRepository(db: PrismaClient): OrdersRepository {
     findPaymentByOrderId: async (orderId) => {
       const p = await db.payment.findUnique({ where: { orderId } });
       return p
-        ? { id: p.id, provider: p.provider, providerId: p.providerId, status: p.status }
+        ? {
+            id: p.id,
+            provider: p.provider,
+            providerId: p.providerId,
+            status: p.status,
+            amountCents: p.amountCents,
+            providerFeeCents: p.providerFeeCents,
+            stripeTransferId: p.stripeTransferId,
+          }
         : null;
     },
   };

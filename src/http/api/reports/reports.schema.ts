@@ -7,9 +7,12 @@ const MonthMoney = z.object({
   salesGrossCents: z.number().int(),
   donationsCount: z.number().int(),
   donationsGrossCents: z.number().int(),
+  /** Comissão da plataforma sobre a venda. Zero: o modelo é mensalidade (ADR-027). */
   feeCents: z.number().int(),
+  /** Taxa que Stripe/Woovi cobraram, descontada do repasse da loja (ADR-029). */
+  providerFeeCents: z.number().int(),
   payoutCents: z.number().int(),
-  /** Entrou menos taxa menos repasse: o que sobra para a loja. */
+  /** Entrou menos as taxas menos repasse: o que sobra para a loja. */
   netCents: z.number().int(),
 });
 

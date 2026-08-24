@@ -5,9 +5,10 @@ credenciais).
 
 ## Stripe
 
-Processamento de pagamento por cartão de crédito/débito via Stripe, com
-suporte a **destination charges** (cobrança na conta de um parceiro com fee
-aplicada na plataforma).
+Processamento de pagamento por cartão de crédito/débito via Stripe, em
+**separate charges and transfers**: a cobrança nasce na conta da plataforma e o
+repasse para o núcleo sai depois, já com a taxa real do Stripe descontada
+(ADR-029).
 
 ### Configuração
 
@@ -39,21 +40,36 @@ não por `dashboard.stripe.com` — ver ADR-024.
 
 ### Fluxo
 
+**Separate charges and transfers** desde o ADR-029: a cobrança nasce inteira na plataforma e
+o repasse sai depois, já descontada a taxa real. É o único jeito de a taxa ser da loja —
+`transfer_data` e `application_fee_amount` são fixados na criação da cobrança, quando a taxa
+que o `balance_transaction` revela ainda não existe.
+
 0. Pré-requisito: a loja precisa ter conta conectada **e** a capability `transfers`
-   ativa (`store.stripeTransfersEnabled`). Em destination charge quem cobra é a
-   plataforma; `charges_enabled` fala da conta do núcleo cobrar direto, que não é o
-   nosso fluxo. Sem `transfers` o Stripe recusa a cobrança, então checkout e doação
-   barram antes com `payments_not_configured`.
+   ativa (`store.stripeTransfersEnabled`). Quem cobra é a plataforma; `charges_enabled` fala
+   da conta do núcleo cobrar direto, que não é o nosso fluxo. Sem `transfers` o repasse é
+   recusado, então checkout e doação barram antes com `payments_not_configured`.
 1. Checkout cria `PaymentIntent` via SDK (`stripe.paymentIntents.create`):
    - `amount`: total em centavos.
    - `currency`: "brl" (lowercase).
    - `automatic_payment_methods: { enabled: true }` — aceita cartão, Apple Pay, etc.
-   - `application_fee_amount`: **omitido** quando a loja não tem comissão (ADR-027), que é
-     o caso padrão; presente só se `applicationFeeBps > 0`.
-   - `transfer_data: { destination: store.stripeAccountId }` — destino da grana.
    - `metadata: { orderId, paymentId }` — rastreamento.
+   - **sem** `transfer_data`, `application_fee_amount` ou `on_behalf_of`.
 2. Devolve `clientSecret` para o frontend completar no Payment Element.
 3. Webhook POST a `/webhooks/stripe` quando pagamento muda de status.
+4. `payment_intent.succeeded` enfileira um evento de outbox `stripe.transfer` com o
+   `latest_charge`. **Sem esse evento o dinheiro não chega no núcleo**: ele fica no saldo da
+   plataforma. Se uma loja reclamar que não recebeu, é a primeira coisa a olhar.
+5. O relay (`outbox-relay.ts`) lê a taxa real com
+   `charges.retrieve(chargeId, { expand: ["balance_transaction"] })`, repassa
+   `amount − fee` com `transfers.create({ source_transaction: chargeId })` e grava
+   `Payment.providerFeeCents` e `Payment.stripeTransferId`. `source_transaction` é
+   obrigatório: sem ele o Stripe saca do saldo disponível da plataforma, e um dia de volume
+   alto derruba tudo em `balance_insufficient`.
+
+Loja sem `stripeAccountId` no momento do repasse: o evento é fechado com log de erro e o
+dinheiro **fica na plataforma**, esperando. É o lugar certo para ele esperar — o comprador
+não pode ser penalizado por problema de Connect da loja.
 
 ### Eventos e webhook a configurar na Woovi
 
@@ -77,11 +93,18 @@ deles — ainda funciona, mas é dívida conhecida.
 
 ### Doação mensal
 
-Assinatura criada na conta da **plataforma** com `transfer_data.destination` para o núcleo
-e `application_fee_percent`, sem `on_behalf_of` (ADR-025). O `Product` exigido pelo
+Assinatura criada na conta da **plataforma**, sem `transfer_data`, sem
+`application_fee_percent` e sem `on_behalf_of` (ADR-025 + ADR-029). O `Product` exigido pelo
 `price_data` é um por loja (`Store.stripeDonationProductId`), reusado entre doações. Como
 a assinatura SaaS da loja também vive na plataforma, o webhook separa as duas pelo lookup
 do `subscriptionRef` nas doações — não por `event.account`.
+
+O repasse é **por ciclo**: cada `invoice.paid` enfileira um `stripe.transfer` com o
+`invoiceId`, e o relay acha o charge daquela fatura com
+`invoices.retrieve(id, { expand: ["payments.data.payment.charge"] })`. `invoice.charge` e
+`invoice.payment_intent` não existem mais nesta versão da API, e o limite de 4 níveis de
+expand impede puxar o `balance_transaction` na mesma chamada — daí as duas chamadas. Fatura
+sem cobrança (valor zero, crédito) fecha o evento com log de aviso: não há taxa nem repasse.
 
 ### Eventos processados
 
@@ -105,13 +128,25 @@ do `subscriptionRef` nas doações — não por `event.account`.
 
 ### Refund
 
-Chamado via `stripe.refunds.create({ payment_intent, reverse_transfer: true,
-refund_application_fee: true })`. As duas flags não são opcionais em destination
-charge: o dinheiro já foi para o núcleo quando a cobrança teve sucesso, e um refund
-sem `reverse_transfer` sai inteiro do saldo da **plataforma** enquanto o núcleo fica
-com a parte dele. `refund_application_fee` devolve também a taxa, que não faz sentido
-manter numa venda que deixou de existir. Não devolve estoque nem reativa pedido (ver
-ADR-012). Webhook `charge.refunded` confirma.
+Dois passos, nesta ordem: `transfers.createReversal(stripeTransferId, { amount: netCents })`
+e depois `refunds.create({ payment_intent })`. `reverse_transfer` e `refund_application_fee`
+**não existem mais aqui** — são de destination charge, e mandá-los é erro de API.
+
+O que volta da loja é o **líquido** (`amountCents − providerFeeCents`), não o bruto: o Stripe
+não devolve a taxa de processamento no reembolso, e quem fica com esse custo é a loja
+(ADR-029). O comprador recebe o valor cheio.
+
+Dois casos que não são erro:
+
+- **Reembolso antes do repasse** (`stripeTransferId` nulo): nada a reverter, e o controller
+  marca o evento de outbox `stripe.transfer` pendente como processado — senão o relay
+  repassaria depois o dinheiro de um pedido que não existe mais.
+- **Reversal falha** (a loja já sacou; o Stripe não puxa de conta vazia): o reembolso ao
+  comprador acontece do mesmo jeito, e a pendência sai em log de erro
+  ("reversal do repasse falhou") para acerto humano. Prender o comprador ao caixa da loja
+  seria punir quem não tem nada a ver com isso.
+
+Não devolve estoque nem reativa pedido (ver ADR-012). Webhook `charge.refunded` confirma.
 
 ---
 
@@ -145,6 +180,15 @@ Variáveis de ambiente:
   **autenticou** — é sinal de ambiente certo, não de falha.
 - `WOOVI_WEBHOOK_HMAC_SECRET` — secret HMAC para assinatura de webhook.
   Obrigatória em produção. Criar em Woovi Dashboard → Webhooks.
+- `WOOVI_FEE_FIXED_CENTS` — taxa fixa da Woovi por Pix, **em centavos** (padrão `85`,
+  R$ 0,85 de contrato). Diferente do Stripe, isto **entra em cálculo**: o split retém esse
+  valor para a loja pagar a taxa do Pix (ADR-029). Só mexer quando o contrato mudar.
+
+  A taxa real de cada cobrança chega em `charge.fee` no `OPENPIX:CHARGE_COMPLETED` e vai para
+  `Payment.providerFeeCents`. **Não dá para usá-la no split**: o split é fixado na criação da
+  cobrança e `POST /api/v1/subaccount/{id}/withdraw` saca o saldo inteiro, sem valor parcial.
+  Se a Woovi mudar de tabela sem atualizarmos a constante, a plataforma volta a pagar a
+  diferença em silêncio — o que denuncia é `providerFeeCents` divergir do valor retido.
 
 ### Subconta do núcleo
 

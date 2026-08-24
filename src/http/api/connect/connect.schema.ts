@@ -11,7 +11,7 @@ export const WooviPixKeyStatusEnum = z.enum(["legacy", "pending", "verified"]);
 export const ConnectStatusResponse = z.object({
   stripe: z.object({
     connected: z.boolean(),
-    /** Capability `transfers`: é o que libera a loja a vender por destination charge. */
+    /** Capability `transfers`: é o que libera o repasse da venda chegar na loja. */
     transfersEnabled: z.boolean(),
     chargesEnabled: z.boolean(),
     payoutsEnabled: z.boolean(),

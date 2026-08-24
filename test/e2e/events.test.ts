@@ -858,10 +858,11 @@ describe("eventos", () => {
       paidQty: 2,
       grossCents: 6000,
       payoutCents: 2000,
-      // 1 centavo mesmo com comissão zero: a Woovi recusa split de 100%, então esse
-      // centavo fica retido e NÃO chega na conta da loja. O líquido tem de dizer isso.
-      feeCents: 1,
-      netCents: 3999,
+      // Comissão zero, mas a taxa do Pix (R$ 0,85) é descontada do repasse (ADR-029):
+      // ela NÃO chega na conta da loja, e o líquido tem de dizer isso. O pedido pago é o
+      // único desta linha, então a taxa dele inteira cai aqui.
+      feeCents: 85,
+      netCents: 3915,
       checkedInQty: 0,
     });
   });

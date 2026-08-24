@@ -70,11 +70,18 @@ const BaseEnvSchema = z.object({
   // consumimos três eventos (pago, expirado, estornado), aqui vão os três segredos
   // separados por vírgula — qualquer um que assine o corpo vale.
   WOOVI_WEBHOOK_HMAC_SECRET: z.string().default(""),
-  // Taxa que Woovi e Stripe cobram por transação, como texto ("0,99%", "3,99% + R$ 0,39").
-  // Quem paga é a plataforma (`fees.payer: application`, ADR-024), então isto não entra em
-  // cálculo nenhum: é declaração. Texto livre de propósito — número de contrato muda por
-  // acordo e por volume, e um percentual chumbado no código viraria mentira silenciosa.
-  // Vazio = a tela só diz que a taxa existe e é paga pela plataforma, sem número.
+  // Taxa fixa que a Woovi cobra por Pix, em centavos. R$ 0,85 de contrato. Diferente do
+  // Stripe, o split da Woovi é definido na CRIAÇÃO da cobrança, quando a taxa real ainda
+  // não existe — e o saque da subconta só leva o saldo inteiro. Então este número é a
+  // única alavanca para a loja pagar a taxa do Pix (ADR-029). A taxa real chega depois, em
+  // `charge.fee` do webhook, e é ela que vai para `Payment.providerFeeCents`.
+  WOOVI_FEE_FIXED_CENTS: z.coerce.number().int().min(0).default(85),
+  // Taxa que Woovi e Stripe cobram por transação, como texto ("R$ 0,85 por Pix",
+  // "3,99% + R$ 0,39"). É declaração para a tela de Recebimento, não entra em cálculo: o
+  // Stripe usa a taxa real do `balance_transaction` e a Woovi usa WOOVI_FEE_FIXED_CENTS.
+  // Texto livre de propósito — número de contrato muda por acordo e por volume, e um
+  // percentual chumbado no código viraria mentira silenciosa.
+  // Vazio = a tela só diz que a taxa existe e sai do valor recebido, sem número.
   PROVIDER_FEE_PIX_TEXT: z.string().default(""),
   PROVIDER_FEE_CARD_TEXT: z.string().default(""),
   // Liga o gateway Pix falso com autoconfirmação em ~8s — só para demo/desenvolvimento
