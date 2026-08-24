@@ -8,7 +8,10 @@ export type MonthRow = {
   salesGrossCents: number;
   donationsCount: number;
   donationsGrossCents: number;
+  /** Comissão da plataforma. Zero em toda loja (ADR-027), e visível de propósito. */
   feeCents: number;
+  /** Taxa que Stripe/Woovi cobraram, descontada do repasse da loja (ADR-029). */
+  providerFeeCents: number;
   payoutCents: number;
 };
 
@@ -58,6 +61,7 @@ export function createReportsRepository(db: PrismaClient): ReportsRepository {
           donations_count: number;
           donations_gross: number;
           fee: number;
+          provider_fee: number;
         }>
       >`
         select to_char(date_trunc('month', p.created_at), 'YYYY-MM') as month,
@@ -65,7 +69,10 @@ export function createReportsRepository(db: PrismaClient): ReportsRepository {
                coalesce(sum(case when p.order_id is not null then p.amount_cents else 0 end), 0)::int as sales_gross,
                count(p.donation_id)::int as donations_count,
                coalesce(sum(case when p.donation_id is not null then p.amount_cents else 0 end), 0)::int as donations_gross,
-               coalesce(sum(p.application_fee_cents), 0)::int as fee
+               coalesce(sum(p.application_fee_cents), 0)::int as fee,
+               -- coalesce no NULL: pagamento anterior ao ADR-029 não tem taxa registrada
+               -- porque a plataforma a pagou. Conta como zero para a loja, que é a verdade.
+               coalesce(sum(coalesce(p.provider_fee_cents, 0)), 0)::int as provider_fee
           from payments p
           left join orders o on o.id = p.order_id
           left join donations d on d.id = p.donation_id
@@ -96,6 +103,7 @@ export function createReportsRepository(db: PrismaClient): ReportsRepository {
           donationsCount: row.donations_count,
           donationsGrossCents: row.donations_gross,
           feeCents: row.fee,
+          providerFeeCents: row.provider_fee,
           payoutCents: payoutByMonth.get(row.month) ?? 0,
         }))
         .sort((a, b) => (a.month < b.month ? 1 : -1));

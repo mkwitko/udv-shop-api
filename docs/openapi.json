@@ -13501,6 +13501,11 @@
                             "minimum": -9007199254740991,
                             "maximum": 9007199254740991
                           },
+                          "providerFeeCents": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
                           "payoutCents": {
                             "type": "integer",
                             "minimum": -9007199254740991,
@@ -13519,6 +13524,7 @@
                           "donationsCount",
                           "donationsGrossCents",
                           "feeCents",
+                          "providerFeeCents",
                           "payoutCents",
                           "netCents"
                         ],
@@ -13553,6 +13559,11 @@
                           "minimum": -9007199254740991,
                           "maximum": 9007199254740991
                         },
+                        "providerFeeCents": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
                         "payoutCents": {
                           "type": "integer",
                           "minimum": -9007199254740991,
@@ -13570,6 +13581,7 @@
                         "donationsCount",
                         "donationsGrossCents",
                         "feeCents",
+                        "providerFeeCents",
                         "payoutCents",
                         "netCents"
                       ],

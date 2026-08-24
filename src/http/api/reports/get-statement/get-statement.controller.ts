@@ -36,7 +36,12 @@ export const getStatementRoute: FastifyPluginAsync = async (app) => {
 
       const withNet = rows.map((row) => ({
         ...row,
-        netCents: row.salesGrossCents + row.donationsGrossCents - row.feeCents - row.payoutCents,
+        netCents:
+          row.salesGrossCents +
+          row.donationsGrossCents -
+          row.feeCents -
+          row.providerFeeCents -
+          row.payoutCents,
       }));
       const totals = withNet.reduce(
         (acc, row) => ({
@@ -45,6 +50,7 @@ export const getStatementRoute: FastifyPluginAsync = async (app) => {
           donationsCount: acc.donationsCount + row.donationsCount,
           donationsGrossCents: acc.donationsGrossCents + row.donationsGrossCents,
           feeCents: acc.feeCents + row.feeCents,
+          providerFeeCents: acc.providerFeeCents + row.providerFeeCents,
           payoutCents: acc.payoutCents + row.payoutCents,
           netCents: acc.netCents + row.netCents,
         }),
@@ -54,6 +60,7 @@ export const getStatementRoute: FastifyPluginAsync = async (app) => {
           donationsCount: 0,
           donationsGrossCents: 0,
           feeCents: 0,
+          providerFeeCents: 0,
           payoutCents: 0,
           netCents: 0,
         },

@@ -113,11 +113,55 @@ describe("extrato e exportação", () => {
       donationsCount: 0,
       donationsGrossCents: 0,
       feeCents: 500,
+      // taxa do provedor ainda não gravada neste pagamento do fixture
+      providerFeeCents: 0,
       payoutCents: 6000,
       netCents: 3500,
     });
     expect(body.months).toHaveLength(1);
     expect(body.payoutsOpenCents).toBe(6000);
+  });
+
+  it("mostra a taxa do provedor separada da comissão e desconta as duas do líquido", async () => {
+    const { store, order } = await seedMovement();
+    // Cartão: R$ 4,39 de taxa do Stripe, e comissão zero como em toda loja hoje.
+    await db.payment.update({
+      where: { orderId: order.id },
+      data: { applicationFeeCents: 0, providerFeeCents: 439 },
+    });
+    const { token } = await tokenWithRole(app, "adm-taxa@example.org", store.id, "admin");
+
+    const res = await app.inject({
+      method: "GET",
+      url: "/stores/nucleo-a/statement",
+      headers: auth(token),
+    });
+
+    expect(res.statusCode).toBe(200);
+    const { totals } = res.json();
+    // A plataforma não cobra comissão, e o zero fica visível de propósito.
+    expect(totals.feeCents).toBe(0);
+    expect(totals.providerFeeCents).toBe(439);
+    expect(totals.netCents).toBe(10000 - 439 - 6000);
+  });
+
+  it("conta pagamento antigo sem taxa registrada como zero, não como erro", async () => {
+    const { store, order } = await seedMovement();
+    // `null` é pagamento anterior ao ADR-029: a plataforma pagou a taxa, a loja não.
+    await db.payment.update({
+      where: { orderId: order.id },
+      data: { applicationFeeCents: 0, providerFeeCents: null },
+    });
+    const { token } = await tokenWithRole(app, "adm-nulo@example.org", store.id, "admin");
+
+    const res = await app.inject({
+      method: "GET",
+      url: "/stores/nucleo-a/statement",
+      headers: auth(token),
+    });
+
+    expect(res.json().totals.providerFeeCents).toBe(0);
+    expect(res.json().totals.netCents).toBe(10000 - 6000);
   });
 
   it("repasse já pago sai do saldo em aberto, mas continua no extrato do mês", async () => {
