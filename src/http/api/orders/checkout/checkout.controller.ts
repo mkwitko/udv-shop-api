@@ -5,6 +5,7 @@ import { createGuestIdentityRepo, resolveActor } from "../../../../lib/guest-ide
 import { ValidationError } from "../../../../shared/errors.js";
 import { assertHumanIfGuest } from "../../../hooks/captcha.js";
 import { strictLimit } from "../../../plugins/rate-limit.js";
+import { createEventsRepository } from "../../events/events.repository.js";
 import { createProductsRepository } from "../../products/products.repository.js";
 import { createStoresRepository } from "../../stores/stores.repository.js";
 import { createOrdersRepository, toOrderResponse } from "../orders.repository.js";
@@ -16,6 +17,7 @@ export const checkoutRoute: FastifyPluginAsync = async (app) => {
     orders: createOrdersRepository(db),
     stores: createStoresRepository(db),
     products: createProductsRepository(db),
+    events: createEventsRepository(db),
     stripe: app.gateways.stripe,
     woovi: app.gateways.woovi,
   });

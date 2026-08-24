@@ -34,6 +34,7 @@ function seedStore() {
       name: "Núcleo X",
       status: "active",
       wooviPixKey: PIX,
+      wooviPixKeyStatus: "verified" as const,
       wooviSubaccountId: PIX,
     },
   });

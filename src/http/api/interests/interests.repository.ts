@@ -1,4 +1,4 @@
-import type { Prisma, PrismaClient, ProductInterestStatus } from "@prisma/client";
+import type { InterestStatus, Prisma, PrismaClient } from "@prisma/client";
 import type { FastifyBaseLogger } from "fastify";
 import {
   afterCursorWhere,
@@ -8,7 +8,7 @@ import {
   toPage,
 } from "../../../lib/cursor.js";
 import { maskPhone } from "../../../lib/mask.js";
-import { DEMAND_MAX_PRODUCTS } from "./interests.schema.js";
+import { DEMAND_MAX_SUBJECTS } from "./interests.schema.js";
 
 const INTEREST_INCLUDE = {
   product: {
@@ -21,23 +21,42 @@ const INTEREST_INCLUDE = {
       store: { select: { slug: true, name: true } },
     },
   },
+  event: {
+    select: {
+      id: true,
+      slug: true,
+      name: true,
+      priceCents: true,
+      at: true,
+      location: true,
+      store: { select: { slug: true, name: true } },
+    },
+  },
   user: { select: { name: true, phone: true } },
-} satisfies Prisma.ProductInterestInclude;
+} satisfies Prisma.InterestInclude;
 
-export type InterestWithDetails = Prisma.ProductInterestGetPayload<{
+export type InterestWithDetails = Prisma.InterestGetPayload<{
   include: typeof INTEREST_INCLUDE;
 }>;
 
+/** O alvo da espera: produto esgotado ou evento lotado. Sempre um, nunca os dois. */
+export type InterestTarget = { productId: string } | { eventId: string };
+
+function targetWhere(target: InterestTarget): Prisma.InterestWhereInput {
+  return "productId" in target ? { productId: target.productId } : { eventId: target.eventId };
+}
+
 export interface InterestsRepository {
-  upsertOpen(input: {
-    productId: string;
-    userId: string;
-    qty: number;
-    note: string | null;
-  }): Promise<InterestWithDetails>;
+  upsertOpen(
+    input: InterestTarget & {
+      userId: string;
+      qty: number;
+      note: string | null;
+    },
+  ): Promise<InterestWithDetails>;
   listMineCursor(args: {
     userId: string;
-    status: ProductInterestStatus | null;
+    status: InterestStatus | null;
     limit: number;
     cursor: string | null;
   }): Promise<CursorPage<InterestWithDetails>>;
@@ -45,38 +64,54 @@ export interface InterestsRepository {
   cancelMine(id: string, userId: string): Promise<boolean>;
   listByStoreCursor(args: {
     storeId: string;
-    productId: string | null;
-    status: ProductInterestStatus | null;
+    target: InterestTarget | null;
+    status: InterestStatus | null;
     limit: number;
     cursor: string | null;
   }): Promise<CursorPage<InterestWithDetails>>;
   aggregateDemand(storeId: string): Promise<
     Array<{
-      product: { slug: string; name: string; priceCents: number; availability: string };
+      kind: "produto" | "evento";
+      product: { slug: string; name: string; priceCents: number; availability: string } | null;
+      event: {
+        slug: string;
+        name: string;
+        priceCents: number;
+        at: string;
+        location: string | null;
+      } | null;
       openCount: number;
       notifiedCount: number;
       totalQty: number;
     }>
   >;
-  notifyArrival(productId: string, log: FastifyBaseLogger): Promise<number>;
-  convertForOrder(input: { userId: string; productIds: string[] }): Promise<number>;
+  notifyArrival(target: InterestTarget, log: FastifyBaseLogger): Promise<number>;
+  /** Fecha a fila de quem comprou. Produtos e eventos do mesmo pedido, de uma vez. */
+  convertForOrder(input: {
+    userId: string;
+    productIds: string[];
+    eventIds: string[];
+  }): Promise<number>;
 }
 
 export function createInterestsRepository(db: PrismaClient): InterestsRepository {
   return {
-    upsertOpen: ({ productId, userId, qty, note }) =>
-      db.productInterest.upsert({
-        where: { productId_userId: { productId, userId } },
+    upsertOpen: ({ userId, qty, note, ...target }) =>
+      db.interest.upsert({
         // Reabre um interesse já notificado/convertido/cancelado em vez de criar linha
-        // nova: o unique (productId, userId) é o que mantém a demanda agregada honesta.
-        create: { productId, userId, qty, note },
+        // nova: o unique (alvo, pessoa) é o que mantém a demanda agregada honesta.
+        where:
+          "productId" in target
+            ? { productId_userId: { productId: target.productId, userId } }
+            : { eventId_userId: { eventId: target.eventId, userId } },
+        create: { ...target, userId, qty, note },
         update: { qty, note, status: "open", notifiedAt: null },
         include: INTEREST_INCLUDE,
       }),
 
     listMineCursor: async ({ userId, status, limit, cursor }) => {
       const after = cursor ? afterCursorWhere(decodeCursor(cursor)) : {};
-      const rows = await db.productInterest.findMany({
+      const rows = await db.interest.findMany({
         where: { userId, ...(status !== null && { status }), ...after },
         orderBy: [...KEYSET_ORDER_BY],
         take: limit + 1,
@@ -91,22 +126,23 @@ export function createInterestsRepository(db: PrismaClient): InterestsRepository
     },
 
     findByIdForUser: (id, userId) =>
-      db.productInterest.findFirst({ where: { id, userId }, include: INTEREST_INCLUDE }),
+      db.interest.findFirst({ where: { id, userId }, include: INTEREST_INCLUDE }),
 
     cancelMine: async (id, userId) => {
-      const cancelled = await db.productInterest.updateMany({
+      const cancelled = await db.interest.updateMany({
         where: { id, userId, status: { in: ["open", "notified"] } },
         data: { status: "cancelled" },
       });
       return cancelled.count === 1;
     },
 
-    listByStoreCursor: async ({ storeId, productId, status, limit, cursor }) => {
+    listByStoreCursor: async ({ storeId, target, status, limit, cursor }) => {
       const after = cursor ? afterCursorWhere(decodeCursor(cursor)) : {};
-      const rows = await db.productInterest.findMany({
+      const rows = await db.interest.findMany({
         where: {
-          product: { storeId },
-          ...(productId !== null && { productId }),
+          // a loja do interesse é a do alvo, e o alvo pode ser dos dois tipos
+          OR: [{ product: { storeId } }, { event: { storeId } }],
+          ...(target !== null && targetWhere(target)),
           ...(status !== null && { status }),
           ...after,
         },
@@ -124,70 +160,112 @@ export function createInterestsRepository(db: PrismaClient): InterestsRepository
 
     aggregateDemand: async (storeId) => {
       // Só demanda viva: convertida já virou pedido, cancelada saiu da fila.
-      const grouped = await db.productInterest.groupBy({
-        by: ["productId", "status"],
-        where: { product: { storeId }, status: { in: ["open", "notified"] } },
-        _count: { _all: true },
-        _sum: { qty: true },
-      });
-      if (grouped.length === 0) return [];
-      const products = await db.product.findMany({
-        where: { id: { in: [...new Set(grouped.map((g) => g.productId))] } },
-        select: { id: true, slug: true, name: true, priceCents: true, availability: true },
-      });
-      const byId = new Map(products.map((p) => [p.id, p]));
-      const acc = new Map<string, { openCount: number; notifiedCount: number; totalQty: number }>();
-      for (const row of grouped) {
-        const current = acc.get(row.productId) ?? { openCount: 0, notifiedCount: 0, totalQty: 0 };
-        if (row.status === "open") current.openCount = row._count._all;
-        if (row.status === "notified") current.notifiedCount = row._count._all;
-        current.totalQty += row._sum.qty ?? 0;
-        acc.set(row.productId, current);
-      }
-      // Teto é uma propriedade do agregado, não da resposta HTTP: o groupBy acima
-      // ainda é ilimitado (conhecido — ver M2 na revisão), mas nada além do teto sai
-      // do repositório.
-      return [...acc.entries()]
-        .flatMap(([productId, counts]) => {
-          const product = byId.get(productId);
-          return product
-            ? [
-                {
-                  product: {
-                    slug: product.slug,
-                    name: product.name,
-                    priceCents: product.priceCents,
-                    availability: product.availability as string,
-                  },
-                  ...counts,
-                },
-              ]
-            : [];
-        })
-        .sort((a, b) => b.totalQty - a.totalQty || a.product.slug.localeCompare(b.product.slug))
-        .slice(0, DEMAND_MAX_PRODUCTS);
+      const live = { status: { in: ["open" as const, "notified" as const] } };
+      const [byProduct, byEvent] = await Promise.all([
+        db.interest.groupBy({
+          by: ["productId", "status"],
+          where: { product: { storeId }, ...live },
+          _count: { _all: true },
+          _sum: { qty: true },
+        }),
+        db.interest.groupBy({
+          by: ["eventId", "status"],
+          where: { event: { storeId }, ...live },
+          _count: { _all: true },
+          _sum: { qty: true },
+        }),
+      ]);
+      if (byProduct.length === 0 && byEvent.length === 0) return [];
+
+      const [products, events] = await Promise.all([
+        db.product.findMany({
+          where: {
+            id: { in: [...new Set(byProduct.flatMap((g) => (g.productId ? [g.productId] : [])))] },
+          },
+          select: { id: true, slug: true, name: true, priceCents: true, availability: true },
+        }),
+        db.event.findMany({
+          where: {
+            id: { in: [...new Set(byEvent.flatMap((g) => (g.eventId ? [g.eventId] : [])))] },
+          },
+          select: { id: true, slug: true, name: true, priceCents: true, at: true, location: true },
+        }),
+      ]);
+
+      type Counts = { openCount: number; notifiedCount: number; totalQty: number };
+      const acc = new Map<string, Counts>();
+      const soma = (id: string | null, status: string, count: number, qty: number | null) => {
+        if (!id) return;
+        const current = acc.get(id) ?? { openCount: 0, notifiedCount: 0, totalQty: 0 };
+        if (status === "open") current.openCount = count;
+        if (status === "notified") current.notifiedCount = count;
+        current.totalQty += qty ?? 0;
+        acc.set(id, current);
+      };
+      for (const row of byProduct) soma(row.productId, row.status, row._count._all, row._sum.qty);
+      for (const row of byEvent) soma(row.eventId, row.status, row._count._all, row._sum.qty);
+
+      const zero: Counts = { openCount: 0, notifiedCount: 0, totalQty: 0 };
+      const items = [
+        ...products.map((product) => ({
+          kind: "produto" as const,
+          product: {
+            slug: product.slug,
+            name: product.name,
+            priceCents: product.priceCents,
+            availability: product.availability as string,
+          },
+          event: null,
+          ...(acc.get(product.id) ?? zero),
+        })),
+        ...events.map((event) => ({
+          kind: "evento" as const,
+          product: null,
+          event: {
+            slug: event.slug,
+            name: event.name,
+            priceCents: event.priceCents,
+            at: event.at.toISOString(),
+            location: event.location,
+          },
+          ...(acc.get(event.id) ?? zero),
+        })),
+      ];
+
+      // Teto é uma propriedade do agregado, não da resposta HTTP: os groupBy acima ainda
+      // são ilimitados (conhecido — ver M2 na revisão), mas nada além do teto sai daqui.
+      return items
+        .sort(
+          (a, b) =>
+            b.totalQty - a.totalQty ||
+            (a.product?.slug ?? a.event?.slug ?? "").localeCompare(
+              b.product?.slug ?? b.event?.slug ?? "",
+            ),
+        )
+        .slice(0, DEMAND_MAX_SUBJECTS);
     },
 
-    notifyArrival: (productId, log) =>
+    notifyArrival: (target, log) =>
       db.$transaction(async (tx) => {
         const notifiedAt = new Date();
+        const where = targetWhere(target);
         // Teto por chamada: a loja pode chamar de novo para drenar o resto, e cada
         // interesse já notificado sai do conjunto "open".
-        const rows = await tx.productInterest.findMany({
-          where: { productId, status: "open" },
+        const rows = await tx.interest.findMany({
+          where: { ...where, status: "open" },
           select: { id: true },
           take: 500,
         });
         if (rows.length === 0) return 0;
         const ids = rows.map((r) => r.id);
-        const updated = await tx.productInterest.updateMany({
+        const updated = await tx.interest.updateMany({
           where: { id: { in: ids }, status: "open" },
           data: { status: "notified", notifiedAt },
         });
         // Deriva os eventos do que o updateMany realmente escreveu, não da pré-seleção:
         // um cancelamento concorrente entre o findMany e o updateMany tira a linha do
         // conjunto "notified" e ela não deve gerar email nem contar como enfileirada.
-        const notifiedRows = await tx.productInterest.findMany({
+        const notifiedRows = await tx.interest.findMany({
           where: { id: { in: ids }, status: "notified", notifiedAt },
           select: { id: true },
         });
@@ -200,19 +278,26 @@ export function createInterestsRepository(db: PrismaClient): InterestsRepository
         });
         if (rows.length === 500) {
           log.warn(
-            { productId },
-            "notifyArrival: teto de 500 encomendas atingido nesta chamada, chame de novo para drenar o resto",
+            where,
+            "notifyArrival: teto de 500 na fila nesta chamada, chame de novo para drenar o resto",
           );
         }
         return updated.count;
       }),
 
-    convertForOrder: async ({ userId, productIds }) => {
-      if (productIds.length === 0) return 0;
+    convertForOrder: async ({ userId, productIds, eventIds }) => {
+      if (productIds.length === 0 && eventIds.length === 0) return 0;
       // updateMany guardado por status: reprocessar o mesmo order.paid é no-op, e
       // interesse cancelado/já convertido não é tocado.
-      const converted = await db.productInterest.updateMany({
-        where: { userId, productId: { in: productIds }, status: { in: ["open", "notified"] } },
+      const converted = await db.interest.updateMany({
+        where: {
+          userId,
+          status: { in: ["open", "notified"] },
+          OR: [
+            ...(productIds.length > 0 ? [{ productId: { in: productIds } }] : []),
+            ...(eventIds.length > 0 ? [{ eventId: { in: eventIds } }] : []),
+          ],
+        },
         data: { status: "converted" },
       });
       return converted.count;
@@ -237,15 +322,29 @@ export function toStoreInterestResponse(interest: InterestWithDetails, revealPho
 }
 
 export function toInterestResponse(interest: InterestWithDetails) {
+  // O CHECK do banco garante um alvo e só um, então o `event` manda quando existe.
+  const store = interest.product?.store ?? interest.event?.store;
   return {
     id: interest.id,
-    store: { slug: interest.product.store.slug, name: interest.product.store.name },
-    product: {
-      slug: interest.product.slug,
-      name: interest.product.name,
-      priceCents: interest.product.priceCents,
-      availability: interest.product.availability,
-    },
+    store: { slug: store?.slug ?? "", name: store?.name ?? "" },
+    kind: interest.event ? ("evento" as const) : ("produto" as const),
+    product: interest.product
+      ? {
+          slug: interest.product.slug,
+          name: interest.product.name,
+          priceCents: interest.product.priceCents,
+          availability: interest.product.availability as string,
+        }
+      : null,
+    event: interest.event
+      ? {
+          slug: interest.event.slug,
+          name: interest.event.name,
+          priceCents: interest.event.priceCents,
+          at: interest.event.at.toISOString(),
+          location: interest.event.location,
+        }
+      : null,
     qty: interest.qty,
     status: interest.status,
     note: interest.note,

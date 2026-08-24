@@ -81,7 +81,7 @@ async function seedMovement() {
       status: "succeeded",
     },
   });
-  await db.productInterest.create({
+  await db.interest.create({
     data: { productId: product.id, userId: customer.id, qty: 2, status: "open" },
   });
   return { store, supplier, order, customer };

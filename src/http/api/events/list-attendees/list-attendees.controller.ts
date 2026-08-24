@@ -1,25 +1,20 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { db } from "../../../../infra/db/client.js";
-import { NotFoundError } from "../../../../shared/errors.js";
 import { resolveStoreForRole } from "../../campaigns/manage.helpers.js";
-import { createProductsRepository } from "../../products/products.repository.js";
+import { EVENT_ATTENDING_STATUSES, totalSeatsLeft } from "../events.repository.js";
 import { AttendeesResponse } from "../events.schema.js";
+import { resolveEvent } from "../manage-event.helpers.js";
 
-const Params = z.object({ slug: z.string(), productSlug: z.string() });
-
-// Pedido cancelado ou expirado não leva ninguém à porta; reembolsado desistiu. A lista é de
-// quem pagou e de quem ainda pode pagar — a loja precisa ver o "aguardando pagamento" para
-// não achar que a pessoa vai aparecer com ingresso quitado.
-const COUNTS_AS_ATTENDING = ["pending_payment", "paid", "delivery_arranged", "delivered"] as const;
+const Params = z.object({ slug: z.string(), eventSlug: z.string() });
 
 /**
- * Lista de presença de um evento. Nasce dos itens de pedido: quem comprou ingresso está
- * aqui, com telefone, quantidade e o botão de marcar presença na porta.
+ * Lista de presença de um evento. Nasce dos itens de pedido: quem comprou vaga está aqui,
+ * com telefone, quantidade e o botão de marcar presença na porta.
  */
 export const listAttendeesRoute: FastifyPluginAsync = async (app) => {
   app.get(
-    "/stores/:slug/events/:productSlug/attendees",
+    "/stores/:slug/events/:eventSlug/attendees",
     {
       config: { permissions: { any: ["store_owner", "store_admin", "store_staff"] } },
       schema: {
@@ -31,14 +26,13 @@ export const listAttendeesRoute: FastifyPluginAsync = async (app) => {
     },
     async (req) => {
       const store = await resolveStoreForRole(req, "staff");
-      const { productSlug } = req.params as z.infer<typeof Params>;
-      const product = await createProductsRepository(db).findBySlug(store.id, productSlug);
-      if (!product || !product.eventAt) throw new NotFoundError("event_not_found");
+      const { eventSlug } = req.params as z.infer<typeof Params>;
+      const event = await resolveEvent(store.id, eventSlug);
 
       const items = await db.orderItem.findMany({
         where: {
-          productId: product.id,
-          order: { storeId: store.id, status: { in: [...COUNTS_AS_ATTENDING] } },
+          eventId: event.id,
+          order: { storeId: store.id, status: { in: [...EVENT_ATTENDING_STATUSES] } },
         },
         include: {
           order: { select: { id: true, status: true, contactPhone: true, createdAt: true } },
@@ -59,15 +53,16 @@ export const listAttendeesRoute: FastifyPluginAsync = async (app) => {
 
       return {
         event: {
-          slug: product.slug,
-          name: product.name,
-          at: product.eventAt.toISOString(),
-          location: product.eventLocation,
+          slug: event.slug,
+          name: event.name,
+          at: event.at.toISOString(),
+          location: event.location,
         },
         soldQty,
         checkedInQty,
-        // vagas restantes é o estoque, que a reserva do checkout já decrementa
-        remaining: product.stock,
+        // vagas livres do evento inteiro: com lotes, quem está na porta quer saber quantas
+        // ainda dá para vender hoje, não quantas sobraram no lote da semana passada
+        remaining: totalSeatsLeft(event),
         items: items.map((item) => ({
           orderItemId: item.id,
           orderId: item.order.id,

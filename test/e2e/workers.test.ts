@@ -161,7 +161,7 @@ describe("workers", () => {
     const user = await db.user.create({
       data: { email: "encomenda@example.org", name: "Cliente", passwordHash: "x" },
     });
-    const interest = await db.productInterest.create({
+    const interest = await db.interest.create({
       data: {
         productId: product.id,
         userId: user.id,
@@ -207,7 +207,7 @@ describe("workers", () => {
       data: { email: "cancelou@example.org", name: "Cliente", passwordHash: "x" },
     });
     // Cliente cancelou entre o enfileiramento do evento e este tick.
-    const interest = await db.productInterest.create({
+    const interest = await db.interest.create({
       data: {
         productId: product.id,
         userId: user.id,
@@ -251,7 +251,7 @@ describe("workers", () => {
     const user = await db.user.create({
       data: { name: "Maria", phone: "5511988887777", email: null },
     });
-    const interest = await db.productInterest.create({
+    const interest = await db.interest.create({
       data: {
         productId: product.id,
         userId: user.id,
@@ -308,13 +308,13 @@ describe("workers", () => {
     const outro = await db.user.create({
       data: { email: "outro@example.org", name: "Outro", passwordHash: "x" },
     });
-    const mine = await db.productInterest.create({
+    const mine = await db.interest.create({
       data: { productId: product.id, userId: buyer.id, qty: 1, status: "notified" },
     });
-    const mineOpen = await db.productInterest.create({
+    const mineOpen = await db.interest.create({
       data: { productId: product2.id, userId: buyer.id, qty: 1 },
     });
-    const alheio = await db.productInterest.create({
+    const alheio = await db.interest.create({
       data: { productId: product.id, userId: outro.id, qty: 1 },
     });
     const order = await db.order.create({
@@ -338,17 +338,15 @@ describe("workers", () => {
     const gateways = buildFakeGateways();
     await relayOutbox({ db, email: gateways.email, woovi: gateways.woovi, log: logger });
 
-    expect((await db.productInterest.findUniqueOrThrow({ where: { id: mine.id } })).status).toBe(
+    expect((await db.interest.findUniqueOrThrow({ where: { id: mine.id } })).status).toBe(
       "converted",
     );
     // open → converted direto, sem passar por notified: o caso mais comum de conversão.
-    expect(
-      (await db.productInterest.findUniqueOrThrow({ where: { id: mineOpen.id } })).status,
-    ).toBe("converted");
-    // Interesse de outra pessoa no mesmo produto continua na fila.
-    expect((await db.productInterest.findUniqueOrThrow({ where: { id: alheio.id } })).status).toBe(
-      "open",
+    expect((await db.interest.findUniqueOrThrow({ where: { id: mineOpen.id } })).status).toBe(
+      "converted",
     );
+    // Interesse de outra pessoa no mesmo produto continua na fila.
+    expect((await db.interest.findUniqueOrThrow({ where: { id: alheio.id } })).status).toBe("open");
   });
 
   it("conversão não reabre interesse cancelado", async () => {
@@ -367,7 +365,7 @@ describe("workers", () => {
     const buyer = await db.user.create({
       data: { email: "comprador2@example.org", name: "Comprador", passwordHash: "x" },
     });
-    const cancelled = await db.productInterest.create({
+    const cancelled = await db.interest.create({
       data: { productId: product.id, userId: buyer.id, qty: 1, status: "cancelled" },
     });
     const order = await db.order.create({
@@ -388,9 +386,9 @@ describe("workers", () => {
     const gateways = buildFakeGateways();
     await relayOutbox({ db, email: gateways.email, woovi: gateways.woovi, log: logger });
 
-    expect(
-      (await db.productInterest.findUniqueOrThrow({ where: { id: cancelled.id } })).status,
-    ).toBe("cancelled");
+    expect((await db.interest.findUniqueOrThrow({ where: { id: cancelled.id } })).status).toBe(
+      "cancelled",
+    );
   });
 });
 

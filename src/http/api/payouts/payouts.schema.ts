@@ -62,7 +62,8 @@ export const PayoutDetailResponse = Money.extend({
   sales: z.array(
     z.object({
       orderId: z.string(),
-      productName: z.string(),
+      /** Nome congelado na venda. Pode ser produto ou vaga de evento. */
+      itemName: z.string(),
       qty: z.number().int(),
       payoutCents: z.number().int(),
       soldAt: z.string(),

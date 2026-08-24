@@ -58,7 +58,7 @@ describe("POST /interests sem conta", () => {
     });
     expect(res.statusCode).toBe(201);
     expect(await db.user.count()).toBe(1);
-    expect(await db.productInterest.count({ where: { productId: product.id } })).toBe(1);
+    expect(await db.interest.count({ where: { productId: product.id } })).toBe(1);
   });
 
   it("sem contato e sem token exige login", async () => {
@@ -101,7 +101,7 @@ describe("POST /interests sem conta", () => {
     expect(res.statusCode).toBe(201);
     // nenhuma conta leve nasceu, e o interesse é do membro
     expect(await db.user.count()).toBe(1);
-    const interest = await db.productInterest.findFirstOrThrow();
+    const interest = await db.interest.findFirstOrThrow();
     const membro = await db.user.findUniqueOrThrow({ where: { email: "membro@example.org" } });
     expect(interest.userId).toBe(membro.id);
   });
@@ -126,7 +126,7 @@ describe("POST /interests sem conta", () => {
     const membro = await db.user.create({
       data: { name: "Membro", email: "membro@example.org", passwordHash: "hash" },
     });
-    await db.productInterest.create({
+    await db.interest.create({
       data: { productId: product.id, userId: membro.id, qty: 1, note: "segredo do membro" },
     });
     const res = await app.inject({

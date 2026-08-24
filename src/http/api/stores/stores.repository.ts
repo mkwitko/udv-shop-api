@@ -71,7 +71,23 @@ export interface StoresRepository {
       detailsSubmitted: boolean;
     },
   ): Promise<number>;
-  setWooviConnect(id: string, input: { pixKey: string; subaccountId: string }): Promise<Store>;
+  /** Quem já ocupa essa chave Pix, se alguém ocupa. A chave é única entre lojas. */
+  findByWooviPixKey(pixKey: string): Promise<Store | null>;
+  /**
+   * Grava a chave e o que o DICT diz sobre o dono dela. A chave nasce sempre `pending`:
+   * declarar não é provar, e só a prova de posse (o centavo pago da conta da chave) libera
+   * o recebimento. Trocar de chave zera a prova da anterior pelo mesmo motivo.
+   */
+  setWooviConnect(
+    id: string,
+    input: {
+      pixKey: string;
+      subaccountId: string;
+      owner: { name: string; taxId: string } | null;
+    },
+  ): Promise<Store>;
+  /** Guarda o dono da chave quando o DICT só respondeu depois de a chave já estar gravada. */
+  setWooviPixKeyOwner(id: string, owner: { name: string; taxId: string }): Promise<Store>;
 }
 
 export function createStoresRepository(db: PrismaClient): StoresRepository {
@@ -185,10 +201,25 @@ export function createStoresRepository(db: PrismaClient): StoresRepository {
       return updated.count;
     },
 
+    findByWooviPixKey: (pixKey) => db.store.findUnique({ where: { wooviPixKey: pixKey } }),
+
     setWooviConnect: (id, input) =>
       db.store.update({
         where: { id },
-        data: { wooviPixKey: input.pixKey, wooviSubaccountId: input.subaccountId },
+        data: {
+          wooviPixKey: input.pixKey,
+          wooviSubaccountId: input.subaccountId,
+          wooviPixKeyStatus: "pending",
+          wooviPixKeyVerifiedAt: null,
+          wooviPixKeyOwnerName: input.owner?.name ?? null,
+          wooviPixKeyOwnerTaxId: input.owner?.taxId ?? null,
+        },
+      }),
+
+    setWooviPixKeyOwner: (id, owner) =>
+      db.store.update({
+        where: { id },
+        data: { wooviPixKeyOwnerName: owner.name, wooviPixKeyOwnerTaxId: owner.taxId },
       }),
   };
 }

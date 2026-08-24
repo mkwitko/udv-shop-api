@@ -3,30 +3,56 @@ import { GuestContact } from "../../../lib/guest-identity.js";
 
 export const INTEREST_STATUSES = ["open", "notified", "converted", "cancelled"] as const;
 
-export const CreateInterestBody = z.object({
-  storeSlug: z.string().min(1),
-  productSlug: z.string().min(1),
-  qty: z.number().int().min(1).max(99).default(1),
-  note: z.string().max(500).optional(),
-  /** Quem está pedindo o aviso, quando não há sessão. Ignorado se houver Bearer token. */
-  contact: GuestContact.optional(),
-  /**
-   * Desafio anti-abuso, exigido de quem não tem sessão quando a plataforma tem Turnstile
-   * configurado. Ignorado quando o desafio está desligado.
-   */
-  captchaToken: z.string().max(4096).optional(),
-});
+export const CreateInterestBody = z
+  .object({
+    storeSlug: z.string().min(1),
+    /** Produto esgotado OU evento lotado — um dos dois, nunca os dois. */
+    productSlug: z.string().min(1).optional(),
+    eventSlug: z.string().min(1).optional(),
+    qty: z.number().int().min(1).max(99).default(1),
+    note: z.string().max(500).optional(),
+    /** Quem está pedindo o aviso, quando não há sessão. Ignorado se houver Bearer token. */
+    contact: GuestContact.optional(),
+    /**
+     * Desafio anti-abuso, exigido de quem não tem sessão quando a plataforma tem Turnstile
+     * configurado. Ignorado quando o desafio está desligado.
+     */
+    captchaToken: z.string().max(4096).optional(),
+  })
+  // Um alvo, exatamente um: fila sem alvo não tem o que avisar, e com dois não se sabe o
+  // que a pessoa está esperando.
+  .refine((body) => Boolean(body.productSlug) !== Boolean(body.eventSlug), {
+    message: "informe productSlug ou eventSlug",
+    path: ["productSlug"],
+  });
 export type CreateInterestBody = z.infer<typeof CreateInterestBody>;
+
+/** O que a pessoa está esperando. Preenchido conforme `kind` — o outro vem nulo. */
+export const InterestSubject = {
+  kind: z.enum(["produto", "evento"]),
+  product: z
+    .object({
+      slug: z.string(),
+      name: z.string(),
+      priceCents: z.number().int(),
+      availability: z.string(),
+    })
+    .nullable(),
+  event: z
+    .object({
+      slug: z.string(),
+      name: z.string(),
+      priceCents: z.number().int(),
+      at: z.string(),
+      location: z.string().nullable(),
+    })
+    .nullable(),
+};
 
 export const InterestResponse = z.object({
   id: z.string(),
   store: z.object({ slug: z.string(), name: z.string() }),
-  product: z.object({
-    slug: z.string(),
-    name: z.string(),
-    priceCents: z.number().int(),
-    availability: z.string(),
-  }),
+  ...InterestSubject,
   qty: z.number().int(),
   status: z.string(),
   note: z.string().nullable(),
@@ -66,17 +92,13 @@ export const InterestsListQuery = z.object({
 
 export const StoreInterestsQuery = InterestsListQuery.extend({
   productSlug: z.string().min(1).optional(),
+  eventSlug: z.string().min(1).optional(),
 });
 
 export const InterestDemandResponse = z.object({
   items: z.array(
     z.object({
-      product: z.object({
-        slug: z.string(),
-        name: z.string(),
-        priceCents: z.number().int(),
-        availability: z.string(),
-      }),
+      ...InterestSubject,
       openCount: z.number().int(),
       notifiedCount: z.number().int(),
       totalQty: z.number().int(),
@@ -87,4 +109,4 @@ export const InterestDemandResponse = z.object({
 export const NotifyInterestsResponse = z.object({ notified: z.number().int() });
 
 // Teto da resposta de demanda: a lista paginada de interesses cobre o caso detalhado.
-export const DEMAND_MAX_PRODUCTS = 100;
+export const DEMAND_MAX_SUBJECTS = 100;

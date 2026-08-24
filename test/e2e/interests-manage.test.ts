@@ -61,13 +61,13 @@ async function seedDemand() {
     );
   }
   // chá: 2 open (qty 2 + 3) + 1 notified (qty 1) = 3 interesses, 6 unidades
-  await db.productInterest.create({
+  await db.interest.create({
     data: { productId: cha.id, userId: (users[0] as { id: string }).id, qty: 2 },
   });
-  await db.productInterest.create({
+  await db.interest.create({
     data: { productId: cha.id, userId: (users[1] as { id: string }).id, qty: 3 },
   });
-  await db.productInterest.create({
+  await db.interest.create({
     data: {
       productId: cha.id,
       userId: (users[2] as { id: string }).id,
@@ -77,10 +77,10 @@ async function seedDemand() {
     },
   });
   // livro: 1 open (qty 1) + 1 cancelado (não conta) + 1 convertido (não conta)
-  await db.productInterest.create({
+  await db.interest.create({
     data: { productId: livro.id, userId: (users[0] as { id: string }).id, qty: 1 },
   });
-  await db.productInterest.create({
+  await db.interest.create({
     data: {
       productId: livro.id,
       userId: (users[1] as { id: string }).id,
@@ -88,7 +88,7 @@ async function seedDemand() {
       status: "cancelled",
     },
   });
-  await db.productInterest.create({
+  await db.interest.create({
     data: {
       productId: livro.id,
       userId: (users[2] as { id: string }).id,
@@ -113,7 +113,7 @@ async function seedDemand() {
   const otherUser = await db.user.create({
     data: { email: "fora@example.org", name: "Pessoa Fora", passwordHash: "x" },
   });
-  await db.productInterest.create({
+  await db.interest.create({
     data: { productId: otherProduct.id, userId: otherUser.id, qty: 9 },
   });
   return { store, cha, livro, otherStore, otherProduct };
@@ -141,7 +141,7 @@ describe("gestão de encomendas", () => {
     // Existem 7 encomendas no banco (6 de nucleo-a + 1 de nucleo-fora); só as 6 da
     // própria loja devem voltar — isso falharia se `product: { storeId }` sumisse
     // de listByStoreCursor.
-    expect(await db.productInterest.count()).toBe(7);
+    expect(await db.interest.count()).toBe(7);
     expect(items).toHaveLength(6);
     expect(
       items.some((i: { product: { slug: string } }) => i.product.slug === "produto-fora"),
@@ -158,7 +158,7 @@ describe("gestão de encomendas", () => {
         phone: "5548999995678",
       },
     });
-    await db.productInterest.create({
+    await db.interest.create({
       data: { productId: cha.id, userId: pessoa.id, qty: 1 },
     });
     const { token } = await registerWithRole(app, "staff-mask@example.org", store.id, "staff");
@@ -187,7 +187,7 @@ describe("gestão de encomendas", () => {
     const pessoa = await db.user.create({
       data: { name: "Maria Visitante", phone: "5548999995678" },
     });
-    await db.productInterest.create({ data: { productId: cha.id, userId: pessoa.id, qty: 1 } });
+    await db.interest.create({ data: { productId: cha.id, userId: pessoa.id, qty: 1 } });
     const { token } = await registerWithRole(app, "owner-fone@example.org", store.id, "owner");
     const res = await app.inject({
       method: "GET",
@@ -207,7 +207,7 @@ describe("gestão de encomendas", () => {
     const pessoa = await db.user.create({
       data: { name: "Maria Visitante", phone: "5548999995678" },
     });
-    await db.productInterest.create({ data: { productId: cha.id, userId: pessoa.id, qty: 1 } });
+    await db.interest.create({ data: { productId: cha.id, userId: pessoa.id, qty: 1 } });
 
     const admin = await registerWithRole(app, "admin-fone@example.org", store.id, "admin");
     const asAdmin = await app.inject({
@@ -320,7 +320,7 @@ describe("POST /stores/:slug/products/:productSlug/interests/notify", () => {
     });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ notified: 2 });
-    const rows = await db.productInterest.findMany({
+    const rows = await db.interest.findMany({
       where: { product: { slug: "cha-especial" } },
     });
     expect(rows.filter((r) => r.status === "notified")).toHaveLength(3);
@@ -350,7 +350,7 @@ describe("POST /stores/:slug/products/:productSlug/interests/notify", () => {
   it("sem interesse aberto → notified 0 e nenhum outbox", async () => {
     const { store } = await seedDemand();
     const { token } = await registerWithRole(app, "notify2@example.org", store.id, "admin");
-    await db.productInterest.updateMany({
+    await db.interest.updateMany({
       where: { product: { slug: "cha-especial" } },
       data: { status: "cancelled" },
     });

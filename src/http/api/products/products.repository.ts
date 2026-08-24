@@ -47,35 +47,8 @@ export interface ProductsRepository {
     categoryId?: string | undefined;
     search?: string | undefined;
     sort?: ProductSort | undefined;
-    /** "produto" esconde ingresso de evento; "evento" mostra só ingresso. */
-    kind?: "produto" | "evento" | "todos" | undefined;
   }): Promise<CursorPage<ProductWithSupplier>>;
   findActiveBySlugs(storeId: string, slugs: string[]): Promise<ProductWithSupplier[]>;
-  /**
-   * Agenda da loja: eventos que ainda vão acontecer, do mais próximo ao mais distante.
-   * Sem cursor de propósito — agenda de núcleo tem dezenas de linhas, não milhares, e
-   * paginar por data pediria um cursor novo só para isso.
-   */
-  listUpcomingEvents(storeId: string, limit: number): Promise<ProductWithSupplier[]>;
-}
-
-/**
- * Data e lugar do evento, prontos para o Prisma. Campo ausente não é tocado; `null` limpa
- * — apagar a data devolve o ingresso para a vitrine como produto comum, e é assim que a
- * loja desfaz um evento criado por engano.
- */
-function eventFields(data: {
-  eventAt?: string | null | undefined;
-  eventEndsAt?: string | null | undefined;
-  eventLocation?: string | null | undefined;
-}) {
-  return {
-    ...(data.eventAt !== undefined && { eventAt: data.eventAt ? new Date(data.eventAt) : null }),
-    ...(data.eventEndsAt !== undefined && {
-      eventEndsAt: data.eventEndsAt ? new Date(data.eventEndsAt) : null,
-    }),
-    ...(data.eventLocation !== undefined && { eventLocation: data.eventLocation || null }),
-  };
 }
 
 export function createProductsRepository(db: PrismaClient): ProductsRepository {
@@ -97,7 +70,6 @@ export function createProductsRepository(db: PrismaClient): ProductsRepository {
           stock: data.stock,
           availability: data.availability,
           categoryId: data.categoryId ?? null,
-          ...eventFields(data),
           ...normalizePayoutFields(data),
         },
         include: PRODUCT_INCLUDE,
@@ -113,7 +85,6 @@ export function createProductsRepository(db: PrismaClient): ProductsRepository {
           ...(data.stock !== undefined && { stock: data.stock }),
           ...(data.availability !== undefined && { availability: data.availability }),
           ...(data.categoryId !== undefined && { categoryId: data.categoryId }),
-          ...eventFields(data),
           // o acordo de repasse só é reescrito quando o formulário manda os três campos
           ...(data.supplierId !== undefined ||
           data.payoutKind !== undefined ||
@@ -138,7 +109,6 @@ export function createProductsRepository(db: PrismaClient): ProductsRepository {
       categoryId,
       search,
       sort = "recent",
-      kind = "produto",
     }) => {
       const term = search ? sanitizeSearch(search) : "";
       // termo que era só curinga não pode virar "traga tudo": não achou nada, e ponto
@@ -146,11 +116,6 @@ export function createProductsRepository(db: PrismaClient): ProductsRepository {
       const filters: Prisma.ProductWhereInput = {
         storeId,
         ...(includeInactive ? {} : { active: true }),
-        ...(kind === "produto"
-          ? { eventAt: null }
-          : kind === "evento"
-            ? { eventAt: { not: null } }
-            : {}),
         ...(categoryId ? { categoryId } : {}),
         ...(term
           ? {
@@ -196,23 +161,6 @@ export function createProductsRepository(db: PrismaClient): ProductsRepository {
         (r) => r,
       );
     },
-    // O corte é pelo FIM do evento quando ele existe: uma sessão que começou às 20h e vai
-    // até 23h continua na agenda enquanto está acontecendo. Sem hora de fim, a data de
-    // início manda.
-    listUpcomingEvents: (storeId, limit) => {
-      const now = new Date();
-      return db.product.findMany({
-        where: {
-          storeId,
-          active: true,
-          eventAt: { not: null },
-          OR: [{ eventEndsAt: { gte: now } }, { eventEndsAt: null, eventAt: { gte: now } }],
-        },
-        orderBy: [{ eventAt: "asc" }, { id: "asc" }],
-        take: limit,
-        include: PRODUCT_INCLUDE,
-      });
-    },
     findActiveBySlugs: (storeId, slugs) =>
       db.product.findMany({
         where: { storeId, slug: { in: slugs }, active: true },
@@ -252,13 +200,6 @@ export function toProductResponse(
     createdAt: product.createdAt.toISOString(),
     category: product.category
       ? { id: product.category.id, slug: product.category.slug, name: product.category.name }
-      : null,
-    event: product.eventAt
-      ? {
-          at: product.eventAt.toISOString(),
-          endsAt: product.eventEndsAt?.toISOString() ?? null,
-          location: product.eventLocation,
-        }
       : null,
     payout: agreement,
   };

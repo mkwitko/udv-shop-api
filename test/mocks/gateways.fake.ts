@@ -13,7 +13,9 @@ import type {
 } from "../../src/gateways/stripe/stripe.gateway.js";
 import type {
   CreateChargeInput,
+  CreatePlainChargeInput,
   CreateSubAccountInput,
+  PixKeyOwner,
 } from "../../src/gateways/woovi/woovi.gateway.js";
 import type { Gateways } from "../../src/types/fastify.js";
 
@@ -33,6 +35,16 @@ export type FakeGateways = Gateways & {
   stripePortalSessions: Array<{ customerId: string; returnUrl: string }>;
   wooviSubAccounts: CreateSubAccountInput[];
   wooviCharges: CreateChargeInput[];
+  /** Cobranças sem split (o centavo da prova de posse da chave Pix). */
+  wooviPlainCharges: CreatePlainChargeInput[];
+  /**
+   * Dono que a consulta de chave Pix falsa devolve, por chave. Sem entrada, a chave existe
+   * com um dono genérico — é o caso comum, e obrigar cada teste a cadastrar dono só faria
+   * ruído. Quem testa chave inexistente usa `wooviPixKeyUnknown`.
+   */
+  wooviPixKeyOwners: Map<string, PixKeyOwner>;
+  /** Chaves que o Banco Central não conhece na Woovi falsa. */
+  wooviPixKeyUnknown: Set<string>;
   wooviRefunds: Array<{ chargeCorrelationID: string; refundCorrelationID: string }>;
   /** Saques Woovi pedidos, na ordem. */
   wooviWithdrawals: string[];
@@ -79,6 +91,9 @@ export function buildFakeGateways(overrides: Partial<Gateways> = {}): FakeGatewa
   const stripePortalSessions: FakeGateways["stripePortalSessions"] = [];
   const wooviSubAccounts: FakeGateways["wooviSubAccounts"] = [];
   const wooviCharges: FakeGateways["wooviCharges"] = [];
+  const wooviPlainCharges: FakeGateways["wooviPlainCharges"] = [];
+  const wooviPixKeyOwners: FakeGateways["wooviPixKeyOwners"] = new Map();
+  const wooviPixKeyUnknown: FakeGateways["wooviPixKeyUnknown"] = new Set();
   const wooviRefunds: FakeGateways["wooviRefunds"] = [];
   const wooviWithdrawals: string[] = [];
   const wooviBalances: FakeGateways["wooviBalances"] = new Map();
@@ -108,6 +123,9 @@ export function buildFakeGateways(overrides: Partial<Gateways> = {}): FakeGatewa
     stripePortalSessions,
     wooviSubAccounts,
     wooviCharges,
+    wooviPlainCharges,
+    wooviPixKeyOwners,
+    wooviPixKeyUnknown,
     wooviRefunds,
     wooviWithdrawals,
     wooviBalances,
@@ -239,6 +257,27 @@ export function buildFakeGateways(overrides: Partial<Gateways> = {}): FakeGatewa
           providerId: `woovi_fake_${wooviCharges.length}`,
           brCode: "000201fake",
           qrCodeImageUrl: "https://fake.woovi/qr.png",
+          expiresAt: new Date(Date.now() + input.expiresInSeconds * 1000).toISOString(),
+        };
+      },
+      async checkPixKey(pixKey) {
+        if (wooviPixKeyUnknown.has(pixKey)) return null;
+        return (
+          wooviPixKeyOwners.get(pixKey) ?? {
+            pixKey,
+            type: "EMAIL" as const,
+            name: "Dona da Chave",
+            // mesma máscara que a Woovi devolve para CPF: 3 primeiros + 2 últimos
+            taxId: "000.***.***-91",
+          }
+        );
+      },
+      async createPlainCharge(input) {
+        wooviPlainCharges.push(input);
+        return {
+          providerId: `woovi_fake_plain_${wooviPlainCharges.length}`,
+          brCode: "000201fakeplain",
+          qrCodeImageUrl: "https://fake.woovi/qr-verificacao.png",
           expiresAt: new Date(Date.now() + input.expiresInSeconds * 1000).toISOString(),
         };
       },

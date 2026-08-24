@@ -28,7 +28,8 @@ export type ExportInterestRow = {
   createdAt: Date;
   status: string;
   qty: number;
-  productName: string;
+  /** O que a pessoa espera: produto ou evento. */
+  itemName: string;
   customerName: string;
   customerPhone: string | null;
 };
@@ -153,8 +154,8 @@ export function createReportsRepository(db: PrismaClient): ReportsRepository {
     },
 
     exportInterests: async (storeId, limit) => {
-      const rows = await db.productInterest.findMany({
-        where: { product: { storeId } },
+      const rows = await db.interest.findMany({
+        where: { OR: [{ product: { storeId } }, { event: { storeId } }] },
         take: limit,
         orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         select: {
@@ -162,6 +163,7 @@ export function createReportsRepository(db: PrismaClient): ReportsRepository {
           status: true,
           qty: true,
           product: { select: { name: true } },
+          event: { select: { name: true } },
           user: { select: { name: true, phone: true } },
         },
       });
@@ -169,7 +171,9 @@ export function createReportsRepository(db: PrismaClient): ReportsRepository {
         createdAt: row.createdAt,
         status: row.status,
         qty: row.qty,
-        productName: row.product.name,
+        // uma coluna só: quem abre a planilha quer saber o que a pessoa espera, não em
+        // qual tabela aquilo mora
+        itemName: row.event?.name ?? row.product?.name ?? "",
         customerName: row.user.name,
         // mesma regra da tela: a fila de encomendas nunca entrega o telefone inteiro
         customerPhone: maskPhone(row.user.phone),

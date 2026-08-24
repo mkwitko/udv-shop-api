@@ -12,16 +12,6 @@ const PayoutFields = {
   payoutValue: z.number().int().min(0).nullable().optional(),
 };
 
-/**
- * Data e lugar transformam o produto em ingresso de evento. Os três campos são opcionais e
- * andam juntos: `eventAt` nulo devolve o produto para a vitrine comum.
- */
-const EventFields = {
-  eventAt: z.string().datetime().nullable().optional(),
-  eventEndsAt: z.string().datetime().nullable().optional(),
-  eventLocation: z.string().max(200).nullable().optional(),
-};
-
 export const CreateProductBody = z.object({
   name: z.string().min(2).max(160),
   slug: z.string().min(3).max(80).regex(SLUG_REGEX),
@@ -32,7 +22,6 @@ export const CreateProductBody = z.object({
   availability: z.enum(["in_stock", "on_demand"]).default("in_stock"),
   /** Gaveta da vitrine. A rota confere que a categoria é da mesma loja. */
   categoryId: z.string().uuid().nullable().optional(),
-  ...EventFields,
   ...PayoutFields,
 });
 export type CreateProductBody = z.infer<typeof CreateProductBody>;
@@ -45,7 +34,6 @@ export const UpdateProductBody = z.object({
   stock: z.number().int().min(0).optional(),
   availability: z.enum(["in_stock", "on_demand"]).optional(),
   categoryId: z.string().uuid().nullable().optional(),
-  ...EventFields,
   ...PayoutFields,
 });
 export type UpdateProductBody = z.infer<typeof UpdateProductBody>;
@@ -65,17 +53,6 @@ export const ProductResponse = z.object({
   createdAt: z.string(),
   /** Categoria da vitrine, quando a loja classificou o produto. */
   category: z.object({ id: z.string(), slug: z.string(), name: z.string() }).nullable(),
-  /**
-   * Preenchido quando o produto é ingresso de evento. `stock` passa a ser vagas e a data
-   * manda na Agenda; produto sem isto é produto comum.
-   */
-  event: z
-    .object({
-      at: z.string(),
-      endsAt: z.string().nullable(),
-      location: z.string().nullable(),
-    })
-    .nullable(),
   /**
    * Só quem cuida da loja recebe isto preenchido: quanto do preço é combinado com
    * o parceiro é acordo interno, não vitrine.
@@ -112,12 +89,6 @@ export const ListProductsQuery = z.object({
   /** Busca por nome e descrição. Limitada no tamanho para não virar varredura caríssima. */
   q: z.string().trim().max(80).optional(),
   sort: ProductSortSchema,
-  /**
-   * Ingresso de evento não é mercadoria de vitrine: por padrão a listagem devolve só
-   * produto comum, e a Agenda tem rota própria. A gestão pede `todos` para ver as duas
-   * coisas na mesma tela — para quem cuida da loja, evento é produto.
-   */
-  kind: z.enum(["produto", "evento", "todos"]).default("produto"),
 });
 export type ListProductsQuery = z.infer<typeof ListProductsQuery>;
 

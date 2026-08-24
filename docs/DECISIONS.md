@@ -563,3 +563,61 @@ por volta de R$ 4.700 de GMV/mês (R$ 199 ÷ ~4,2%); acima disso a mensalidade n
 o custo daquela loja, e o modelo precisa ser revisto — Pix, muito mais barato, empurra esse
 limite para muito mais alto; (c) a tela de recebimento diz que não há taxa por venda, em
 vez de exibir "0%".
+
+## ADR-028: evento tem tabela própria, e o item do pedido aponta para um dos dois
+
+**Contexto:** em 2026-08-21 evento nasceu como produto com data (`products.event_at`
+preenchido). Era o caminho mais curto: reusava preço, estoque, fila de espera e o checkout
+inteiro, sem tabela nova. Uma semana de uso mostrou o custo dessa economia. Toda consulta de
+vitrine passou a carregar um filtro para esconder evento (`kind=produto|evento|todos`, um
+parâmetro que só existia porque os dois moravam juntos). `stock` queria dizer "vagas" em
+metade das linhas. A tela pública dizia "Este produto está esgotado" para uma sessão lotada,
+e a Agenda não conseguia criar nada — mandava a pessoa voltar em Produtos e marcar um
+checkbox chamado "isto tem dia e hora". O que não cabia no molde de produto era justamente o
+que define evento: data que vence, lugar, e lista de quem vai.
+
+**Decisão:** `Event` é tabela própria (`events`), com `seats` em vez de `stock`, `at`,
+`ends_at` e `location` como colunas de primeira classe, sem `category_id` (evento não vive
+na vitrine) e sem `availability` (vaga ou nada — lotado é `seats = 0`). `OrderItem` e a fila
+de espera (`Interest`, antes `product_interests`) passam a apontar para **produto OU
+evento**, com CHECK no banco garantindo exatamente um alvo: item sem alvo é recibo que não
+diz o que foi comprado, e com dois é venda contada duas vezes no repasse.
+
+A migração preserva os ids na cópia, então `order_items` continua apontando para a mesma
+linha (só troca de coluna) e o slug que o público conhece segue valendo. A rota antiga
+`/loja/:loja/p/:slug` tenta a agenda antes de dar 404 e redireciona: link de evento circula
+em grupo de WhatsApp por semanas, e quebrar isso é perder gente na porta.
+
+**Consequências:** (a) produto e evento podem ter o mesmo slug — são espaços de endereço
+separados (`/p/` e `/e/`), e o checkout desambigua pelo par (tipo, slug); (b) a vitrine
+voltou a ser uma consulta sem filtro de tipo, e o parâmetro `kind` deixou de existir; (c) a
+Agenda passou a ser dona do cadastro, com os campos que o evento realmente tem, e o formulário
+de produto perdeu a seção que confundia; (d) duas telas de fila (produto e evento) viraram
+uma só, com o verbo certo em cada linha — "chegou" para produto, "abriu vaga" para evento;
+(e) toda leitura polimórfica paga um `?.` a mais, o preço de não mentir sobre o que a linha é.
+
+## ADR-029: lote é tabela de vagas do evento, e quem escolhe o lote é o servidor
+
+**Contexto:** evento vendia por preço único. "1º lote R$ 30, 2º lote R$ 40" é como evento de
+comunidade enche antes da hora — quem compra cedo paga menos — e não cabia num preço só.
+
+**Decisão:** `EventBatch` (nome, posição, preço, vagas, janela opcional) pendurado no evento.
+O lote ativo é o **primeiro, na ordem de venda, que ainda tem vaga e está dentro da janela**;
+esgotou ou venceu, o seguinte assume sozinho. Evento **sem** lote continua vendendo pelo
+próprio `price_cents`/`seats`: o mutirão a R$ 10 não paga o custo de cadastrar lote nenhum.
+
+Quem resolve o lote é sempre o servidor, a partir do slug do evento — o cliente nunca manda
+lote no corpo do pedido. Com o lote vindo do cliente, um link antigo compraria pelo preço do
+1º lote depois de ele acabar. `OrderItem.event_batch_id` registra de onde a vaga saiu, e
+`price_cents` no item congela o valor: mudar o lote depois não reescreve a venda.
+
+**Consequências:** (a) a resposta da API devolve em `priceCents`/`seats` o que vale **agora**
+(do lote ativo, quando há lotes), então nenhuma tela precisa escolher entre dois números —
+`batch`, `batches` e `seatsTotalLeft` vêm ao lado para quem precisa do detalhe; (b)
+`nextPriceCents` só aparece quando o próximo lote é **mais caro**: anunciar um aumento que não
+vem é urgência falsa, e queima a confiança da comunidade que assina a loja; (c) "lotado" passa
+a significar "nenhum lote aberto" — entre lotes, a fila de espera aceita e a tela diz que o
+próximo vai abrir, em vez de mentir que as vagas acabaram; (d) apagar lote com venda é
+recusado (`event_batch_has_sales`): apagar levaria embora de onde veio o ingresso de alguém;
+(e) a reserva e a devolução de vaga passam a acontecer no lote, não no evento, e o item do
+pedido guarda o nome com o lote ("Festa junina — 1º lote") porque é o que o recibo tem de dizer.

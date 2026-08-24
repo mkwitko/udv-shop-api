@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { wooviComment } from "../../lib/woovi-comment.js";
-import { badGateway } from "../../shared/errors.js";
+import { badGateway, ServiceUnavailableError } from "../../shared/errors.js";
 
 export type CreateChargeInput = {
   amountCents: number;
@@ -12,6 +12,26 @@ export type CreateChargeInput = {
 };
 
 export type CreateSubAccountInput = { name: string; pixKey: string };
+
+/** Cobrança sem split: o dinheiro fica na conta da plataforma. Hoje só a verificação usa. */
+export type CreatePlainChargeInput = {
+  amountCents: number;
+  correlationID: string;
+  expiresInSeconds: number;
+  comment: string;
+};
+
+/**
+ * Dono de uma chave Pix segundo o DICT. O nome vem inteiro; o taxID vem mascarado quando é
+ * CPF ("000.***.***-91") e inteiro quando é CNPJ — quem mascara é a Woovi, não nós.
+ */
+export type PixKeyOwner = {
+  /** Chave normalizada pela Woovi (CPF/CNPJ só dígitos, e-mail minúsculo, telefone E.164). */
+  pixKey: string;
+  type: "CPF" | "CNPJ" | "EMAIL" | "PHONE" | "RANDOM" | "EVP";
+  name: string;
+  taxId: string;
+};
 
 export type WithdrawResult =
   /** Saque pedido à Woovi. */
@@ -44,6 +64,21 @@ export interface WooviGateway {
    */
   withdrawSubAccount(pixKey: string): Promise<WithdrawResult>;
   createCharge(input: CreateChargeInput): Promise<{
+    providerId: string;
+    brCode: string;
+    qrCodeImageUrl: string;
+    expiresAt: string;
+  }>;
+  /**
+   * Consulta o dono da chave no DICT. `null` quando a chave não existe — chave que o Banco
+   * Central não conhece não é erro nosso, é dado errado que a tela precisa explicar.
+   *
+   * A Woovi limita a taxa desta consulta por regra do BC, e 404 repetido puxa 429: por isso
+   * o resultado é guardado na loja em vez de consultado a cada tela.
+   */
+  checkPixKey(pixKey: string): Promise<PixKeyOwner | null>;
+  /** Cobrança sem split, para a plataforma receber o centavo da prova de posse. */
+  createPlainCharge(input: CreatePlainChargeInput): Promise<{
     providerId: string;
     brCode: string;
     qrCodeImageUrl: string;
@@ -93,6 +128,22 @@ export function createWooviGateway(cfg: {
       throw badGateway("woovi_error", { status: res.status, body: text.slice(0, 400) });
     }
     return { status: res.status, body: parsed };
+  }
+
+  /** POST cru: quem chama decide o que fazer com status fora da faixa 2xx. */
+  async function postRaw(path: string, body: unknown): Promise<{ status: number; text: string }> {
+    let res: Response;
+    try {
+      res = await fetch(`${baseUrl}${path}`, {
+        method: "POST",
+        headers: { Authorization: cfg.apiKey, "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(15_000),
+      });
+    } catch (err) {
+      throw badGateway("woovi_unreachable", err);
+    }
+    return { status: res.status, text: await res.text() };
   }
 
   async function post(path: string, body: unknown): Promise<unknown> {
@@ -183,6 +234,59 @@ export function createWooviGateway(cfg: {
             splitType: "SPLIT_SUB_ACCOUNT",
           },
         ],
+      })) as {
+        charge: { identifier: string; qrCodeImage: string; expiresDate: string };
+        brCode: string;
+      };
+      return {
+        providerId: data.charge.identifier,
+        brCode: data.brCode,
+        qrCodeImageUrl: data.charge.qrCodeImage,
+        expiresAt: data.charge.expiresDate,
+      };
+    },
+    async checkPixKey(pixKey) {
+      // A chave vai no corpo, não na URL: chave com caractere especial (e-mail, +55…)
+      // quebrava a variante em path — é a própria Woovi que recomenda esta.
+      const { status, text } = await postRaw("/api/v1/pix-keys/check", { pixKey });
+      // Chave que o Banco Central não conhece não é falha da plataforma: é dado errado, e a
+      // tela precisa dizer isso em vez de "tente mais tarde".
+      if (status === 404) return null;
+      // O limite é do BC e conta 404 repetido. Cair aqui não invalida a chave: é "agora não".
+      if (status === 429) throw new ServiceUnavailableError("woovi_pix_key_check_rate_limited");
+      if (status < 200 || status >= 300) {
+        throw badGateway("woovi_error", { status, body: text.slice(0, 400) });
+      }
+      let data: {
+        pixKey?: string;
+        type?: string;
+        owner?: { name?: string; taxID?: string };
+      };
+      try {
+        data = JSON.parse(text);
+      } catch (err) {
+        throw badGateway("woovi_error", err);
+      }
+      // Sem dono não há com o que comparar o pagador — tratar como chave desconhecida seria
+      // mentira, então é falha de contrato do provedor.
+      if (!data.owner?.name || !data.owner.taxID || !data.pixKey) {
+        throw badGateway("woovi_error", { motivo: "pix-keys/check sem dono", status });
+      }
+      return {
+        pixKey: data.pixKey,
+        type: (data.type ?? "RANDOM") as PixKeyOwner["type"],
+        name: data.owner.name,
+        taxId: data.owner.taxID,
+      };
+    },
+    async createPlainCharge(input) {
+      // Sem `splits`: o centavo da prova de posse fica na conta da plataforma. Se fosse
+      // com split, o dinheiro voltaria para a subconta da chave que ainda não foi provada.
+      const data = (await post("/api/v1/charge", {
+        value: input.amountCents,
+        correlationID: input.correlationID,
+        expiresIn: input.expiresInSeconds,
+        comment: wooviComment(input.comment),
       })) as {
         charge: { identifier: string; qrCodeImage: string; expiresDate: string };
         brCode: string;

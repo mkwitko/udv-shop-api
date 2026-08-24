@@ -30,7 +30,7 @@ export const listProductsRoute: FastifyPluginAsync = async (app) => {
       const user = await optionalUser(req);
       assertStoreReadable(store, user);
       const isMember = isStoreMember(user, store.id);
-      const { limit, cursor, all, category, q, sort, kind } = req.query as ListProductsQuery;
+      const { limit, cursor, all, category, q, sort } = req.query as ListProductsQuery;
 
       // slug de categoria vira id aqui: o cliente nunca escolhe id, e categoria que não
       // existe mais (link antigo no WhatsApp) devolve vitrine vazia em vez de erro
@@ -49,7 +49,6 @@ export const listProductsRoute: FastifyPluginAsync = async (app) => {
         categoryId,
         search: q,
         sort,
-        kind,
       });
       return {
         items: page.items.map((p) =>

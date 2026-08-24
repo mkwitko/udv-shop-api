@@ -7,18 +7,18 @@ import { CheckInBody } from "../events.schema.js";
 
 const Params = z.object({
   slug: z.string(),
-  productSlug: z.string(),
+  eventSlug: z.string(),
   orderItemId: z.string().uuid(),
 });
 
 /**
- * Marca (ou desmarca) presença de um ingresso. Idempotente de propósito: na porta a pessoa
+ * Marca (ou desmarca) presença de uma vaga. Idempotente de propósito: na porta a pessoa
  * toca duas vezes sem querer, e marcar presença de novo não pode virar erro na cara de
  * quem está com a fila esperando.
  */
 export const checkInRoute: FastifyPluginAsync = async (app) => {
   app.patch(
-    "/stores/:slug/events/:productSlug/attendees/:orderItemId",
+    "/stores/:slug/events/:eventSlug/attendees/:orderItemId",
     {
       config: { permissions: { any: ["store_owner", "store_admin", "store_staff"] } },
       schema: {
@@ -31,7 +31,7 @@ export const checkInRoute: FastifyPluginAsync = async (app) => {
     },
     async (req) => {
       const store = await resolveStoreForRole(req, "staff");
-      const { orderItemId, productSlug } = req.params as z.infer<typeof Params>;
+      const { orderItemId, eventSlug } = req.params as z.infer<typeof Params>;
       const { present } = req.body as CheckInBody;
       // O item tem de ser deste evento E desta loja: sem as duas checagens, um id de item
       // de outra loja seria marcado por quem tem papel aqui.
@@ -39,7 +39,7 @@ export const checkInRoute: FastifyPluginAsync = async (app) => {
         where: {
           id: orderItemId,
           order: { storeId: store.id },
-          product: { slug: productSlug, storeId: store.id, eventAt: { not: null } },
+          event: { slug: eventSlug, storeId: store.id },
         },
         select: { id: true },
       });

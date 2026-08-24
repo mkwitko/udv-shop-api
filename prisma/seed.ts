@@ -202,33 +202,6 @@ export async function seedDatabase(db: PrismaClient): Promise<string> {
       active: true,
       category: "sementes",
     },
-    // Dois eventos na agenda de demonstração: um com hora de fim, um sem.
-    {
-      slug: "sessao-de-sabado",
-      name: "Sessão de sábado",
-      description: "Contribuição de participação. Chegue meia hora antes.",
-      priceCents: 5000,
-      stock: 40,
-      availability: "in_stock" as const,
-      active: true,
-      category: null,
-      eventAt: new Date(Date.now() + 6 * 24 * 60 * 60 * 1000),
-      eventEndsAt: new Date(Date.now() + 6 * 24 * 60 * 60 * 1000 + 4 * 60 * 60 * 1000),
-      eventLocation: "Salão do núcleo",
-    },
-    {
-      slug: "mutirao-da-horta",
-      name: "Mutirão da horta",
-      description: "Traga luva e chapéu. Almoço por conta do núcleo.",
-      priceCents: 1000,
-      stock: 15,
-      availability: "in_stock" as const,
-      active: true,
-      category: null,
-      eventAt: new Date(Date.now() + 20 * 24 * 60 * 60 * 1000),
-      eventEndsAt: null,
-      eventLocation: "Horta comunitária",
-    },
     {
       slug: "vela-artesanal",
       name: "Vela artesanal de cera de abelha com pavio de algodão trançado",
@@ -251,6 +224,39 @@ export async function seedDatabase(db: PrismaClient): Promise<string> {
         create: { ...p, categoryId, storeId: store.id },
       }),
     );
+  }
+
+  // Dois eventos na agenda de demonstração: um com hora de fim, um sem.
+  const events = [
+    {
+      slug: "sessao-de-sabado",
+      name: "Sessão de sábado",
+      description: "Contribuição de participação. Chegue meia hora antes.",
+      priceCents: 5000,
+      seats: 40,
+      active: true,
+      at: new Date(Date.now() + 6 * 24 * 60 * 60 * 1000),
+      endsAt: new Date(Date.now() + 6 * 24 * 60 * 60 * 1000 + 4 * 60 * 60 * 1000),
+      location: "Salão do núcleo",
+    },
+    {
+      slug: "mutirao-da-horta",
+      name: "Mutirão da horta",
+      description: "Traga luva e chapéu. Almoço por conta do núcleo.",
+      priceCents: 1000,
+      seats: 15,
+      active: true,
+      at: new Date(Date.now() + 20 * 24 * 60 * 60 * 1000),
+      endsAt: null,
+      location: "Horta comunitária",
+    },
+  ];
+  for (const event of events) {
+    await db.event.upsert({
+      where: { storeId_slug: { storeId: store.id, slug: event.slug } },
+      update: event,
+      create: { ...event, storeId: store.id },
+    });
   }
 
   // Parceira que recebe repasse: metade da camiseta, valor fixo na caneca.

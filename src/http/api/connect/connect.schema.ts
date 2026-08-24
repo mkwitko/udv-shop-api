@@ -6,6 +6,8 @@ import { z } from "zod";
  * `pixKeyMasked` — sem ela a tela dizia "ligado" sem dizer ligado em qual chave, e a loja
  * não tinha como conferir se o dinheiro vai para a conta certa.
  */
+export const WooviPixKeyStatusEnum = z.enum(["legacy", "pending", "verified"]);
+
 export const ConnectStatusResponse = z.object({
   stripe: z.object({
     connected: z.boolean(),
@@ -19,6 +21,13 @@ export const ConnectStatusResponse = z.object({
     connected: z.boolean(),
     /** Chave Pix parcial, só para reconhecimento: "ma***@gmail.com". */
     pixKeyMasked: z.string().nullable(),
+    /**
+     * Prova de posse da chave. `pending` NÃO recebe: é a chave declarada e não provada.
+     * `legacy` é chave de antes da verificação existir — recebe, com aviso na tela.
+     */
+    keyStatus: WooviPixKeyStatusEnum.nullable(),
+    /** Dono da chave segundo o Banco Central, para a loja conferir com o olho. */
+    ownerName: z.string().nullable(),
   }),
   /** Taxa da plataforma em pontos-base (500 = 5%). A tela mostra o número de verdade
    *  em vez de uma promessa de "sem taxa" — transparência é parte da marca. */
@@ -59,6 +68,21 @@ export const WooviBalanceResponse = z.object({
   available: z.boolean(),
   balanceCents: z.int().nonnegative(),
   withdrawBlocked: z.boolean(),
+});
+
+/**
+ * Cobrança de R$ 0,01 que a loja paga DA CONTA DA CHAVE para provar que a chave é dela.
+ * Devolve o QR porque é assim que a pessoa paga do celular, e o nome do dono para ela
+ * conferir antes de pagar.
+ */
+export const WooviPixKeyVerificationResponse = z.object({
+  status: z.enum(["pending", "verified", "rejected", "expired"]),
+  amountCents: z.int().positive(),
+  brCode: z.string(),
+  qrCodeImageUrl: z.string(),
+  expiresAt: z.string(),
+  /** Dono da chave no Banco Central: é quem tem de pagar para a prova valer. */
+  ownerName: z.string(),
 });
 
 export const WooviWithdrawResponse = z.object({

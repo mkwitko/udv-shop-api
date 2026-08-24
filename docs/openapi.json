@@ -1895,11 +1895,26 @@
                         "pixKeyMasked": {
                           "nullable": true,
                           "type": "string"
+                        },
+                        "keyStatus": {
+                          "nullable": true,
+                          "type": "string",
+                          "enum": [
+                            "legacy",
+                            "pending",
+                            "verified"
+                          ]
+                        },
+                        "ownerName": {
+                          "nullable": true,
+                          "type": "string"
                         }
                       },
                       "required": [
                         "connected",
-                        "pixKeyMasked"
+                        "pixKeyMasked",
+                        "keyStatus",
+                        "ownerName"
                       ],
                       "additionalProperties": false
                     },
@@ -2027,11 +2042,26 @@
                         "pixKeyMasked": {
                           "nullable": true,
                           "type": "string"
+                        },
+                        "keyStatus": {
+                          "nullable": true,
+                          "type": "string",
+                          "enum": [
+                            "legacy",
+                            "pending",
+                            "verified"
+                          ]
+                        },
+                        "ownerName": {
+                          "nullable": true,
+                          "type": "string"
                         }
                       },
                       "required": [
                         "connected",
-                        "pixKeyMasked"
+                        "pixKeyMasked",
+                        "keyStatus",
+                        "ownerName"
                       ],
                       "additionalProperties": false
                     },
@@ -2118,6 +2148,79 @@
                     "available",
                     "balanceCents",
                     "withdrawBlocked"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/stores/{slug}/connect/woovi/verification": {
+      "post": {
+        "operationId": "verifyWooviPixKey",
+        "tags": [
+          "connect"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "slug",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "pending",
+                        "verified",
+                        "rejected",
+                        "expired"
+                      ]
+                    },
+                    "amountCents": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "exclusiveMinimum": true,
+                      "maximum": 9007199254740991
+                    },
+                    "brCode": {
+                      "type": "string"
+                    },
+                    "qrCodeImageUrl": {
+                      "type": "string"
+                    },
+                    "expiresAt": {
+                      "type": "string"
+                    },
+                    "ownerName": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "amountCents",
+                    "brCode",
+                    "qrCodeImageUrl",
+                    "expiresAt",
+                    "ownerName"
                   ],
                   "additionalProperties": false
                 }
@@ -2801,23 +2904,6 @@
                     "format": "uuid",
                     "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                   },
-                  "eventAt": {
-                    "nullable": true,
-                    "type": "string",
-                    "format": "date-time",
-                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
-                  },
-                  "eventEndsAt": {
-                    "nullable": true,
-                    "type": "string",
-                    "format": "date-time",
-                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
-                  },
-                  "eventLocation": {
-                    "nullable": true,
-                    "type": "string",
-                    "maxLength": 200
-                  },
                   "supplierId": {
                     "nullable": true,
                     "type": "string",
@@ -2943,29 +3029,6 @@
                       ],
                       "additionalProperties": false
                     },
-                    "event": {
-                      "nullable": true,
-                      "type": "object",
-                      "properties": {
-                        "at": {
-                          "type": "string"
-                        },
-                        "endsAt": {
-                          "nullable": true,
-                          "type": "string"
-                        },
-                        "location": {
-                          "nullable": true,
-                          "type": "string"
-                        }
-                      },
-                      "required": [
-                        "at",
-                        "endsAt",
-                        "location"
-                      ],
-                      "additionalProperties": false
-                    },
                     "payout": {
                       "nullable": true,
                       "type": "object",
@@ -3018,7 +3081,6 @@
                     "active",
                     "createdAt",
                     "category",
-                    "event",
                     "payout"
                   ],
                   "additionalProperties": false
@@ -3095,20 +3157,6 @@
             },
             "in": "query",
             "name": "sort",
-            "required": false
-          },
-          {
-            "schema": {
-              "default": "produto",
-              "type": "string",
-              "enum": [
-                "produto",
-                "evento",
-                "todos"
-              ]
-            },
-            "in": "query",
-            "name": "kind",
             "required": false
           },
           {
@@ -3205,29 +3253,6 @@
                             ],
                             "additionalProperties": false
                           },
-                          "event": {
-                            "nullable": true,
-                            "type": "object",
-                            "properties": {
-                              "at": {
-                                "type": "string"
-                              },
-                              "endsAt": {
-                                "nullable": true,
-                                "type": "string"
-                              },
-                              "location": {
-                                "nullable": true,
-                                "type": "string"
-                              }
-                            },
-                            "required": [
-                              "at",
-                              "endsAt",
-                              "location"
-                            ],
-                            "additionalProperties": false
-                          },
                           "payout": {
                             "nullable": true,
                             "type": "object",
@@ -3280,7 +3305,6 @@
                           "active",
                           "createdAt",
                           "category",
-                          "event",
                           "payout"
                         ],
                         "additionalProperties": false
@@ -3407,29 +3431,6 @@
                       ],
                       "additionalProperties": false
                     },
-                    "event": {
-                      "nullable": true,
-                      "type": "object",
-                      "properties": {
-                        "at": {
-                          "type": "string"
-                        },
-                        "endsAt": {
-                          "nullable": true,
-                          "type": "string"
-                        },
-                        "location": {
-                          "nullable": true,
-                          "type": "string"
-                        }
-                      },
-                      "required": [
-                        "at",
-                        "endsAt",
-                        "location"
-                      ],
-                      "additionalProperties": false
-                    },
                     "payout": {
                       "nullable": true,
                       "type": "object",
@@ -3482,7 +3483,6 @@
                     "active",
                     "createdAt",
                     "category",
-                    "event",
                     "payout"
                   ],
                   "additionalProperties": false
@@ -3545,23 +3545,6 @@
                     "type": "string",
                     "format": "uuid",
                     "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                  },
-                  "eventAt": {
-                    "nullable": true,
-                    "type": "string",
-                    "format": "date-time",
-                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
-                  },
-                  "eventEndsAt": {
-                    "nullable": true,
-                    "type": "string",
-                    "format": "date-time",
-                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
-                  },
-                  "eventLocation": {
-                    "nullable": true,
-                    "type": "string",
-                    "maxLength": 200
                   },
                   "supplierId": {
                     "nullable": true,
@@ -3691,29 +3674,6 @@
                       ],
                       "additionalProperties": false
                     },
-                    "event": {
-                      "nullable": true,
-                      "type": "object",
-                      "properties": {
-                        "at": {
-                          "type": "string"
-                        },
-                        "endsAt": {
-                          "nullable": true,
-                          "type": "string"
-                        },
-                        "location": {
-                          "nullable": true,
-                          "type": "string"
-                        }
-                      },
-                      "required": [
-                        "at",
-                        "endsAt",
-                        "location"
-                      ],
-                      "additionalProperties": false
-                    },
                     "payout": {
                       "nullable": true,
                       "type": "object",
@@ -3766,7 +3726,6 @@
                     "active",
                     "createdAt",
                     "category",
-                    "event",
                     "payout"
                   ],
                   "additionalProperties": false
@@ -3932,29 +3891,6 @@
                       ],
                       "additionalProperties": false
                     },
-                    "event": {
-                      "nullable": true,
-                      "type": "object",
-                      "properties": {
-                        "at": {
-                          "type": "string"
-                        },
-                        "endsAt": {
-                          "nullable": true,
-                          "type": "string"
-                        },
-                        "location": {
-                          "nullable": true,
-                          "type": "string"
-                        }
-                      },
-                      "required": [
-                        "at",
-                        "endsAt",
-                        "location"
-                      ],
-                      "additionalProperties": false
-                    },
                     "payout": {
                       "nullable": true,
                       "type": "object",
@@ -4007,7 +3943,6 @@
                     "active",
                     "createdAt",
                     "category",
-                    "event",
                     "payout"
                   ],
                   "additionalProperties": false
@@ -4171,67 +4106,129 @@
                               "type": "string"
                             }
                           },
-                          "stock": {
+                          "seats": {
                             "type": "integer",
                             "minimum": -9007199254740991,
                             "maximum": 9007199254740991
                           },
-                          "availability": {
-                            "type": "string",
-                            "enum": [
-                              "in_stock",
-                              "on_demand"
-                            ]
+                          "seatsTotalLeft": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
                           },
-                          "active": {
-                            "type": "boolean"
-                          },
-                          "createdAt": {
-                            "type": "string"
-                          },
-                          "category": {
+                          "batch": {
                             "nullable": true,
                             "type": "object",
                             "properties": {
                               "id": {
                                 "type": "string"
                               },
-                              "slug": {
-                                "type": "string"
-                              },
                               "name": {
                                 "type": "string"
+                              },
+                              "priceCents": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              "seats": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991
+                              },
+                              "opensAt": {
+                                "nullable": true,
+                                "type": "string"
+                              },
+                              "closesAt": {
+                                "nullable": true,
+                                "type": "string"
+                              },
+                              "current": {
+                                "type": "boolean"
                               }
                             },
                             "required": [
                               "id",
-                              "slug",
-                              "name"
+                              "name",
+                              "priceCents",
+                              "seats",
+                              "opensAt",
+                              "closesAt",
+                              "current"
                             ],
                             "additionalProperties": false
                           },
-                          "event": {
+                          "nextPriceCents": {
                             "nullable": true,
-                            "type": "object",
-                            "properties": {
-                              "at": {
-                                "type": "string"
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "batches": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string"
+                                },
+                                "name": {
+                                  "type": "string"
+                                },
+                                "priceCents": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                "seats": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "opensAt": {
+                                  "nullable": true,
+                                  "type": "string"
+                                },
+                                "closesAt": {
+                                  "nullable": true,
+                                  "type": "string"
+                                },
+                                "current": {
+                                  "type": "boolean"
+                                }
                               },
-                              "endsAt": {
-                                "nullable": true,
-                                "type": "string"
-                              },
-                              "location": {
-                                "nullable": true,
-                                "type": "string"
-                              }
-                            },
-                            "required": [
-                              "at",
-                              "endsAt",
-                              "location"
-                            ],
-                            "additionalProperties": false
+                              "required": [
+                                "id",
+                                "name",
+                                "priceCents",
+                                "seats",
+                                "opensAt",
+                                "closesAt",
+                                "current"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "at": {
+                            "type": "string"
+                          },
+                          "endsAt": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "location": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "active": {
+                            "type": "boolean"
+                          },
+                          "finished": {
+                            "type": "boolean"
+                          },
+                          "createdAt": {
+                            "type": "string"
                           },
                           "payout": {
                             "nullable": true,
@@ -4280,12 +4277,694 @@
                           "currency",
                           "images",
                           "imageUrls",
-                          "stock",
-                          "availability",
+                          "seats",
+                          "seatsTotalLeft",
+                          "batch",
+                          "nextPriceCents",
+                          "batches",
+                          "at",
+                          "endsAt",
+                          "location",
                           "active",
+                          "finished",
                           "createdAt",
-                          "category",
-                          "event",
+                          "payout"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createEvent",
+        "tags": [
+          "events"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 160
+                  },
+                  "slug": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 80,
+                    "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 5000
+                  },
+                  "priceCents": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "exclusiveMinimum": true,
+                    "maximum": 9007199254740991
+                  },
+                  "images": {
+                    "maxItems": 10,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^stores\\/.*"
+                    }
+                  },
+                  "seats": {
+                    "default": 0,
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                  },
+                  "endsAt": {
+                    "nullable": true,
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                  },
+                  "location": {
+                    "nullable": true,
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  "batches": {
+                    "maxItems": 10,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        "name": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 80
+                        },
+                        "priceCents": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "exclusiveMinimum": true,
+                          "maximum": 9007199254740991
+                        },
+                        "seats": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "opensAt": {
+                          "nullable": true,
+                          "type": "string",
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                        },
+                        "closesAt": {
+                          "nullable": true,
+                          "type": "string",
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "priceCents",
+                        "seats"
+                      ]
+                    }
+                  },
+                  "supplierId": {
+                    "nullable": true,
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "payoutKind": {
+                    "nullable": true,
+                    "type": "string",
+                    "enum": [
+                      "fixed_cents",
+                      "percent_bps"
+                    ]
+                  },
+                  "payoutValue": {
+                    "nullable": true,
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "name",
+                  "slug",
+                  "priceCents",
+                  "at"
+                ]
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "slug",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "slug": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "priceCents": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "currency": {
+                      "type": "string"
+                    },
+                    "images": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "imageUrls": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "seats": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "seatsTotalLeft": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "batch": {
+                      "nullable": true,
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "priceCents": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "seats": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "opensAt": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "closesAt": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "current": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name",
+                        "priceCents",
+                        "seats",
+                        "opensAt",
+                        "closesAt",
+                        "current"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "nextPriceCents": {
+                      "nullable": true,
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "batches": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "priceCents": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "seats": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "opensAt": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "closesAt": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "current": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name",
+                          "priceCents",
+                          "seats",
+                          "opensAt",
+                          "closesAt",
+                          "current"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "at": {
+                      "type": "string"
+                    },
+                    "endsAt": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "location": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "active": {
+                      "type": "boolean"
+                    },
+                    "finished": {
+                      "type": "boolean"
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "payout": {
+                      "nullable": true,
+                      "type": "object",
+                      "properties": {
+                        "supplierId": {
+                          "type": "string"
+                        },
+                        "supplierName": {
+                          "type": "string"
+                        },
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "fixed_cents",
+                            "percent_bps"
+                          ]
+                        },
+                        "value": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "unitCents": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "supplierId",
+                        "supplierName",
+                        "kind",
+                        "value",
+                        "unitCents"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "slug",
+                    "name",
+                    "description",
+                    "priceCents",
+                    "currency",
+                    "images",
+                    "imageUrls",
+                    "seats",
+                    "seatsTotalLeft",
+                    "batch",
+                    "nextPriceCents",
+                    "batches",
+                    "at",
+                    "endsAt",
+                    "location",
+                    "active",
+                    "finished",
+                    "createdAt",
+                    "payout"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/stores/{slug}/manage/events": {
+      "get": {
+        "operationId": "listStoreEvents",
+        "tags": [
+          "events"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "default": 20,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            },
+            "in": "query",
+            "name": "all",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "slug",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "slug": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "priceCents": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "currency": {
+                            "type": "string"
+                          },
+                          "images": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "imageUrls": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "seats": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "seatsTotalLeft": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "batch": {
+                            "nullable": true,
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "name": {
+                                "type": "string"
+                              },
+                              "priceCents": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              "seats": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991
+                              },
+                              "opensAt": {
+                                "nullable": true,
+                                "type": "string"
+                              },
+                              "closesAt": {
+                                "nullable": true,
+                                "type": "string"
+                              },
+                              "current": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "name",
+                              "priceCents",
+                              "seats",
+                              "opensAt",
+                              "closesAt",
+                              "current"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "nextPriceCents": {
+                            "nullable": true,
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "batches": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string"
+                                },
+                                "name": {
+                                  "type": "string"
+                                },
+                                "priceCents": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                "seats": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 9007199254740991
+                                },
+                                "opensAt": {
+                                  "nullable": true,
+                                  "type": "string"
+                                },
+                                "closesAt": {
+                                  "nullable": true,
+                                  "type": "string"
+                                },
+                                "current": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "name",
+                                "priceCents",
+                                "seats",
+                                "opensAt",
+                                "closesAt",
+                                "current"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "at": {
+                            "type": "string"
+                          },
+                          "endsAt": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "location": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "active": {
+                            "type": "boolean"
+                          },
+                          "finished": {
+                            "type": "boolean"
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          },
+                          "payout": {
+                            "nullable": true,
+                            "type": "object",
+                            "properties": {
+                              "supplierId": {
+                                "type": "string"
+                              },
+                              "supplierName": {
+                                "type": "string"
+                              },
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "fixed_cents",
+                                  "percent_bps"
+                                ]
+                              },
+                              "value": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              "unitCents": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              }
+                            },
+                            "required": [
+                              "supplierId",
+                              "supplierName",
+                              "kind",
+                              "value",
+                              "unitCents"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "slug",
+                          "name",
+                          "description",
+                          "priceCents",
+                          "currency",
+                          "images",
+                          "imageUrls",
+                          "seats",
+                          "seatsTotalLeft",
+                          "batch",
+                          "nextPriceCents",
+                          "batches",
+                          "at",
+                          "endsAt",
+                          "location",
+                          "active",
+                          "finished",
+                          "createdAt",
                           "payout"
                         ],
                         "additionalProperties": false
@@ -4303,7 +4982,1095 @@
         }
       }
     },
-    "/stores/{slug}/events/{productSlug}/attendees": {
+    "/stores/{slug}/manage/events/results": {
+      "get": {
+        "operationId": "listEventResults",
+        "tags": [
+          "events"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "default": 20,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            },
+            "in": "query",
+            "name": "upcoming",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "slug",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "slug": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "at": {
+                            "type": "string"
+                          },
+                          "finished": {
+                            "type": "boolean"
+                          },
+                          "seatsLeft": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "soldQty": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "checkedInQty": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "paidQty": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "grossCents": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "payoutCents": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "feeCents": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "netCents": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "required": [
+                          "slug",
+                          "name",
+                          "at",
+                          "finished",
+                          "seatsLeft",
+                          "soldQty",
+                          "checkedInQty",
+                          "paidQty",
+                          "grossCents",
+                          "payoutCents",
+                          "feeCents",
+                          "netCents"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/stores/{slug}/events/{eventSlug}": {
+      "get": {
+        "operationId": "getEvent",
+        "tags": [
+          "events"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "slug",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "eventSlug",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "slug": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "priceCents": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "currency": {
+                      "type": "string"
+                    },
+                    "images": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "imageUrls": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "seats": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "seatsTotalLeft": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "batch": {
+                      "nullable": true,
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "priceCents": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "seats": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "opensAt": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "closesAt": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "current": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name",
+                        "priceCents",
+                        "seats",
+                        "opensAt",
+                        "closesAt",
+                        "current"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "nextPriceCents": {
+                      "nullable": true,
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "batches": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "priceCents": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "seats": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "opensAt": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "closesAt": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "current": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name",
+                          "priceCents",
+                          "seats",
+                          "opensAt",
+                          "closesAt",
+                          "current"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "at": {
+                      "type": "string"
+                    },
+                    "endsAt": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "location": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "active": {
+                      "type": "boolean"
+                    },
+                    "finished": {
+                      "type": "boolean"
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "payout": {
+                      "nullable": true,
+                      "type": "object",
+                      "properties": {
+                        "supplierId": {
+                          "type": "string"
+                        },
+                        "supplierName": {
+                          "type": "string"
+                        },
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "fixed_cents",
+                            "percent_bps"
+                          ]
+                        },
+                        "value": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "unitCents": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "supplierId",
+                        "supplierName",
+                        "kind",
+                        "value",
+                        "unitCents"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "slug",
+                    "name",
+                    "description",
+                    "priceCents",
+                    "currency",
+                    "images",
+                    "imageUrls",
+                    "seats",
+                    "seatsTotalLeft",
+                    "batch",
+                    "nextPriceCents",
+                    "batches",
+                    "at",
+                    "endsAt",
+                    "location",
+                    "active",
+                    "finished",
+                    "createdAt",
+                    "payout"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "updateEvent",
+        "tags": [
+          "events"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 160
+                  },
+                  "description": {
+                    "nullable": true,
+                    "type": "string",
+                    "maxLength": 5000
+                  },
+                  "priceCents": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "exclusiveMinimum": true,
+                    "maximum": 9007199254740991
+                  },
+                  "images": {
+                    "maxItems": 10,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^stores\\/.*"
+                    }
+                  },
+                  "seats": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                  },
+                  "endsAt": {
+                    "nullable": true,
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                  },
+                  "location": {
+                    "nullable": true,
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  "batches": {
+                    "maxItems": 10,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        "name": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 80
+                        },
+                        "priceCents": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "exclusiveMinimum": true,
+                          "maximum": 9007199254740991
+                        },
+                        "seats": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "opensAt": {
+                          "nullable": true,
+                          "type": "string",
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                        },
+                        "closesAt": {
+                          "nullable": true,
+                          "type": "string",
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "priceCents",
+                        "seats"
+                      ]
+                    }
+                  },
+                  "supplierId": {
+                    "nullable": true,
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "payoutKind": {
+                    "nullable": true,
+                    "type": "string",
+                    "enum": [
+                      "fixed_cents",
+                      "percent_bps"
+                    ]
+                  },
+                  "payoutValue": {
+                    "nullable": true,
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "slug",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "eventSlug",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "slug": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "priceCents": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "currency": {
+                      "type": "string"
+                    },
+                    "images": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "imageUrls": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "seats": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "seatsTotalLeft": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "batch": {
+                      "nullable": true,
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "priceCents": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "seats": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "opensAt": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "closesAt": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "current": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name",
+                        "priceCents",
+                        "seats",
+                        "opensAt",
+                        "closesAt",
+                        "current"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "nextPriceCents": {
+                      "nullable": true,
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "batches": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "priceCents": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "seats": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "opensAt": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "closesAt": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "current": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name",
+                          "priceCents",
+                          "seats",
+                          "opensAt",
+                          "closesAt",
+                          "current"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "at": {
+                      "type": "string"
+                    },
+                    "endsAt": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "location": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "active": {
+                      "type": "boolean"
+                    },
+                    "finished": {
+                      "type": "boolean"
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "payout": {
+                      "nullable": true,
+                      "type": "object",
+                      "properties": {
+                        "supplierId": {
+                          "type": "string"
+                        },
+                        "supplierName": {
+                          "type": "string"
+                        },
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "fixed_cents",
+                            "percent_bps"
+                          ]
+                        },
+                        "value": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "unitCents": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "supplierId",
+                        "supplierName",
+                        "kind",
+                        "value",
+                        "unitCents"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "slug",
+                    "name",
+                    "description",
+                    "priceCents",
+                    "currency",
+                    "images",
+                    "imageUrls",
+                    "seats",
+                    "seatsTotalLeft",
+                    "batch",
+                    "nextPriceCents",
+                    "batches",
+                    "at",
+                    "endsAt",
+                    "location",
+                    "active",
+                    "finished",
+                    "createdAt",
+                    "payout"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "archiveEvent",
+        "tags": [
+          "events"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "slug",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "eventSlug",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string",
+                  "nullable": true,
+                  "enum": [
+                    null
+                  ],
+                  "description": "No Content"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/stores/{slug}/events/{eventSlug}/restore": {
+      "post": {
+        "operationId": "restoreEvent",
+        "tags": [
+          "events"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "slug",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "eventSlug",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "slug": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "priceCents": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "currency": {
+                      "type": "string"
+                    },
+                    "images": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "imageUrls": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "seats": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "seatsTotalLeft": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "batch": {
+                      "nullable": true,
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "priceCents": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "seats": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "opensAt": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "closesAt": {
+                          "nullable": true,
+                          "type": "string"
+                        },
+                        "current": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name",
+                        "priceCents",
+                        "seats",
+                        "opensAt",
+                        "closesAt",
+                        "current"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "nextPriceCents": {
+                      "nullable": true,
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "batches": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "priceCents": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "seats": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "opensAt": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "closesAt": {
+                            "nullable": true,
+                            "type": "string"
+                          },
+                          "current": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name",
+                          "priceCents",
+                          "seats",
+                          "opensAt",
+                          "closesAt",
+                          "current"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "at": {
+                      "type": "string"
+                    },
+                    "endsAt": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "location": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "active": {
+                      "type": "boolean"
+                    },
+                    "finished": {
+                      "type": "boolean"
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "payout": {
+                      "nullable": true,
+                      "type": "object",
+                      "properties": {
+                        "supplierId": {
+                          "type": "string"
+                        },
+                        "supplierName": {
+                          "type": "string"
+                        },
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "fixed_cents",
+                            "percent_bps"
+                          ]
+                        },
+                        "value": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "unitCents": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "supplierId",
+                        "supplierName",
+                        "kind",
+                        "value",
+                        "unitCents"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "slug",
+                    "name",
+                    "description",
+                    "priceCents",
+                    "currency",
+                    "images",
+                    "imageUrls",
+                    "seats",
+                    "seatsTotalLeft",
+                    "batch",
+                    "nextPriceCents",
+                    "batches",
+                    "at",
+                    "endsAt",
+                    "location",
+                    "active",
+                    "finished",
+                    "createdAt",
+                    "payout"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/stores/{slug}/events/{eventSlug}/attendees": {
       "get": {
         "operationId": "listEventAttendees",
         "tags": [
@@ -4323,7 +6090,7 @@
               "type": "string"
             },
             "in": "path",
-            "name": "productSlug",
+            "name": "eventSlug",
             "required": true
           }
         ],
@@ -4444,7 +6211,7 @@
         }
       }
     },
-    "/stores/{slug}/events/{productSlug}/attendees/{orderItemId}": {
+    "/stores/{slug}/events/{eventSlug}/attendees/{orderItemId}": {
       "patch": {
         "operationId": "checkInAttendee",
         "tags": [
@@ -4482,7 +6249,7 @@
               "type": "string"
             },
             "in": "path",
-            "name": "productSlug",
+            "name": "eventSlug",
             "required": true
           },
           {
@@ -8348,6 +10115,10 @@
                     "type": "string",
                     "minLength": 1
                   },
+                  "eventSlug": {
+                    "type": "string",
+                    "minLength": 1
+                  },
                   "qty": {
                     "default": 1,
                     "type": "integer",
@@ -8388,8 +10159,7 @@
                   }
                 },
                 "required": [
-                  "storeSlug",
-                  "productSlug"
+                  "storeSlug"
                 ]
               }
             }
@@ -8428,7 +10198,15 @@
                       ],
                       "additionalProperties": false
                     },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "produto",
+                        "evento"
+                      ]
+                    },
                     "product": {
+                      "nullable": true,
                       "type": "object",
                       "properties": {
                         "slug": {
@@ -8451,6 +10229,38 @@
                         "name",
                         "priceCents",
                         "availability"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "event": {
+                      "nullable": true,
+                      "type": "object",
+                      "properties": {
+                        "slug": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "priceCents": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "at": {
+                          "type": "string"
+                        },
+                        "location": {
+                          "nullable": true,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "slug",
+                        "name",
+                        "priceCents",
+                        "at",
+                        "location"
                       ],
                       "additionalProperties": false
                     },
@@ -8477,7 +10287,9 @@
                   "required": [
                     "id",
                     "store",
+                    "kind",
                     "product",
+                    "event",
                     "qty",
                     "status",
                     "note",
@@ -8568,7 +10380,15 @@
                             ],
                             "additionalProperties": false
                           },
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "produto",
+                              "evento"
+                            ]
+                          },
                           "product": {
+                            "nullable": true,
                             "type": "object",
                             "properties": {
                               "slug": {
@@ -8591,6 +10411,38 @@
                               "name",
                               "priceCents",
                               "availability"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "event": {
+                            "nullable": true,
+                            "type": "object",
+                            "properties": {
+                              "slug": {
+                                "type": "string"
+                              },
+                              "name": {
+                                "type": "string"
+                              },
+                              "priceCents": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              "at": {
+                                "type": "string"
+                              },
+                              "location": {
+                                "nullable": true,
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "slug",
+                              "name",
+                              "priceCents",
+                              "at",
+                              "location"
                             ],
                             "additionalProperties": false
                           },
@@ -8617,7 +10469,9 @@
                         "required": [
                           "id",
                           "store",
+                          "kind",
                           "product",
+                          "event",
                           "qty",
                           "status",
                           "note",
@@ -8694,7 +10548,15 @@
                       ],
                       "additionalProperties": false
                     },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "produto",
+                        "evento"
+                      ]
+                    },
                     "product": {
+                      "nullable": true,
                       "type": "object",
                       "properties": {
                         "slug": {
@@ -8717,6 +10579,38 @@
                         "name",
                         "priceCents",
                         "availability"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "event": {
+                      "nullable": true,
+                      "type": "object",
+                      "properties": {
+                        "slug": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "priceCents": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "at": {
+                          "type": "string"
+                        },
+                        "location": {
+                          "nullable": true,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "slug",
+                        "name",
+                        "priceCents",
+                        "at",
+                        "location"
                       ],
                       "additionalProperties": false
                     },
@@ -8743,7 +10637,9 @@
                   "required": [
                     "id",
                     "store",
+                    "kind",
                     "product",
+                    "event",
                     "qty",
                     "status",
                     "note",
@@ -8809,6 +10705,15 @@
           },
           {
             "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "in": "query",
+            "name": "eventSlug",
+            "required": false
+          },
+          {
+            "schema": {
               "type": "string"
             },
             "in": "path",
@@ -8853,7 +10758,15 @@
                             ],
                             "additionalProperties": false
                           },
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "produto",
+                              "evento"
+                            ]
+                          },
                           "product": {
+                            "nullable": true,
                             "type": "object",
                             "properties": {
                               "slug": {
@@ -8876,6 +10789,38 @@
                               "name",
                               "priceCents",
                               "availability"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "event": {
+                            "nullable": true,
+                            "type": "object",
+                            "properties": {
+                              "slug": {
+                                "type": "string"
+                              },
+                              "name": {
+                                "type": "string"
+                              },
+                              "priceCents": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              "at": {
+                                "type": "string"
+                              },
+                              "location": {
+                                "nullable": true,
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "slug",
+                              "name",
+                              "priceCents",
+                              "at",
+                              "location"
                             ],
                             "additionalProperties": false
                           },
@@ -8924,7 +10869,9 @@
                         "required": [
                           "id",
                           "store",
+                          "kind",
                           "product",
+                          "event",
                           "qty",
                           "status",
                           "note",
@@ -8986,7 +10933,15 @@
                       "items": {
                         "type": "object",
                         "properties": {
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "produto",
+                              "evento"
+                            ]
+                          },
                           "product": {
+                            "nullable": true,
                             "type": "object",
                             "properties": {
                               "slug": {
@@ -9012,6 +10967,38 @@
                             ],
                             "additionalProperties": false
                           },
+                          "event": {
+                            "nullable": true,
+                            "type": "object",
+                            "properties": {
+                              "slug": {
+                                "type": "string"
+                              },
+                              "name": {
+                                "type": "string"
+                              },
+                              "priceCents": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              "at": {
+                                "type": "string"
+                              },
+                              "location": {
+                                "nullable": true,
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "slug",
+                              "name",
+                              "priceCents",
+                              "at",
+                              "location"
+                            ],
+                            "additionalProperties": false
+                          },
                           "openCount": {
                             "type": "integer",
                             "minimum": -9007199254740991,
@@ -9029,7 +11016,9 @@
                           }
                         },
                         "required": [
+                          "kind",
                           "product",
+                          "event",
                           "openCount",
                           "notifiedCount",
                           "totalQty"
@@ -9070,6 +11059,60 @@
             },
             "in": "path",
             "name": "productSlug",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "notified": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "notified"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/stores/{slug}/events/{eventSlug}/interests/notify": {
+      "post": {
+        "operationId": "notifyEventInterests",
+        "tags": [
+          "interests"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "slug",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "eventSlug",
             "required": true
           }
         ],
@@ -9677,7 +11720,7 @@
                           "orderId": {
                             "type": "string"
                           },
-                          "productName": {
+                          "itemName": {
                             "type": "string"
                           },
                           "qty": {
@@ -9699,7 +11742,7 @@
                         },
                         "required": [
                           "orderId",
-                          "productName",
+                          "itemName",
                           "qty",
                           "payoutCents",
                           "soldAt",
@@ -9904,6 +11947,10 @@
                           "type": "string",
                           "minLength": 1
                         },
+                        "eventSlug": {
+                          "type": "string",
+                          "minLength": 1
+                        },
                         "qty": {
                           "type": "integer",
                           "minimum": 1,
@@ -9911,7 +11958,6 @@
                         }
                       },
                       "required": [
-                        "productSlug",
                         "qty"
                       ]
                     }
@@ -10028,10 +12074,14 @@
                           "items": {
                             "type": "object",
                             "properties": {
-                              "productId": {
-                                "type": "string"
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "produto",
+                                  "evento"
+                                ]
                               },
-                              "productSlug": {
+                              "slug": {
                                 "type": "string"
                               },
                               "name": {
@@ -10071,8 +12121,8 @@
                               }
                             },
                             "required": [
-                              "productId",
-                              "productSlug",
+                              "kind",
+                              "slug",
                               "name",
                               "priceCents",
                               "qty",
@@ -10274,10 +12324,14 @@
                             "items": {
                               "type": "object",
                               "properties": {
-                                "productId": {
-                                  "type": "string"
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "produto",
+                                    "evento"
+                                  ]
                                 },
-                                "productSlug": {
+                                "slug": {
                                   "type": "string"
                                 },
                                 "name": {
@@ -10317,8 +12371,8 @@
                                 }
                               },
                               "required": [
-                                "productId",
-                                "productSlug",
+                                "kind",
+                                "slug",
                                 "name",
                                 "priceCents",
                                 "qty",
@@ -10458,10 +12512,14 @@
                       "items": {
                         "type": "object",
                         "properties": {
-                          "productId": {
-                            "type": "string"
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "produto",
+                              "evento"
+                            ]
                           },
-                          "productSlug": {
+                          "slug": {
                             "type": "string"
                           },
                           "name": {
@@ -10501,8 +12559,8 @@
                           }
                         },
                         "required": [
-                          "productId",
-                          "productSlug",
+                          "kind",
+                          "slug",
                           "name",
                           "priceCents",
                           "qty",
@@ -10814,10 +12872,14 @@
                             "items": {
                               "type": "object",
                               "properties": {
-                                "productId": {
-                                  "type": "string"
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "produto",
+                                    "evento"
+                                  ]
                                 },
-                                "productSlug": {
+                                "slug": {
                                   "type": "string"
                                 },
                                 "name": {
@@ -10857,8 +12919,8 @@
                                 }
                               },
                               "required": [
-                                "productId",
-                                "productSlug",
+                                "kind",
+                                "slug",
                                 "name",
                                 "priceCents",
                                 "qty",
@@ -11028,10 +13090,14 @@
                       "items": {
                         "type": "object",
                         "properties": {
-                          "productId": {
-                            "type": "string"
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "produto",
+                              "evento"
+                            ]
                           },
-                          "productSlug": {
+                          "slug": {
                             "type": "string"
                           },
                           "name": {
@@ -11071,8 +13137,8 @@
                           }
                         },
                         "required": [
-                          "productId",
-                          "productSlug",
+                          "kind",
+                          "slug",
                           "name",
                           "priceCents",
                           "qty",
@@ -11208,10 +13274,14 @@
                       "items": {
                         "type": "object",
                         "properties": {
-                          "productId": {
-                            "type": "string"
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "produto",
+                              "evento"
+                            ]
                           },
-                          "productSlug": {
+                          "slug": {
                             "type": "string"
                           },
                           "name": {
@@ -11251,8 +13321,8 @@
                           }
                         },
                         "required": [
-                          "productId",
-                          "productSlug",
+                          "kind",
+                          "slug",
                           "name",
                           "priceCents",
                           "qty",

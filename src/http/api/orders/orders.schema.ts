@@ -6,8 +6,20 @@ export const RESERVATION_TTL_MINUTES = 30;
 export const CheckoutBody = z.object({
   storeSlug: z.string().min(1),
   provider: z.enum(["stripe", "woovi"]),
+  /** Cada linha é um produto OU uma vaga de evento — nunca os dois. */
   items: z
-    .array(z.object({ productSlug: z.string().min(1), qty: z.number().int().min(1).max(99) }))
+    .array(
+      z
+        .object({
+          productSlug: z.string().min(1).optional(),
+          eventSlug: z.string().min(1).optional(),
+          qty: z.number().int().min(1).max(99),
+        })
+        .refine((item) => Boolean(item.productSlug) !== Boolean(item.eventSlug), {
+          message: "informe productSlug ou eventSlug",
+          path: ["productSlug"],
+        }),
+    )
     .min(1)
     .max(20),
   /** Opcional desde o fluxo sem conta: quem não está logado manda o telefone em `contact`. */
@@ -24,13 +36,14 @@ export const CheckoutBody = z.object({
 export type CheckoutBody = z.infer<typeof CheckoutBody>;
 
 export const OrderItemResponse = z.object({
-  productId: z.string(),
-  /** Para linkar de volta o ingresso ou o produto comprado. */
-  productSlug: z.string(),
+  /** `produto` ou `evento`: decide para onde o recibo linka de volta. */
+  kind: z.enum(["produto", "evento"]),
+  /** Endereço do que foi comprado, para o link de volta. */
+  slug: z.string(),
   name: z.string(),
   priceCents: z.number().int(),
   qty: z.number().int(),
-  /** Preenchido quando o item comprado é ingresso: é o que faz "meus ingressos" existir. */
+  /** Preenchido quando o item é vaga de evento: é o que faz "meus ingressos" existir. */
   event: z.object({ at: z.string(), location: z.string().nullable() }).nullable(),
   /** Presença conferida na porta. */
   checkedInAt: z.string().nullable(),

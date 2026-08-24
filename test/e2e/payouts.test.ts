@@ -35,6 +35,7 @@ async function seedStore() {
       stripeAccountId: "acct_1",
       stripeTransfersEnabled: true,
       wooviPixKey: "pix@nucleo.org",
+      wooviPixKeyStatus: "verified" as const,
       applicationFeeBps: 500,
     },
   });
@@ -219,7 +220,7 @@ describe("repasses para parceiros", () => {
     });
     const detail = detalhe.json();
     expect(detail.sales).toHaveLength(1);
-    expect(detail.sales[0]).toMatchObject({ productName: "Cesto", qty: 2, payoutCents: 12000 });
+    expect(detail.sales[0]).toMatchObject({ itemName: "Cesto", qty: 2, payoutCents: 12000 });
     expect(detail.settlements[0]).toMatchObject({ amountCents: 12000, note: "Pix de sexta" });
 
     // reembolso derruba a receita e o saldo fica negativo: crédito da loja

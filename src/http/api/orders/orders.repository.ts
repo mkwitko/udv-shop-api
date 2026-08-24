@@ -15,9 +15,15 @@ import { ConflictError } from "../../../shared/errors.js";
 const STALE_REFUND_CLAIM_MS = 15 * 60_000;
 
 const ORDER_INCLUDE = {
-  // O produto entra pela data do evento: "meus ingressos" precisa saber QUANDO é a sessão
-  // que a pessoa comprou, e o item do pedido guarda só o nome congelado na venda.
-  items: { include: { product: { select: { slug: true, eventAt: true, eventLocation: true } } } },
+  // O alvo do item entra pelo slug (link de volta) e, no caso de evento, pela data: "meus
+  // ingressos" precisa saber QUANDO é a sessão comprada, e o item do pedido guarda só o
+  // nome congelado na venda.
+  items: {
+    include: {
+      product: { select: { slug: true } },
+      event: { select: { slug: true, at: true, location: true } },
+    },
+  },
   payment: true,
   // deliveryNote entra no include porque o recibo repete para quem comprou como a loja
   // combina entrega — a promessa "combinado com a loja" precisava dizer o quê.
@@ -26,8 +32,12 @@ const ORDER_INCLUDE = {
 
 export type OrderWithDetails = Prisma.OrderGetPayload<{ include: typeof ORDER_INCLUDE }>;
 
+/** Item novo: aponta para produto OU evento — o CHECK do banco recusa qualquer outra combinação. */
 type NewOrderItem = {
-  productId: string;
+  productId?: string | undefined;
+  eventId?: string | undefined;
+  /** Lote de onde a vaga saiu, quando o evento vende em lotes. */
+  eventBatchId?: string | undefined;
   name: string;
   priceCents: number;
   qty: number;
@@ -96,13 +106,26 @@ export interface OrdersRepository {
   } | null>;
 }
 
+/** Devolve o que a reserva tirou: estoque para produto, vaga para evento. */
 async function restockItems(tx: Prisma.TransactionClient, orderId: string): Promise<void> {
   const items = await tx.orderItem.findMany({ where: { orderId } });
   for (const item of items) {
-    await tx.product.update({
-      where: { id: item.productId },
-      data: { stock: { increment: item.qty } },
-    });
+    if (item.eventBatchId) {
+      await tx.eventBatch.update({
+        where: { id: item.eventBatchId },
+        data: { seats: { increment: item.qty } },
+      });
+    } else if (item.eventId) {
+      await tx.event.update({
+        where: { id: item.eventId },
+        data: { seats: { increment: item.qty } },
+      });
+    } else if (item.productId) {
+      await tx.product.update({
+        where: { id: item.productId },
+        data: { stock: { increment: item.qty } },
+      });
+    }
   }
 }
 
@@ -110,14 +133,32 @@ export function createOrdersRepository(db: PrismaClient): OrdersRepository {
   return {
     createPendingOrder: (input) =>
       db.$transaction(async (tx) => {
-        const sortedItems = [...input.items].sort((a, b) =>
-          a.productId < b.productId ? -1 : a.productId > b.productId ? 1 : 0,
-        );
+        // Ordem estável por id: duas compras dos mesmos itens travam na mesma sequência,
+        // e é isso que evita deadlock quando as duas rodam ao mesmo tempo.
+        const sortedItems = [...input.items].sort((a, b) => {
+          const ka = a.eventBatchId ?? a.productId ?? a.eventId ?? "";
+          const kb = b.eventBatchId ?? b.productId ?? b.eventId ?? "";
+          return ka < kb ? -1 : ka > kb ? 1 : 0;
+        });
         for (const item of sortedItems) {
-          const updated = await tx.product.updateMany({
-            where: { id: item.productId, stock: { gte: item.qty } },
-            data: { stock: { decrement: item.qty } },
-          });
+          // Produto reserva estoque; evento reserva vaga. Mesma guarda dos dois lados: o
+          // `gte` no WHERE é o que faz duas compras simultâneas da última unidade não
+          // virarem duas vendas.
+          const updated = item.eventBatchId
+            ? // vaga de lote sai do lote: é lá que "esgotou" acontece e o próximo assume
+              await tx.eventBatch.updateMany({
+                where: { id: item.eventBatchId, seats: { gte: item.qty } },
+                data: { seats: { decrement: item.qty } },
+              })
+            : item.eventId
+              ? await tx.event.updateMany({
+                  where: { id: item.eventId, seats: { gte: item.qty } },
+                  data: { seats: { decrement: item.qty } },
+                })
+              : await tx.product.updateMany({
+                  where: { id: item.productId as string, stock: { gte: item.qty } },
+                  data: { stock: { decrement: item.qty } },
+                });
           if (updated.count !== 1) throw new ConflictError("insufficient_stock");
         }
         return tx.order.create({
@@ -354,14 +395,13 @@ export function toOrderResponse(order: OrderWithDetails) {
     expiresAt: order.expiresAt.toISOString(),
     createdAt: order.createdAt.toISOString(),
     items: order.items.map((i) => ({
-      productId: i.productId,
-      productSlug: i.product.slug,
+      kind: i.event ? ("evento" as const) : ("produto" as const),
+      // o CHECK do banco garante um alvo: o que sobra aqui é escolher qual dos dois
+      slug: i.event?.slug ?? i.product?.slug ?? "",
       name: i.name,
       priceCents: i.priceCents,
       qty: i.qty,
-      event: i.product.eventAt
-        ? { at: i.product.eventAt.toISOString(), location: i.product.eventLocation }
-        : null,
+      event: i.event ? { at: i.event.at.toISOString(), location: i.event.location } : null,
       checkedInAt: i.checkedInAt?.toISOString() ?? null,
     })),
     payment: order.payment

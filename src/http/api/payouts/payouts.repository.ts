@@ -14,7 +14,8 @@ export type PayoutTotals = { earnedCents: number; settledCents: number };
 
 export type PayoutSale = {
   orderId: string;
-  productName: string;
+  /** Nome congelado na venda: produto ou vaga de evento. */
+  itemName: string;
   qty: number;
   payoutCents: number;
   soldAt: Date;
@@ -161,7 +162,7 @@ export function createPayoutsRepository(db: PrismaClient): PayoutsRepository {
       });
       return rows.map((row) => ({
         orderId: row.orderId,
-        productName: row.name,
+        itemName: row.name,
         qty: row.qty,
         payoutCents: row.payoutCents,
         soldAt: row.order.createdAt,

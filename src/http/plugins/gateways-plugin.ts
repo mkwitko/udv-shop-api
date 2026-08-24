@@ -4,6 +4,7 @@ import { env } from "../../config/env.js";
 import { createAiGateway } from "../../gateways/ai/ai.gateway.js";
 import { createDnsGateway } from "../../gateways/dns/dns.gateway.js";
 import { createEmailGateway } from "../../gateways/email/email.gateway.js";
+import { createLogEmailGateway } from "../../gateways/email/email.log.js";
 import { createGoogleGateway } from "../../gateways/google/google.gateway.js";
 import { createR2Gateway } from "../../gateways/r2/r2.gateway.js";
 import { createStripeGateway } from "../../gateways/stripe/stripe.gateway.js";
@@ -20,7 +21,11 @@ export function buildDefaultGateways(): Gateways {
       model: env.CF_AI_MODEL,
     }),
     dns: createDnsGateway(),
-    email: createEmailGateway({ apiKey: env.RESEND_API_KEY, from: env.EMAIL_FROM }),
+    // Sem chave da Resend o e-mail vai para o log em vez de falhar: em produção o schema
+    // do env exige a chave, então este ramo é só a máquina de quem desenvolve.
+    email: env.RESEND_API_KEY
+      ? createEmailGateway({ apiKey: env.RESEND_API_KEY, from: env.EMAIL_FROM })
+      : createLogEmailGateway(),
     google: createGoogleGateway({
       clientId: env.GOOGLE_CLIENT_ID,
       clientSecret: env.GOOGLE_CLIENT_SECRET,

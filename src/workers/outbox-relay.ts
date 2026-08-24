@@ -84,7 +84,8 @@ export async function relayOutbox(deps: {
           // reenvia o email por causa dela.
           await createInterestsRepository(deps.db).convertForOrder({
             userId: order.userId,
-            productIds: order.items.map((i) => i.productId),
+            productIds: order.items.flatMap((i) => (i.productId ? [i.productId] : [])),
+            eventIds: order.items.flatMap((i) => (i.eventId ? [i.eventId] : [])),
           });
           const lines = order.items
             .map(
@@ -168,14 +169,21 @@ export async function relayOutbox(deps: {
         // Guardado por status: um cancelamento (ou reabertura, ou conversão por um
         // order.paid que chegou primeiro) entre o enfileiramento e este tick não deve
         // gerar o email de "chegou".
-        const interest = await deps.db.productInterest.findFirst({
+        const interest = await deps.db.interest.findFirst({
           where: { id: interestId, status: "notified" },
           include: {
             user: { select: { email: true, name: true } },
             product: { select: { name: true, store: { select: { name: true } } } },
+            event: { select: { name: true, store: { select: { name: true } } } },
           },
         });
         if (interest) {
+          // O CHECK do banco garante um alvo; o que muda é a frase. "Chegou" não serve para
+          // sessão lotada que abriu vaga, e "abriu vaga" não serve para pote de mel.
+          const alvo = interest.event ?? interest.product;
+          const nome = alvo?.name ?? "";
+          const loja = alvo?.store.name ?? "";
+          const ehEvento = interest.event !== null;
           // Quem pediu aviso deixando só telefone não recebe e-mail: quem cuida da loja fala
           // por WhatsApp, com o número que aparece na fila de encomendas.
           if (!interest.user.email) {
@@ -183,13 +191,15 @@ export async function relayOutbox(deps: {
           } else {
             await deps.email.send({
               to: interest.user.email,
-              subject: `Chegou: ${interest.product.name} — ${interest.product.store.name}`,
-              html: `<p>Olá, ${escapeHtml(interest.user.name)}!</p><p>O produto <strong>${escapeHtml(interest.product.name)}</strong> que você encomendou em ${escapeHtml(interest.product.store.name)} chegou.</p><p>Sua encomenda era de ${interest.qty} unidade(s). É só acessar a loja para finalizar o pedido — quem chega antes garante.</p><p>Com carinho, quem cuida de ${escapeHtml(interest.product.store.name)}.</p>`,
+              subject: ehEvento ? `Abriu vaga: ${nome} — ${loja}` : `Chegou: ${nome} — ${loja}`,
+              html: ehEvento
+                ? `<p>Olá, ${escapeHtml(interest.user.name)}!</p><p>Abriu vaga em <strong>${escapeHtml(nome)}</strong>, em ${escapeHtml(loja)}.</p><p>Você pediu ${interest.qty} vaga(s). É só acessar a loja para garantir — quem chega antes fica com ela.</p><p>Com carinho, quem cuida de ${escapeHtml(loja)}.</p>`
+                : `<p>Olá, ${escapeHtml(interest.user.name)}!</p><p>O produto <strong>${escapeHtml(nome)}</strong> que você encomendou em ${escapeHtml(loja)} chegou.</p><p>Sua encomenda era de ${interest.qty} unidade(s). É só acessar a loja para finalizar o pedido — quem chega antes garante.</p><p>Com carinho, quem cuida de ${escapeHtml(loja)}.</p>`,
             });
           }
         }
-        // Nota: se o interesse sumiu (produto apagado), o evento é marcado processed do
-        // mesmo jeito — não há o que notificar.
+        // Nota: se o interesse sumiu (produto ou evento apagado), o evento é marcado
+        // processed do mesmo jeito — não há o que notificar.
       } else if (event.type === "donation.received") {
         const { donationId } = event.payload as { donationId: string };
         const donation = await deps.db.donation.findFirst({

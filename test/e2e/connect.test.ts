@@ -204,7 +204,7 @@ describe("connect — onboarding Stripe e subconta Woovi", () => {
         payoutsEnabled: false,
         detailsSubmitted: true,
       },
-      woovi: { connected: false, pixKeyMasked: null },
+      woovi: { connected: false, pixKeyMasked: null, keyStatus: null, ownerName: null },
       // zero é o default desde o ADR-027: plataforma vive da mensalidade, não de comissão
       applicationFeeBps: 0,
       // taxa do provedor não declarada no ambiente: a tela mostra o texto sem número
@@ -268,13 +268,48 @@ describe("connect — onboarding Stripe e subconta Woovi", () => {
     });
     expect(res.statusCode).toBe(200);
     // a chave volta mascarada: a loja reconhece qual salvou, a chave inteira não trafega
-    expect(res.json().woovi).toEqual({ connected: true, pixKeyMasked: "pi***@nucleo.org" });
+    // nasce `pending`: declarar a chave não é provar que ela é sua, e o nome que o Banco
+    // Central devolve é o que a loja confere com o olho antes de pagar o centavo
+    expect(res.json().woovi).toEqual({
+      connected: true,
+      pixKeyMasked: "pi***@nucleo.org",
+      keyStatus: "pending",
+      ownerName: "Dona da Chave",
+    });
     expect(JSON.stringify(res.json())).not.toContain("pix@nucleo.org");
 
     expect(gateways.wooviSubAccounts).toEqual([{ name: "Núcleo X", pixKey: "pix@nucleo.org" }]);
     const persisted = await db.store.findUniqueOrThrow({ where: { id: store.id } });
     expect(persisted.wooviPixKey).toBe("pix@nucleo.org");
     expect(persisted.wooviSubaccountId).toBe("woovi_sub_1");
+  });
+
+  it("chave Pix já usada por outra loja é recusada, sem criar subconta nem gravar", async () => {
+    const dona = await seedStore();
+    await db.store.update({
+      where: { id: dona.id },
+      data: { wooviPixKey: "pix@nucleo.org", wooviSubaccountId: "woovi_sub_1" },
+    });
+    // a subconta da Woovi É a chave: gravar a mesma chave aqui daria à segunda loja o
+    // saldo da primeira, inclusive o botão de saque
+    const outra = await db.store.create({
+      data: { slug: "ny", name: "Núcleo Y", status: "pending" },
+    });
+    const { token } = await registerWithRole(app, "owner-ny@example.org", outra.id, "owner");
+
+    const res = await app.inject({
+      method: "PUT",
+      url: "/stores/ny/connect/woovi",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { pixKey: "pix@nucleo.org" },
+    });
+
+    expect(res.statusCode).toBe(409);
+    expect(res.json().message).toBe("woovi_pix_key_taken");
+    // recusa antes do gateway: subconta repetida na Woovi é rastro que não se apaga
+    expect(gateways.wooviSubAccounts).toEqual([]);
+    const persisted = await db.store.findUniqueOrThrow({ where: { id: outra.id } });
+    expect(persisted.wooviPixKey).toBeNull();
   });
 
   it("loja suspensa não inicia onboarding", async () => {

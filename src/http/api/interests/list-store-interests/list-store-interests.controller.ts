@@ -3,6 +3,7 @@ import { z } from "zod";
 import { db } from "../../../../infra/db/client.js";
 import { NotFoundError } from "../../../../shared/errors.js";
 import { requireUser } from "../../../hooks/auth.js";
+import { createEventsRepository } from "../../events/events.repository.js";
 import { createProductsRepository } from "../../products/products.repository.js";
 import { createInterestsRepository, toStoreInterestResponse } from "../interests.repository.js";
 import { StoreInterestsPageResponse, StoreInterestsQuery } from "../interests.schema.js";
@@ -11,6 +12,7 @@ import { resolveStoreForRole } from "../manage.helpers.js";
 export const listStoreInterestsRoute: FastifyPluginAsync = async (app) => {
   const repo = createInterestsRepository(db);
   const products = createProductsRepository(db);
+  const events = createEventsRepository(db);
   app.get(
     "/stores/:slug/interests",
     {
@@ -30,18 +32,22 @@ export const listStoreInterestsRoute: FastifyPluginAsync = async (app) => {
       // Quem responde pela loja vê o número inteiro para poder avisar por WhatsApp; staff
       // segue no mascarado. É a mesma fronteira do botão que dispara o aviso de chegada.
       const revealPhone = user.platformAdmin || role === "owner" || role === "admin";
-      const { limit, cursor, status, productSlug } = req.query as z.infer<
+      const { limit, cursor, status, productSlug, eventSlug } = req.query as z.infer<
         typeof StoreInterestsQuery
       >;
-      let productId: string | null = null;
+      let target: { productId: string } | { eventId: string } | null = null;
       if (productSlug !== undefined) {
         const product = await products.findBySlug(store.id, productSlug);
         if (!product) throw new NotFoundError("product_not_found");
-        productId = product.id;
+        target = { productId: product.id };
+      } else if (eventSlug !== undefined) {
+        const event = await events.findBySlug(store.id, eventSlug);
+        if (!event) throw new NotFoundError("event_not_found");
+        target = { eventId: event.id };
       }
       const page = await repo.listByStoreCursor({
         storeId: store.id,
-        productId,
+        target,
         status: status ?? null,
         limit,
         cursor: cursor ?? null,

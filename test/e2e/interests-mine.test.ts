@@ -84,7 +84,7 @@ describe("POST /interests", () => {
       headers: { authorization: `Bearer ${token}` },
       payload,
     });
-    await db.productInterest.updateMany({
+    await db.interest.updateMany({
       where: { productId: onDemand.id, userId: user.id },
       data: { status: "notified", notifiedAt: new Date() },
     });
@@ -98,7 +98,7 @@ describe("POST /interests", () => {
     expect(res.json().qty).toBe(3);
     expect(res.json().status).toBe("open");
     expect(res.json().notifiedAt).toBeNull();
-    expect(await db.productInterest.count()).toBe(1);
+    expect(await db.interest.count()).toBe(1);
   });
 
   it("produto in_stock com estoque → 400 product_available", async () => {
@@ -191,7 +191,7 @@ describe("GET /interests e DELETE /interests/:id", () => {
           availability: "on_demand",
         },
       });
-      const interest = await db.productInterest.create({
+      const interest = await db.interest.create({
         data: {
           productId: product.id,
           userId,
@@ -230,7 +230,7 @@ describe("GET /interests e DELETE /interests/:id", () => {
   it("filtra por status", async () => {
     const { token, user } = await register(app, "filter@example.org");
     const [first] = await seedInterests(user.id, 2);
-    await db.productInterest.update({
+    await db.interest.update({
       where: { id: first as string },
       data: { status: "notified", notifiedAt: new Date() },
     });
@@ -253,7 +253,7 @@ describe("GET /interests e DELETE /interests/:id", () => {
     });
     expect(res.statusCode).toBe(200);
     expect(res.json().status).toBe("cancelled");
-    const row = await db.productInterest.findUniqueOrThrow({ where: { id: id as string } });
+    const row = await db.interest.findUniqueOrThrow({ where: { id: id as string } });
     expect(row.status).toBe("cancelled");
   });
 

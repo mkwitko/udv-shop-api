@@ -1,8 +1,13 @@
-import type { Store } from "@prisma/client";
 import type { StripeGateway } from "../../../../gateways/stripe/stripe.gateway.js";
 import type { WooviGateway } from "../../../../gateways/woovi/woovi.gateway.js";
 import { wooviApplicationFeeCents } from "../../../../lib/application-fee.js";
+import { assertProviderConfigured } from "../../../../lib/store-payments.js";
 import { badGateway, NotFoundError, ValidationError } from "../../../../shared/errors.js";
+import {
+  activeOffer,
+  type EventsRepository,
+  eventFinished,
+} from "../../events/events.repository.js";
 import { itemPayoutCents } from "../../payouts/payouts.helpers.js";
 import type { ProductsRepository } from "../../products/products.repository.js";
 import type { StoresRepository } from "../../stores/stores.repository.js";
@@ -14,6 +19,7 @@ export type CheckoutDeps = {
   orders: OrdersRepository;
   stores: StoresRepository;
   products: ProductsRepository;
+  events: EventsRepository;
   stripe: StripeGateway;
   woovi: WooviGateway;
 };
@@ -26,28 +32,58 @@ export function createCheckoutService(deps: CheckoutDeps) {
     if (store?.status !== "active") throw new NotFoundError("store_not_found");
     assertProviderConfigured(store, input.provider);
 
-    const slugs = input.items.map((i) => i.productSlug);
-    if (new Set(slugs).size !== slugs.length) throw new ValidationError("duplicate_items");
-    const products = await deps.products.findActiveBySlugs(store.id, slugs);
-    const bySlug = new Map(products.map((p) => [p.slug, p]));
+    // Produto e evento têm espaços de endereço separados, então a chave que não pode
+    // repetir no mesmo pedido é o par (tipo, slug) — "cha" produto e "cha" evento convivem.
+    const keys = input.items.map((i) => (i.eventSlug ? `e:${i.eventSlug}` : `p:${i.productSlug}`));
+    if (new Set(keys).size !== keys.length) throw new ValidationError("duplicate_items");
+
+    const productSlugs = input.items.flatMap((i) => (i.productSlug ? [i.productSlug] : []));
+    const eventSlugs = input.items.flatMap((i) => (i.eventSlug ? [i.eventSlug] : []));
+    const [products, events] = await Promise.all([
+      productSlugs.length > 0
+        ? deps.products.findActiveBySlugs(store.id, productSlugs)
+        : Promise.resolve([]),
+      eventSlugs.length > 0
+        ? deps.events.findActiveBySlugs(store.id, eventSlugs)
+        : Promise.resolve([]),
+    ]);
+    const productBySlug = new Map(products.map((p) => [p.slug, p]));
+    const eventBySlug = new Map(events.map((e) => [e.slug, e]));
 
     const items = input.items.map((i) => {
-      const product = bySlug.get(i.productSlug);
+      if (i.eventSlug) {
+        const event = eventBySlug.get(i.eventSlug);
+        if (!event) throw new NotFoundError("event_not_found");
+        // Vaga em evento que já terminou não se vende: o link antigo continua circulando no
+        // grupo do WhatsApp muito depois da data, e cobrar por isso é pegar dinheiro por nada.
+        if (eventFinished(event)) throw new ValidationError("event_finished");
+        // Quem escolhe o lote é o servidor, nunca o cliente: com o lote no corpo do pedido,
+        // um link antigo compraria pelo preço do 1º lote depois de ele acabar.
+        const offer = activeOffer(event);
+        if (event.batches.length > 0 && !offer.batch) {
+          throw new ValidationError("event_batch_unavailable");
+        }
+        const price = offer.priceCents;
+        return {
+          eventId: event.id,
+          ...(offer.batch ? { eventBatchId: offer.batch.id } : {}),
+          // o nome carrega o lote porque é o que o recibo tem de dizer: "Oficina — 2º lote"
+          name: offer.batch ? `${event.name} — ${offer.batch.name}` : event.name,
+          priceCents: price,
+          qty: i.qty,
+          // o acordo de repasse vale como estava na hora da compra, sobre o preço do lote
+          supplierId: event.supplierId,
+          payoutCents: itemPayoutCents({ ...event, priceCents: price }, i.qty),
+        };
+      }
+      const product = productBySlug.get(i.productSlug as string);
       if (!product) throw new NotFoundError("product_not_found");
       if (product.availability !== "in_stock") throw new ValidationError("product_not_orderable");
-      // Ingresso de evento que já terminou não se vende: o link antigo continua circulando
-      // no grupo do WhatsApp muito depois da data, e cobrar por isso é pegar dinheiro por
-      // nada. O fim manda quando existe; sem ele, o início.
-      const eventOver = product.eventAt
-        ? (product.eventEndsAt ?? product.eventAt).getTime() < Date.now()
-        : false;
-      if (eventOver) throw new ValidationError("event_finished");
       return {
         productId: product.id,
         name: product.name,
         priceCents: product.priceCents,
         qty: i.qty,
-        // o acordo de repasse vale como estava na hora da compra
         supplierId: product.supplierId,
         payoutCents: itemPayoutCents(product, i.qty),
       };
@@ -120,15 +156,4 @@ export function createCheckoutService(deps: CheckoutDeps) {
     }
     return { order, payment: instructions };
   };
-}
-
-function assertProviderConfigured(store: Store, provider: "stripe" | "woovi"): void {
-  // Ter conta conectada não é o mesmo que poder receber: até a capability `transfers`
-  // ficar ativa, a destination charge é recusada pelo Stripe já com o pedido criado no
-  // banco e o comprador na tela de pagamento. Barrar antes evita o pedido órfão.
-  const configured =
-    provider === "stripe"
-      ? store.stripeAccountId && store.stripeTransfersEnabled
-      : store.wooviPixKey;
-  if (!configured) throw new ValidationError("payments_not_configured");
 }

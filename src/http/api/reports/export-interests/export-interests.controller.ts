@@ -33,10 +33,11 @@ export const exportInterestsRoute: FastifyPluginAsync = async (app) => {
       const { limit } = req.query as ExportQuery;
       const rows = await repo.exportInterests(store.id, limit);
       const csv = toCsv(
-        ["Data", "Produto", "Pessoa", "Telefone", "Quantidade", "Situação"],
+        // "Item" e não "Produto": a fila também tem vaga de evento lotado
+        ["Data", "Item", "Pessoa", "Telefone", "Quantidade", "Situação"],
         rows.map((row) => [
           csvDateTime(row.createdAt),
-          row.productName,
+          row.itemName,
           row.customerName,
           row.customerPhone ?? "",
           row.qty,

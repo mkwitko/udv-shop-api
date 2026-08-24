@@ -26,7 +26,7 @@ describe("modelo ProductInterest", () => {
 
   it("nasce open com qty 1 e sem notifiedAt", async () => {
     const { product, user } = await seedProductAndUser();
-    const interest = await db.productInterest.create({
+    const interest = await db.interest.create({
       data: { productId: product.id, userId: user.id },
     });
     expect(interest.status).toBe("open");
@@ -37,23 +37,23 @@ describe("modelo ProductInterest", () => {
 
   it("é único por (produto, usuário)", async () => {
     const { product, user } = await seedProductAndUser();
-    await db.productInterest.create({ data: { productId: product.id, userId: user.id } });
+    await db.interest.create({ data: { productId: product.id, userId: user.id } });
     await expect(
-      db.productInterest.create({ data: { productId: product.id, userId: user.id } }),
+      db.interest.create({ data: { productId: product.id, userId: user.id } }),
     ).rejects.toMatchObject({ code: "P2002" });
   });
 
   it("cascata ao apagar o produto", async () => {
     const { product, user } = await seedProductAndUser();
-    await db.productInterest.create({ data: { productId: product.id, userId: user.id } });
+    await db.interest.create({ data: { productId: product.id, userId: user.id } });
     await db.product.delete({ where: { id: product.id } });
-    expect(await db.productInterest.count()).toBe(0);
+    expect(await db.interest.count()).toBe(0);
   });
 
   it("cascata ao apagar o usuário", async () => {
     const { product, user } = await seedProductAndUser();
-    await db.productInterest.create({ data: { productId: product.id, userId: user.id } });
+    await db.interest.create({ data: { productId: product.id, userId: user.id } });
     await db.user.delete({ where: { id: user.id } });
-    expect(await db.productInterest.count()).toBe(0);
+    expect(await db.interest.count()).toBe(0);
   });
 });

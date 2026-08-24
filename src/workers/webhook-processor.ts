@@ -14,6 +14,7 @@ import {
   refundPaymentByPaymentId,
   refundPaymentByProviderId,
 } from "./payment-routing.js";
+import { settleWooviPixKeyVerification } from "./pix-key-verification.js";
 
 const WOOVI_COMPLETED = "OPENPIX:CHARGE_COMPLETED";
 const WOOVI_EXPIRED = "OPENPIX:CHARGE_EXPIRED";
@@ -58,7 +59,11 @@ type StripePayload = {
   account?: string;
   data?: { object?: StripeObject };
 };
-type WooviPayload = { charge?: { correlationID?: string } };
+type WooviPayload = {
+  charge?: { correlationID?: string };
+  /** `pix.payer` é quem pagou de verdade — é o que prova posse da chave na verificação. */
+  pix?: { payer?: { name?: string; taxID?: { taxID?: string } } };
+};
 
 /**
  * A partir de Basil (a API fixada aqui é 2026-07-29.dahlia) o id da assinatura saiu do topo
@@ -194,10 +199,24 @@ export async function processWebhookEvents(deps: {
             : null;
         if (paymentId) {
           if (event.type === WOOVI_COMPLETED) {
-            await markPaymentPaid({ db: deps.db, log: deps.log, paymentId, providerId: null });
-            // O split já creditou a subconta, mas subconta é saldo virtual dentro da conta
-            // da plataforma: sem o saque o dinheiro do núcleo não sai daqui.
-            await enqueueWooviWithdraw({ db: deps.db, paymentId });
+            // A cobrança da prova de posse usa o id da verificação como correlationID.
+            // Ela vem antes porque não é pagamento de pedido nenhum: seguir para
+            // markPaymentPaid faria o centavo procurar um Payment que não existe.
+            const verificacao = await settleWooviPixKeyVerification({
+              db: deps.db,
+              log: deps.log,
+              verificationId: paymentId,
+              payer: {
+                name: payload.pix?.payer?.name ?? null,
+                taxId: payload.pix?.payer?.taxID?.taxID ?? null,
+              },
+            });
+            if (!verificacao) {
+              await markPaymentPaid({ db: deps.db, log: deps.log, paymentId, providerId: null });
+              // O split já creditou a subconta, mas subconta é saldo virtual dentro da conta
+              // da plataforma: sem o saque o dinheiro do núcleo não sai daqui.
+              await enqueueWooviWithdraw({ db: deps.db, paymentId });
+            }
           } else if (event.type === WOOVI_EXPIRED) {
             await cancelPaymentAggregate({ db: deps.db, paymentId, reason: "expired" });
           } else if (WOOVI_REFUNDED.includes(event.type)) {

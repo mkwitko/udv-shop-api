@@ -1,6 +1,7 @@
 import { db } from "../../infra/db/client.js";
 import { logger } from "../../infra/observability/logger.js";
 import { markPaymentPaid } from "../../workers/payment-routing.js";
+import { settleWooviPixKeyVerification } from "../../workers/pix-key-verification.js";
 import type { WooviGateway } from "./woovi.gateway.js";
 
 /**
@@ -57,6 +58,32 @@ export function createFakeWooviGateway(): WooviGateway {
 
       return {
         providerId,
+        brCode: `00020126DEMO.colheita.fake/${input.correlationID}6304ABCD`,
+        qrCodeImageUrl: fakeQrSvg(input.amountCents),
+        expiresAt: new Date(Date.now() + input.expiresInSeconds * 1000).toISOString(),
+      };
+    },
+
+    // Dono de mentira, sempre o mesmo: o que a tela precisa exercitar é o fluxo, e o
+    // pagador falso (abaixo) é gerado para bater com este documento.
+    async checkPixKey(pixKey) {
+      return { pixKey, type: "EMAIL" as const, name: "Dono Demo", taxId: "000.***.***-91" };
+    },
+
+    async createPlainCharge(input) {
+      // Confirma sozinho como quem pagou fosse o dono da chave: em dev não existe app de
+      // banco para pagar o centavo, e sem isso a prova de posse nunca fecharia localmente.
+      setTimeout(() => {
+        settleWooviPixKeyVerification({
+          db,
+          log: logger,
+          verificationId: input.correlationID,
+          payer: { name: "Dono Demo", taxId: "00000000191" },
+        }).catch((error) => logger.error({ error }, "dev-fake-payments: verificação falhou"));
+      }, CONFIRM_AFTER_MS).unref();
+
+      return {
+        providerId: `fake_pix_${input.correlationID}`,
         brCode: `00020126DEMO.colheita.fake/${input.correlationID}6304ABCD`,
         qrCodeImageUrl: fakeQrSvg(input.amountCents),
         expiresAt: new Date(Date.now() + input.expiresInSeconds * 1000).toISOString(),

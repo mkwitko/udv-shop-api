@@ -1,7 +1,7 @@
-import type { Store } from "@prisma/client";
 import type { StripeGateway } from "../../../../gateways/stripe/stripe.gateway.js";
 import type { WooviGateway } from "../../../../gateways/woovi/woovi.gateway.js";
 import { wooviApplicationFeeCents } from "../../../../lib/application-fee.js";
+import { assertProviderConfigured } from "../../../../lib/store-payments.js";
 import { badGateway, NotFoundError, ValidationError } from "../../../../shared/errors.js";
 import {
   type CampaignsRepository,
@@ -155,14 +155,4 @@ export function createDonationService(deps: CreateDonationDeps) {
 function requireSubscriberEmail(email: string | null): string {
   if (!email) throw new ValidationError("email_required_for_monthly");
   return email;
-}
-
-function assertProviderConfigured(store: Store, provider: "stripe" | "woovi"): void {
-  // Mesmo gate do checkout: conta conectada sem capability `transfers` ativa não recebe
-  // destination charge, e a doação nasceria pendente sem nunca poder ser paga.
-  const configured =
-    provider === "stripe"
-      ? store.stripeAccountId && store.stripeTransfersEnabled
-      : store.wooviPixKey;
-  if (!configured) throw new ValidationError("payments_not_configured");
 }

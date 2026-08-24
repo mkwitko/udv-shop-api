@@ -16,6 +16,7 @@ async function seedStore() {
       stripeAccountId: "acct_1",
       stripeTransfersEnabled: true,
       wooviPixKey: "pix@nucleo.org",
+      wooviPixKeyStatus: "verified" as const,
       applicationFeeBps: 500,
     },
   });

@@ -169,6 +169,55 @@ troca é recusada com `409 woovi_withdraw_blocked` em vez de esconder o dinheiro
 subconta antiga fica vazia e não é apagada: um saque pedido segundos antes ainda pode
 estar liquidando.
 
+### Chave Pix: única entre lojas, e com prova de posse
+
+Como a subconta **é** a chave, duas lojas com a mesma chave operariam a mesma subconta: a
+segunda veria e poderia sacar o saldo da primeira. Ninguém rouba por aí (o Pix sempre cai
+na chave), mas reembolso sai da subconta — subconta esvaziada fora de hora é reembolso pago
+pela plataforma — e as receitas das duas viravam um saldo só sem dono identificável. Daí
+`stores.woovi_pix_key` ser **único**: chave já usada responde `409 woovi_pix_key_taken`,
+antes de qualquer chamada ao gateway.
+
+Unicidade não é posse, e sozinha ela criava squatting. Quem prova é `wooviPixKeyStatus`:
+
+| estado | recebe? | o que significa |
+| --- | --- | --- |
+| `pending` | **não** | chave declarada, posse não provada. É a chave-de-terceiro usada como fantoche das vendas que isto barra: o dinheiro cairia na conta de um inocente e a trilha do golpe apontaria para ele |
+| `verified` | sim | o centavo foi pago de uma conta do mesmo CPF/CNPJ do dono da chave |
+| `legacy` | sim | chave gravada antes desta verificação existir. Recebe porque tirar do ar quem já vendia era pior que o risco; a gestão pede a prova |
+
+Fluxo, em duas chamadas à Woovi:
+
+1. **Ao salvar a chave** (`PUT …/connect/woovi`): `POST /api/v1/pix-keys/check` — consulta
+   DICT, **de graça**, que devolve `{pixKeyEndToEndId, pixKey, type, owner:{name, taxID}}`.
+   O nome vem **inteiro**; o `taxID` vem **mascarado** para CPF (`000.***.***-91`) e inteiro
+   para CNPJ. Chave que o BC não conhece → `400 woovi_pix_key_not_found` (quase sempre erro
+   de digitação). O endpoint tem limite de taxa por regra do BC e 404 repetido puxa `429`:
+   nesse caso a chave é gravada sem dono e a consulta é refeita na verificação — chave sem
+   posse provada não recebe nada, então esperar não protegeria ninguém.
+2. **Ao provar** (`POST …/connect/woovi/verification`): cria uma cobrança de **R$ 0,01 sem
+   split** (o centavo fica na plataforma; com split ele voltaria para a subconta da chave
+   não provada) usando o id da verificação como `correlationID`. A loja paga **do app da
+   conta da chave**, e o `OPENPIX:CHARGE_COMPLETED` traz `pix.payer.taxID.taxID` **inteiro**
+   — comparado, dígito a dígito nas posições que a máscara revela, com o dono do passo 1.
+
+Detalhes que mandam no desenho:
+
+- Quando a chave **é** um CPF/CNPJ, a própria chave dá o documento inteiro e a comparação é
+  exata; nos outros tipos sobram os 5 dígitos da máscara. Menos que isso é `inconclusive`:
+  a verificação fica pendente e o log grita, porque aprovar sem saber é o buraco que isto
+  fecha e recusar quem talvez seja o dono não custa menos.
+- Nome diferente com documento igual **não** recusa: banco abrevia ("MARIA S SILVA").
+- O documento de quem pagou é gravado **mascarado** — auditar a recusa não pede o número
+  inteiro de um terceiro.
+- Trocar de chave volta o estado para `pending`: a prova valia para a chave antiga. Centavo
+  que chega depois da troca fecha a tentativa como `expired`.
+- Pedir a prova de novo devolve a **mesma** cobrança enquanto ela vive: o QR já está aberto
+  no celular de alguém.
+
+Com `DEV_FAKE_PAYMENTS=true` a consulta devolve um dono fixo e a cobrança se confirma
+sozinha em 8s como se o dono tivesse pagado.
+
 ### Saldo é virtual — sem saque o dinheiro não sai daqui
 
 Subconta **não é conta bancária**: o split reserva o valor dentro do saldo da conta da

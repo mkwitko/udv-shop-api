@@ -5,6 +5,7 @@ import { createDashboardLinkRoute } from "./create-dashboard-link/create-dashboa
 import { getConnectStatusRoute } from "./get-connect-status/get-connect-status.controller.js";
 import { getWooviBalanceRoute } from "./get-woovi-balance/get-woovi-balance.controller.js";
 import { putWooviConnectRoute } from "./put-woovi-connect/put-woovi-connect.controller.js";
+import { verifyWooviPixKeyRoute } from "./verify-woovi-pix-key/verify-woovi-pix-key.controller.js";
 import { withdrawWooviRoute } from "./withdraw-woovi/withdraw-woovi.controller.js";
 
 export const connectRoutes: FastifyPluginAsync = async (app) => {
@@ -14,5 +15,6 @@ export const connectRoutes: FastifyPluginAsync = async (app) => {
   await app.register(getConnectStatusRoute);
   await app.register(putWooviConnectRoute);
   await app.register(getWooviBalanceRoute);
+  await app.register(verifyWooviPixKeyRoute);
   await app.register(withdrawWooviRoute);
 };

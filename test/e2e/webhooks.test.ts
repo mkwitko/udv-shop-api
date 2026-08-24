@@ -24,6 +24,7 @@ async function seedOrder(app: FastifyInstance, provider: "stripe" | "woovi") {
       stripeAccountId: "acct_1",
       stripeTransfersEnabled: true,
       wooviPixKey: "pix@nucleo.org",
+      wooviPixKeyStatus: "verified" as const,
     },
   });
   const product = await db.product.create({
