@@ -1,6 +1,7 @@
+import { env } from "../../../../config/env.js";
 import type { StripeGateway } from "../../../../gateways/stripe/stripe.gateway.js";
 import type { WooviGateway } from "../../../../gateways/woovi/woovi.gateway.js";
-import { wooviApplicationFeeCents } from "../../../../lib/application-fee.js";
+import { wooviRetainedFeeCents } from "../../../../lib/provider-fee.js";
 import { assertProviderConfigured } from "../../../../lib/store-payments.js";
 import { badGateway, NotFoundError, ValidationError } from "../../../../shared/errors.js";
 import {
@@ -90,13 +91,15 @@ export function createCheckoutService(deps: CheckoutDeps) {
     });
 
     const totalCents = items.reduce((sum, i) => sum + i.priceCents * i.qty, 0);
-    const storeFeeCents = Math.floor((totalCents * store.applicationFeeBps) / 10000);
-    // A Woovi recusa split de 100%, então o Pix retém ao menos 1 centavo. Grava-se o valor
-    // efetivo, não o da loja: o extrato precisa bater com o que a subconta recebeu.
-    const applicationFeeCents =
-      input.provider === "woovi"
-        ? wooviApplicationFeeCents(totalCents, storeFeeCents)
-        : storeFeeCents;
+    // Comissão da plataforma: zero em toda loja (ADR-027). Fica separada da taxa do
+    // provedor de propósito — juntar as duas diria para a loja que estamos cobrando
+    // comissão quando não estamos.
+    const applicationFeeCents = Math.floor((totalCents * store.applicationFeeBps) / 10000);
+    // Taxa do provedor (ADR-029). No Pix ela é retida no split agora, porque o split é
+    // fixado na criação da cobrança. No cartão ela só existe depois da cobrança aprovada,
+    // e quem a grava é o repasse — aqui vai zero, não um palpite.
+    const providerFeeCents =
+      input.provider === "woovi" ? wooviRetainedFeeCents(totalCents, env.WOOVI_FEE_FIXED_CENTS) : 0;
     const expiresAt = new Date(Date.now() + RESERVATION_TTL_MINUTES * 60 * 1000);
 
     const order = await deps.orders.createPendingOrder({
@@ -106,6 +109,7 @@ export function createCheckoutService(deps: CheckoutDeps) {
       items,
       totalCents,
       applicationFeeCents,
+      providerFeeCents,
       contactPhone: input.contactPhone,
       note: input.note ?? null,
       publicToken: input.publicToken,
@@ -133,7 +137,7 @@ export function createCheckoutService(deps: CheckoutDeps) {
           correlationID: paymentId,
           expiresInSeconds: RESERVATION_TTL_MINUTES * 60,
           splitPixKey: store.wooviPixKey as string,
-          splitValueCents: totalCents - applicationFeeCents,
+          splitValueCents: totalCents - applicationFeeCents - providerFeeCents,
           comment: `Pedido — ${store.name}`.slice(0, 140),
         });
         await deps.orders.attachProviderId(paymentId, charge.providerId);

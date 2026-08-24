@@ -373,7 +373,7 @@ export function createEventsRepository(db: PrismaClient): EventsRepository {
             select: {
               status: true,
               totalCents: true,
-              payment: { select: { applicationFeeCents: true } },
+              payment: { select: { applicationFeeCents: true, providerFeeCents: true } },
             },
           },
         },
@@ -400,8 +400,13 @@ export function createEventsRepository(db: PrismaClient): EventsRepository {
           row.payoutCents += item.payoutCents;
           // A taxa foi congelada no PEDIDO, não no item: um pedido que levou vaga e mel
           // paga uma taxa só. Rateia pelo peso desta linha no pedido — usar a taxa atual da
-          // loja reescreveria o passado toda vez que a comissão mudasse.
-          const feeDoPedido = item.order.payment?.applicationFeeCents ?? 0;
+          // loja reescreveria o passado toda vez que a comissão mudasse. Soma comissão da
+          // plataforma (zero hoje) e taxa do provedor: as duas saem do que a loja recebe, e
+          // o líquido desta tela precisa dizer isso (ADR-029). `providerFeeCents` nulo é
+          // pagamento antigo, em que a plataforma pagou a taxa — conta como zero.
+          const feeDoPedido =
+            (item.order.payment?.applicationFeeCents ?? 0) +
+            (item.order.payment?.providerFeeCents ?? 0);
           if (feeDoPedido > 0 && item.order.totalCents > 0) {
             row.feeCents += Math.round((bruto / item.order.totalCents) * feeDoPedido);
           }

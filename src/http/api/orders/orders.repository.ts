@@ -53,6 +53,8 @@ export interface OrdersRepository {
     items: NewOrderItem[];
     totalCents: number;
     applicationFeeCents: number;
+    /** Taxa do provedor retida no split (Woovi) ou 0 quando ela só é conhecida depois (Stripe). */
+    providerFeeCents: number;
     contactPhone: string;
     note: string | null;
     /** Chave do recibo público. Só vem preenchida quando o pedido nasce sem sessão. */
@@ -176,6 +178,7 @@ export function createOrdersRepository(db: PrismaClient): OrdersRepository {
                 provider: input.provider,
                 amountCents: input.totalCents,
                 applicationFeeCents: input.applicationFeeCents,
+                providerFeeCents: input.providerFeeCents,
               },
             },
           },
