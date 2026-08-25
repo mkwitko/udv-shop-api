@@ -344,4 +344,56 @@ describe("billing — assinatura SaaS na conta da plataforma", () => {
     expect(res.statusCode).toBe(201);
     expect(gateways.stripeSaasCheckouts[0]?.customerId).toBe("cus_1");
   });
+
+  it("cancelar assinatura duplicada não derruba a loja que tem a vigente", async () => {
+    const store = await seedStore();
+    await subscriptionEvent(app, {
+      eventId: "evt_vigente",
+      type: "customer.subscription.created",
+      storeId: store.id,
+      status: "active",
+      subscriptionId: "sub_vigente",
+    });
+    expect((await db.store.findUniqueOrThrow({ where: { id: store.id } })).status).toBe("active");
+
+    // Tentativa duplicada do período em que o webhook estava fora do ar: mesma
+    // `metadata.storeId`, outro id de assinatura.
+    await subscriptionEvent(app, {
+      eventId: "evt_duplicada_cancelada",
+      type: "customer.subscription.deleted",
+      storeId: store.id,
+      status: "canceled",
+      subscriptionId: "sub_duplicada",
+    });
+
+    const depois = await db.store.findUniqueOrThrow({ where: { id: store.id } });
+    expect(depois.status).toBe("active");
+    const assinatura = await db.storeSubscription.findUniqueOrThrow({
+      where: { storeId: store.id },
+    });
+    expect(assinatura.stripeSubscriptionId).toBe("sub_vigente");
+    expect(assinatura.status).toBe("active");
+  });
+
+  it("cancelar a assinatura vigente continua suspendendo a loja", async () => {
+    const store = await seedStore();
+    await subscriptionEvent(app, {
+      eventId: "evt_vigente2",
+      type: "customer.subscription.created",
+      storeId: store.id,
+      status: "active",
+      subscriptionId: "sub_vigente",
+    });
+    await subscriptionEvent(app, {
+      eventId: "evt_vigente2_cancelada",
+      type: "customer.subscription.deleted",
+      storeId: store.id,
+      status: "canceled",
+      subscriptionId: "sub_vigente",
+    });
+
+    const depois = await db.store.findUniqueOrThrow({ where: { id: store.id } });
+    expect(depois.status).toBe("suspended");
+    expect(depois.suspensionReason).toBe("billing");
+  });
 });

@@ -38,6 +38,25 @@ export function createBillingRepository(db: PrismaClient): BillingRepository {
 
     applySubscriptionState: async (state) => {
       await db.$transaction(async (tx) => {
+        const atual = await tx.storeSubscription.findUnique({ where: { storeId: state.storeId } });
+        // A loja guarda UMA assinatura, mas o Stripe pode ter mais de uma com o mesmo
+        // `metadata.storeId` (tentativa duplicada quando o webhook estava fora do ar).
+        // Sem separar por id, cancelar a duplicada suspendia a loja que estava em dia.
+        if (
+          atual?.stripeSubscriptionId &&
+          atual.stripeSubscriptionId !== state.stripeSubscriptionId
+        ) {
+          const novaVigente = state.status === "active" || state.status === "trialing";
+          // Duplicada morrendo não mexe em nada: quem manda é a assinatura registrada.
+          if (!novaVigente) return;
+          const atualVigente = atual.status === "active" || atual.status === "trialing";
+          // Entre duas vigentes, a de ciclo mais longe é a mais recente — assinatura velha
+          // não pode roubar o registro da que a loja acabou de contratar.
+          const maisRecente =
+            (state.currentPeriodEnd?.getTime() ?? 0) > (atual.currentPeriodEnd?.getTime() ?? 0);
+          if (atualVigente && !maisRecente) return;
+        }
+
         await tx.storeSubscription.upsert({
           where: { storeId: state.storeId },
           create: {
