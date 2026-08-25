@@ -181,6 +181,18 @@ describe("webhooks", () => {
     expect(res.statusCode).toBe(401);
   });
 
+  it("woovi sem assinatura → 200 (validação do cadastro) mas nada vira evento", async () => {
+    const antes = await db.webhookEvent.count();
+    const res = await app.inject({
+      method: "POST",
+      url: "/webhooks/woovi",
+      headers: { "content-type": "application/json" },
+      payload: JSON.stringify({ event: "OPENPIX:CHARGE_COMPLETED" }),
+    });
+    expect(res.statusCode).toBe(200);
+    expect(await db.webhookEvent.count()).toBe(antes);
+  });
+
   it("woovi OPENPIX:TRANSACTION_REFUND_RECEIVED → payment refunded, order refunded", async () => {
     const { orderId, payment } = await seedOrder(app, "woovi");
     await app.inject({
