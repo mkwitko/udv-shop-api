@@ -82,6 +82,13 @@ describe("WOOVI_BASE_URL", () => {
   it("recusa valor que não é URL — erro de digitação aqui viraria 401 confuso", () => {
     expect(() => EnvSchema.parse({ ...base, WOOVI_BASE_URL: "api.woovi.com" })).toThrow();
   });
+
+  it("recusa host que não é da API — api-sandbox.woovi.com redireciona para a home", () => {
+    expect(() =>
+      EnvSchema.parse({ ...base, WOOVI_BASE_URL: "https://api-sandbox.woovi.com" }),
+    ).toThrow();
+    expect(() => EnvSchema.parse({ ...base, WOOVI_BASE_URL: "https://woovi.com" })).toThrow();
+  });
 });
 
 describe("WOOVI_FEE_FIXED_CENTS", () => {

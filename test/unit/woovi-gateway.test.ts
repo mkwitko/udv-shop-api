@@ -164,3 +164,47 @@ describe("woovi createCharge", () => {
     }
   });
 });
+
+describe("woovi — resposta que não é da API", () => {
+  const gw = createWooviGateway({
+    apiKey: "k",
+    webhookHmacSecret: "s",
+    baseUrl: "https://api.exemplo-invalido.test",
+  });
+
+  it("não segue redirect: base errada devolvia a landing page em HTML como 200", async () => {
+    const original = globalThis.fetch;
+    const chamadas: string[] = [];
+    globalThis.fetch = (async (url: string | URL | Request) => {
+      chamadas.push(String(url));
+      return new Response(null, { status: 302, headers: { location: "https://woovi.com/" } });
+    }) as typeof fetch;
+    try {
+      await expect(gw.checkPixKey("a@b.com")).rejects.toMatchObject({
+        message: "woovi_error",
+        cause: { status: 302, location: "https://woovi.com/" },
+      });
+      // Uma chamada só: o redirect morre aqui em vez de virar GET na home.
+      expect(chamadas).toEqual(["https://api.exemplo-invalido.test/api/v1/pix-keys/check"]);
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+
+  it("corpo 2xx sem JSON vira erro com status e trecho — não um SyntaxError mudo", async () => {
+    const original = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response("<!DOCTYPE html><html></html>", {
+        status: 200,
+        headers: { "content-type": "text/html" },
+      })) as typeof fetch;
+    try {
+      await expect(gw.checkPixKey("a@b.com")).rejects.toMatchObject({
+        message: "woovi_error",
+        cause: { status: 200, body: "<!DOCTYPE html><html></html>" },
+      });
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+});

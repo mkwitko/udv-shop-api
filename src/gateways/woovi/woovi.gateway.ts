@@ -100,16 +100,35 @@ export function createWooviGateway(cfg: {
     .map((s) => s.trim())
     .filter((s) => s.length > 0);
 
+  /**
+   * A Woovi nunca redireciona uma chamada de API. Um 3xx aqui é sempre base errada
+   * (`api-sandbox.woovi.com` redireciona para a home): sem `redirect: "manual"`, o fetch
+   * seguia para a landing page, devolvia 200 em HTML e o erro chegava como um
+   * `SyntaxError` de JSON sem dizer com quem tínhamos falado.
+   */
+  function rejeitarRedirect(res: Response, path: string): void {
+    if (res.status < 300 || res.status >= 400) return;
+    throw badGateway("woovi_error", {
+      motivo: "base da Woovi respondeu redirect",
+      status: res.status,
+      location: res.headers.get("location"),
+      baseUrl,
+      path,
+    });
+  }
+
   async function get(path: string): Promise<{ status: number; body: unknown }> {
     let res: Response;
     try {
       res = await fetch(`${baseUrl}${path}`, {
         headers: { Authorization: cfg.apiKey },
+        redirect: "manual",
         signal: AbortSignal.timeout(15_000),
       });
     } catch (err) {
       throw badGateway("woovi_unreachable", err);
     }
+    rejeitarRedirect(res, path);
     const text = await res.text();
     let parsed: unknown = null;
     try {
@@ -138,11 +157,13 @@ export function createWooviGateway(cfg: {
         method: "POST",
         headers: { Authorization: cfg.apiKey, "Content-Type": "application/json" },
         body: JSON.stringify(body),
+        redirect: "manual",
         signal: AbortSignal.timeout(15_000),
       });
     } catch (err) {
       throw badGateway("woovi_unreachable", err);
     }
+    rejeitarRedirect(res, path);
     return { status: res.status, text: await res.text() };
   }
 
@@ -153,12 +174,25 @@ export function createWooviGateway(cfg: {
         method: "POST",
         headers: { Authorization: cfg.apiKey, "Content-Type": "application/json" },
         body: JSON.stringify(body),
+        redirect: "manual",
       });
     } catch (err) {
       throw badGateway("woovi_unreachable", err);
     }
-    if (!res.ok) throw badGateway("woovi_error", { status: res.status, body: await res.text() });
-    return res.json();
+    rejeitarRedirect(res, path);
+    const text = await res.text();
+    if (!res.ok) throw badGateway("woovi_error", { status: res.status, body: text.slice(0, 400) });
+    try {
+      return JSON.parse(text);
+    } catch {
+      throw badGateway("woovi_error", {
+        motivo: "resposta 2xx sem JSON",
+        path,
+        status: res.status,
+        baseUrl,
+        body: text.slice(0, 400),
+      });
+    }
   }
 
   return {
@@ -203,11 +237,13 @@ export function createWooviGateway(cfg: {
           method: "POST",
           headers: { Authorization: cfg.apiKey, "Content-Type": "application/json" },
           body: "{}",
+          redirect: "manual",
           signal: AbortSignal.timeout(20_000),
         });
       } catch (err) {
         throw badGateway("woovi_unreachable", err);
       }
+      rejeitarRedirect(res, path);
       if (res.ok) return { status: "requested" };
       const text = (await res.text()).slice(0, 400);
       // Verificado contra a Woovi em 20/08/2026: saldo zero responde
@@ -264,8 +300,16 @@ export function createWooviGateway(cfg: {
       };
       try {
         data = JSON.parse(text);
-      } catch (err) {
-        throw badGateway("woovi_error", err);
+      } catch {
+        // 2xx com HTML não é resposta da API da Woovi: é base errada, proxy de saída ou
+        // página de bloqueio no caminho. Sem status, host e trecho do corpo no log, isso
+        // chega como um `SyntaxError` mudo e não dá para saber com quem falamos.
+        throw badGateway("woovi_error", {
+          motivo: "pix-keys/check devolveu corpo não-JSON",
+          status,
+          baseUrl,
+          body: text.slice(0, 400),
+        });
       }
       // Sem dono não há com o que comparar o pagador — tratar como chave desconhecida seria
       // mentira, então é falha de contrato do provedor.

@@ -65,7 +65,19 @@ const BaseEnvSchema = z.object({
   // A Woovi tem dois ambientes com AppIDs SEPARADOS: produção (api.woovi.com) e teste
   // (api.woovi-sandbox.com, painel app.woovi-sandbox.com). AppID de um responde
   // "appID inválido" no outro, então a URL precisa acompanhar de onde veio a chave.
-  WOOVI_BASE_URL: z.string().url().default("https://api.woovi.com"),
+  // `api-sandbox.woovi.com` (host que não existe) redireciona para a home e o fetch seguia
+  // o 302 até receber 200 em HTML: o boot é o lugar de pegar isso, não a primeira cobrança.
+  WOOVI_BASE_URL: z
+    .string()
+    .url()
+    .refine(
+      (v) => {
+        const host = new URL(v).hostname;
+        return host.startsWith("api.") || host === "localhost" || host === "127.0.0.1";
+      },
+      { message: "host da Woovi deve ser api.woovi.com ou api.woovi-sandbox.com" },
+    )
+    .default("https://api.woovi.com"),
   // A Woovi aceita um evento por webhook e a secret do HMAC é por webhook. Como
   // consumimos três eventos (pago, expirado, estornado), aqui vão os três segredos
   // separados por vírgula — qualquer um que assine o corpo vale.
