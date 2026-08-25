@@ -3,7 +3,8 @@ name: Deploy
 # Build da imagem -> GHCR -> SSH na VM: compose pull && up -d.
 # Secrets necessários no repo:
 #   DEPLOY_SSH_HOST, DEPLOY_SSH_USER, DEPLOY_SSH_KEY (chave privada),
-#   DEPLOY_PATH (ex.: /opt/udv-shop-api)
+#   DEPLOY_PATH (ex.: /opt/udv-shop-api),
+#   PROD_ENV_B64 (o .env de produção inteiro, em base64 — ambiente `production`)
 on:
   push:
     branches: [main]
@@ -72,6 +73,45 @@ jobs:
           source: "docker-compose.prod.yml,scripts/*,deploy/**"
           target: ${{ secrets.DEPLOY_PATH }}
           overwrite: true
+      # O .env de produção mora no secret PROD_ENV_B64 (ambiente `production`), não no
+      # repositório: commitar chave de pagamento deixa o segredo no histórico para sempre,
+      # e rotacionar depois não apaga o que já foi clonado. Base64 para o conteúdo chegar
+      # byte a byte, sem o shell comer aspas, cifrão ou quebra de linha.
+      - name: escreve o .env de produção na VM
+        uses: appleboy/ssh-action@v1
+        env:
+          PROD_ENV_B64: ${{ secrets.PROD_ENV_B64 }}
+        with:
+          host: ${{ secrets.DEPLOY_SSH_HOST }}
+          username: ${{ secrets.DEPLOY_SSH_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          envs: PROD_ENV_B64
+          script: |
+            set -euo pipefail
+            umask 077
+            cd ${{ secrets.DEPLOY_PATH }}
+            if [ -z "${PROD_ENV_B64:-}" ]; then
+              echo "PROD_ENV_B64 vazio: mantendo o .env que já está na VM" >&2
+              exit 0
+            fi
+            printf '%s' "$PROD_ENV_B64" | base64 -d > .env.novo
+            # Sanidade antes de trocar: .env truncado derruba a API inteira, e a senha do
+            # Postgres precisa continuar sendo a do cluster que já foi inicializado.
+            for chave in DATABASE_URL POSTGRES_PASSWORD JWT_PUBLIC_KEY_B64; do
+              grep -qE "^${chave}=." .env.novo || { echo "faltou ${chave} no PROD_ENV_B64" >&2; exit 1; }
+            done
+            if [ -f .env ]; then
+              anterior=$(grep -E '^POSTGRES_PASSWORD=' .env || true)
+              novo=$(grep -E '^POSTGRES_PASSWORD=' .env.novo || true)
+              [ "$anterior" = "$novo" ] || {
+                echo "POSTGRES_PASSWORD mudou: o cluster já inicializado não aceita a nova senha" >&2
+                exit 1
+              }
+              cp -a .env .env.anterior
+            fi
+            mv .env.novo .env
+            chmod 600 .env
+
       - name: troca a imagem, com dump antes e volta se falhar
         uses: appleboy/ssh-action@v1
         with:

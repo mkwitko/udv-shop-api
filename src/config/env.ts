@@ -160,3 +160,15 @@ export const EnvSchema = BaseEnvSchema.superRefine((val, ctx) => {
 
 export const env = EnvSchema.parse(process.env);
 export type Env = typeof env;
+
+// Aviso, não erro: derrubar o boot por causa disso deixaria a API fora do ar no intervalo
+// entre subir o código e trocar as credenciais. Sandbox em produção não quebra nada — só
+// cobra dinheiro que não existe, e é o tipo de coisa que passa despercebida por semanas.
+if (env.NODE_ENV === "production") {
+  if (env.STRIPE_SECRET_KEY.startsWith("sk_test_")) {
+    console.warn("[env] STRIPE_SECRET_KEY é de teste: nenhuma cobrança será real");
+  }
+  if (env.WOOVI_BASE_URL.includes("sandbox")) {
+    console.warn("[env] WOOVI_BASE_URL aponta para o sandbox: nenhum Pix será real");
+  }
+}
