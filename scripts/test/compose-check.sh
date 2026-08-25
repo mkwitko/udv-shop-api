@@ -9,6 +9,14 @@ cd "$REPO_DIR"
 docker compose -f docker-compose.dev.yml config -q
 echo "ok: docker-compose.dev.yml"
 
+# O serviço da API declara `env_file: .env`, e o `config` recusa validar sem o arquivo —
+# no runner do CI ele não existe. Um .env vazio e descartável só para a validação passar;
+# os valores de verdade vêm do `env` abaixo.
+if [ ! -f .env ]; then
+  : > .env
+  trap 'rm -f "$REPO_DIR/.env"' EXIT
+fi
+
 # Valores de fachada só para a interpolação: o config não conecta em nada.
 prod_config() {
   env \
