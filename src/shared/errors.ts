@@ -34,6 +34,11 @@ export class ForbiddenError extends AppError {
     super("FORBIDDEN", 403, message);
   }
 }
+export class GoneError extends AppError {
+  constructor(message = "gone") {
+    super("GONE", 410, message);
+  }
+}
 export class BadGatewayError extends AppError {
   constructor(message = "bad_gateway", details?: unknown) {
     super("BAD_GATEWAY", 502, message, details);

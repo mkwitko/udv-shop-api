@@ -18,6 +18,7 @@ export async function resetDb() {
     db.product.deleteMany(),
     db.productCategory.deleteMany(),
     db.supplier.deleteMany(),
+    db.storeInvite.deleteMany(),
     db.userStoreRole.deleteMany(),
     db.storeSubscription.deleteMany(),
     db.store.deleteMany(),

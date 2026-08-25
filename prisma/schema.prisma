@@ -31,6 +31,7 @@ model User {
   refreshTokens RefreshToken[]
   emailTokens   EmailToken[]
   storeRoles    UserStoreRole[]
+  sentInvites   StoreInvite[]
   orders        Order[]
   interests     Interest[]
   donations     Donation[]
@@ -204,6 +205,7 @@ model Store {
   wooviSubaccountId       String? @map("woovi_subaccount_id")
 
   roles              UserStoreRole[]
+  invites            StoreInvite[]
   pixKeyVerification WooviPixKeyVerification[]
   products           Product[]
   events             Event[]
@@ -276,6 +278,29 @@ model StoreSubscription {
   store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
 
   @@map("store_subscriptions")
+}
+
+/// Convite para cuidar de uma loja. Só o hash do token fica no banco (padrão de EmailToken);
+/// o link do e-mail carrega o token cru. Reenviar o mesmo e-mail renova o token da linha
+/// pendente em vez de criar outra — um convite por (loja, e-mail) enquanto estiver aberto.
+model StoreInvite {
+  id              String    @id @default(uuid()) @db.Uuid
+  storeId         String    @map("store_id") @db.Uuid
+  /// Sempre minúsculo: o aceite compara com o e-mail da conta logada.
+  email           String
+  role            StoreRole
+  tokenHash       String    @unique @map("token_hash")
+  invitedByUserId String    @map("invited_by_user_id") @db.Uuid
+  expiresAt       DateTime  @map("expires_at")
+  acceptedAt      DateTime? @map("accepted_at")
+  revokedAt       DateTime? @map("revoked_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  store     Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  invitedBy User  @relation(fields: [invitedByUserId], references: [id], onDelete: Cascade)
+
+  @@index([storeId, email])
+  @@map("store_invites")
 }
 
 model UserStoreRole {
