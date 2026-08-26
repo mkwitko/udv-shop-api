@@ -290,6 +290,10 @@ export function createWooviGateway(cfg: {
       if (status === 404) return null;
       // O limite é do BC e conta 404 repetido. Cair aqui não invalida a chave: é "agora não".
       if (status === 429) throw new ServiceUnavailableError("woovi_pix_key_check_rate_limited");
+      // A consulta ao DICT é liberada pela Woovi por conta, não pelos escopos da chave —
+      // enquanto não liberarem, todo cadastro de chave morria num 502. A chave entra como
+      // `pending` e a prova de posse consulta de novo, que é o mesmo caminho do DICT fora.
+      if (status === 403) throw new ServiceUnavailableError("woovi_pix_key_check_forbidden");
       if (status < 200 || status >= 300) {
         throw badGateway("woovi_error", { status, body: text.slice(0, 400) });
       }

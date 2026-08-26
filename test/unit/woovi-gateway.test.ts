@@ -191,6 +191,26 @@ describe("woovi — resposta que não é da API", () => {
     }
   });
 
+  it("403 da consulta de chave é indisponibilidade, não 502: o cadastro grava a chave como pendente", async () => {
+    const original = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({ error: "Sua conta não tem permissão para usar este endpoint" }),
+        {
+          status: 403,
+          headers: { "content-type": "application/json" },
+        },
+      )) as typeof fetch;
+    try {
+      await expect(gw.checkPixKey("a@b.com")).rejects.toMatchObject({
+        name: "ServiceUnavailableError",
+        message: "woovi_pix_key_check_forbidden",
+      });
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+
   it("corpo 2xx sem JSON vira erro com status e trecho — não um SyntaxError mudo", async () => {
     const original = globalThis.fetch;
     globalThis.fetch = (async () =>
